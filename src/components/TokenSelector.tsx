@@ -156,7 +156,7 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 shrink-0 rounded-2xl px-3 py-2 font-semibold transition hover:opacity-90 active:scale-95"
+        className="flex items-center gap-2 shrink-0 rounded-2xl px-3 py-2.5 font-semibold transition hover:opacity-90 active:scale-95"
         style={
           selected
             ? {
@@ -170,20 +170,21 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
         {selected ? (
           <>
             <div
-              className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold shrink-0"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shrink-0"
               style={{
                 background: `${selectedColor}25`,
+                border: `1px solid ${selectedColor}40`,
                 color: selectedColor,
               }}
             >
               {selected.symbol.slice(0, 2).toUpperCase()}
             </div>
-            <span className="max-w-[72px] truncate text-sm">{selected.symbol}</span>
+            <span className="max-w-[80px] truncate text-[15px]">{selected.symbol}</span>
           </>
         ) : (
           <span className="whitespace-nowrap text-sm">Select token</span>
         )}
-        <svg className="h-3 w-3 opacity-60 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
+        <svg className="h-3.5 w-3.5 opacity-50 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
         </svg>
       </button>

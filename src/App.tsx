@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { Header } from "./components/Header";
 import { AddLiquidityPage } from "./pages/AddLiquidity";
@@ -12,9 +12,8 @@ function App() {
     () => NETWORKS.find((network) => network.id === selectedNetworkId) ?? NETWORKS[0],
     [selectedNetworkId]
   );
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const { tokens, addCustomToken } = useTokenList(selectedNetwork);
-  const location = useLocation();
 
   type SidebarItem = { to: string; label: string; icon: () => React.JSX.Element; disabled?: boolean };
   type SidebarSection = { title: string; items: SidebarItem[] };
@@ -42,9 +41,6 @@ function App() {
       ],
     },
   ];
-
-  // Determine active tab for the tab bar
-  const activeTab = location.pathname.startsWith("/add-liquidity") ? "liquidity" : "swap";
 
   return (
     <div className="min-h-screen flex">
@@ -128,30 +124,6 @@ function App() {
         />
 
         <main className="flex-1 flex flex-col items-center px-4 pt-8 pb-16">
-          {/* Tab bar - PCS v1 style */}
-          <div className="mb-6 flex items-center gap-1 rounded-2xl bg-pcs-card p-1" style={{ border: '1px solid rgba(0, 212, 255, 0.08)' }}>
-            <NavLink
-              to="/swap"
-              className={`rounded-xl px-5 py-2 text-sm font-semibold transition ${
-                activeTab === "swap"
-                  ? "bg-pcs-secondary text-white shadow-sm"
-                  : "text-pcs-textSub hover:text-pcs-text"
-              }`}
-            >
-              Swap
-            </NavLink>
-            <NavLink
-              to="/add-liquidity"
-              className={`rounded-xl px-5 py-2 text-sm font-semibold transition ${
-                activeTab === "liquidity"
-                  ? "bg-pcs-secondary text-white shadow-sm"
-                  : "text-pcs-textSub hover:text-pcs-text"
-              }`}
-            >
-              Liquidity
-            </NavLink>
-          </div>
-
           {/* Card area */}
           <div className="w-full max-w-[420px]">
             <Routes>

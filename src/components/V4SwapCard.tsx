@@ -233,7 +233,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
       )}
 
       {/* From token - PCS v1 style input row */}
-      <div className="rounded-2xl p-4" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
+      <div className="rounded-2xl p-4 overflow-hidden" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs font-medium text-pcs-textDim">From</span>
           {tokenInBalance && address && (
@@ -253,7 +253,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         </div>
         <div className="flex items-center gap-3">
           <input
-            className="flex-1 bg-transparent text-2xl font-semibold text-pcs-text outline-none placeholder:text-pcs-textDim"
+            className="min-w-0 flex-1 bg-transparent text-2xl font-semibold text-pcs-text outline-none placeholder:text-pcs-textDim"
             value={amountIn}
             onChange={(e) => setAmountIn(e.target.value)}
             placeholder="0.0"
@@ -285,11 +285,11 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
       </div>
 
       {/* To token */}
-      <div className="rounded-2xl p-4" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
+      <div className="rounded-2xl p-4 overflow-hidden" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
         <div className="mb-2 text-xs font-medium text-pcs-textDim">To (estimated)</div>
         <div className="flex items-center gap-3">
           <input
-            className="flex-1 bg-transparent text-2xl font-semibold text-pcs-text outline-none placeholder:text-pcs-textDim"
+            className="min-w-0 flex-1 bg-transparent text-2xl font-semibold text-pcs-text outline-none placeholder:text-pcs-textDim"
             value={quotedOut}
             readOnly
             placeholder="0.0"
