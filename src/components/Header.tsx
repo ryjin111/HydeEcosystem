@@ -118,17 +118,9 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
             ))}
           </select>
 
-          <button
-            onClick={addNetworkToWallet}
-            className="hidden sm:inline-flex rounded-xl px-3 py-1.5 text-xs font-medium text-pcs-textDim hover:text-pcs-textSub transition"
-            style={{ border: '1px solid rgba(0, 212, 255, 0.08)' }}
-          >
-            + Net
-          </button>
-
           {!isConnected ? (
-            <button className="btn-primary px-4 py-1.5 text-sm" onClick={connectWallet} disabled={isPending}>
-              {isPending ? "Connecting..." : "Connect"}
+            <button className="btn-primary px-4 py-1.5 text-xs" onClick={connectWallet} disabled={isPending}>
+              {isPending ? "..." : "Connect"}
             </button>
           ) : (
             <div className="flex items-center gap-2">

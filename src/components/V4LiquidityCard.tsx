@@ -141,6 +141,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
             tokens={tokens}
             onSelect={setTokenA}
             onAddCustom={onAddCustomToken}
+            chainId={network.id}
           />
         </div>
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-pcs-primary" style={{ background: 'rgba(0, 212, 255, 0.08)' }}>
@@ -156,6 +157,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
             tokens={tokens}
             onSelect={setTokenB}
             onAddCustom={onAddCustomToken}
+            chainId={network.id}
           />
         </div>
       </div>

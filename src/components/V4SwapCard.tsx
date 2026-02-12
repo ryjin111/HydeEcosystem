@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { formatUnits, parseUnits } from "viem";
-import { useAccount, usePublicClient, useWalletClient } from "wagmi";
+import { useAccount, useBalance, usePublicClient, useWalletClient } from "wagmi";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { V4_CONTRACTS_BY_CHAIN, universalRouterAbi, v4QuoterAbi } from "../utils/constants";
 import { buildSwapTemplatePayload } from "../utils/v4Encoding";
@@ -37,6 +37,13 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
   const [showSettings, setShowSettings] = useState(false);
 
   const chainMismatch = isConnected && chainId !== network.id;
+
+  const { data: tokenInBalance } = useBalance({
+    address,
+    token: tokenIn?.address as `0x${string}` | undefined,
+    chainId: network.id,
+    query: { enabled: Boolean(address && tokenIn) },
+  });
 
   useEffect(() => {
     setTokenIn(tokens[0]);
@@ -227,10 +234,26 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
 
       {/* From token - PCS v1 style input row */}
       <div className="rounded-2xl p-4" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
-        <div className="mb-2 text-xs font-medium text-pcs-textDim">From</div>
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-medium text-pcs-textDim">From</span>
+          {tokenInBalance && address && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-pcs-textDim">
+                Balance: {Number(tokenInBalance.formatted).toLocaleString(undefined, { maximumFractionDigits: 4 })} {tokenIn?.symbol}
+              </span>
+              <button
+                type="button"
+                className="rounded-md px-1.5 py-0.5 text-[10px] font-bold text-pcs-primary transition hover:bg-pcs-primary/10"
+                onClick={() => setAmountIn(tokenInBalance.formatted)}
+              >
+                MAX
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <input
-            className="flex-1 bg-transparent text-xl font-semibold text-pcs-text outline-none placeholder:text-pcs-textDim"
+            className="flex-1 bg-transparent text-2xl font-semibold text-pcs-text outline-none placeholder:text-pcs-textDim"
             value={amountIn}
             onChange={(e) => setAmountIn(e.target.value)}
             placeholder="0.0"
@@ -242,6 +265,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
             tokens={tokens}
             onSelect={setTokenIn}
             onAddCustom={onAddCustomToken}
+            chainId={network.id}
           />
         </div>
       </div>
@@ -262,10 +286,10 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
 
       {/* To token */}
       <div className="rounded-2xl p-4" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
-        <div className="mb-2 text-xs font-medium text-pcs-textDim">To</div>
+        <div className="mb-2 text-xs font-medium text-pcs-textDim">To (estimated)</div>
         <div className="flex items-center gap-3">
           <input
-            className="flex-1 bg-transparent text-xl font-semibold text-pcs-text outline-none placeholder:text-pcs-textDim"
+            className="flex-1 bg-transparent text-2xl font-semibold text-pcs-text outline-none placeholder:text-pcs-textDim"
             value={quotedOut}
             readOnly
             placeholder="0.0"
@@ -276,6 +300,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
             tokens={tokens}
             onSelect={setTokenOut}
             onAddCustom={onAddCustomToken}
+            chainId={network.id}
           />
         </div>
       </div>

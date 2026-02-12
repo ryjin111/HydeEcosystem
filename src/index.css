@@ -18,6 +18,18 @@ body {
 .card {
   @apply rounded-3xl bg-pcs-card p-5 shadow-card;
   border: 1px solid rgba(0, 212, 255, 0.12);
+  position: relative;
+}
+
+/* Optional: very subtle top-edge glow line */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 10%; right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.2), transparent);
+  border-radius: 50%;
+  pointer-events: none;
 }
 
 /* Input - deep dark input field */
@@ -32,7 +44,7 @@ body {
 
 /* Primary action button - cyan neon with glow */
 .btn-primary {
-  @apply rounded-2xl px-5 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  @apply rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
   background: linear-gradient(135deg, #00d4ff 0%, #00ffff 50%, #00d4ff 100%);
   color: #0a0f1e;
   text-shadow: none;
@@ -43,7 +55,7 @@ body {
 
 /* Secondary / outline button - cyan border with glow on hover */
 .btn-secondary {
-  @apply rounded-2xl border bg-transparent px-4 py-2 font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  @apply rounded-xl border bg-transparent px-3 py-1.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
   border-color: rgba(0, 212, 255, 0.35);
   color: #00d4ff;
 }
@@ -55,12 +67,17 @@ body {
 
 /* Neon gradient button variant (for swap CTA) */
 .btn-neon {
-  @apply rounded-2xl px-5 py-3 font-bold transition disabled:cursor-not-allowed disabled:opacity-40;
+  @apply rounded-2xl px-5 py-3 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-40;
   background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
   color: #ffffff;
+  letter-spacing: 0.01em;
 }
 .btn-neon:hover:not(:disabled) {
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.35), 0 0 40px rgba(124, 58, 237, 0.2);
+  box-shadow: 0 0 24px rgba(0, 212, 255, 0.4), 0 0 48px rgba(124, 58, 237, 0.25);
+  filter: brightness(1.05);
+}
+.btn-neon:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 /* Scrollbar styling */

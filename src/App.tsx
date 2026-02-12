@@ -13,7 +13,7 @@ function App() {
     () => NETWORKS.find((network) => network.id === selectedNetworkId) ?? NETWORKS[0],
     [selectedNetworkId]
   );
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { tokens, addCustomToken } = useTokenList(selectedNetwork);
   const location = useLocation();
 
@@ -52,10 +52,18 @@ function App() {
 
   return (
     <div className="min-h-screen flex">
+      {/* Mobile backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/60 backdrop-blur-sm md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 z-30 h-full flex flex-col transition-all duration-200 ${
-          sidebarOpen ? "w-56" : "w-0 overflow-hidden"
+        className={`fixed top-0 left-0 z-30 h-full w-56 flex flex-col transition-transform duration-200 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         style={{ background: '#0d1220', borderRight: '1px solid rgba(0, 212, 255, 0.08)' }}
       >
@@ -114,7 +122,7 @@ function App() {
       </aside>
 
       {/* Main area */}
-      <div className={`flex-1 flex flex-col transition-all duration-200 ${sidebarOpen ? "ml-56" : "ml-0"}`}>
+      <div className={`flex-1 flex flex-col transition-all duration-200 ${sidebarOpen ? "md:ml-56" : "ml-0"}`}>
         <Header
           selectedNetwork={selectedNetwork}
           onNetworkChange={setSelectedNetworkId}
