@@ -60,10 +60,11 @@ function App() {
         style={{ background: '#0d1220', borderRight: '1px solid rgba(0, 212, 255, 0.08)' }}
       >
         {/* Sidebar header */}
-        <div className="flex h-14 items-center px-4" style={{ borderBottom: '1px solid rgba(0, 212, 255, 0.06)' }}>
-          <h1 className="text-lg font-bold tracking-tight" style={{ color: '#00d4ff', textShadow: '0 0 10px rgba(0, 212, 255, 0.5)' }}>
+        <div className="flex h-14 items-center gap-2.5 px-4" style={{ borderBottom: '1px solid rgba(0, 212, 255, 0.06)' }}>
+          <img src="/logo/lo.png" alt="Hyde" className="h-7 w-7 object-contain" style={{ filter: 'drop-shadow(0 0 6px rgba(0, 212, 255, 0.5))' }} />
+          <span className="text-lg font-bold tracking-tight" style={{ color: '#00d4ff', textShadow: '0 0 10px rgba(0, 212, 255, 0.5)' }}>
             Hyde
-          </h1>
+          </span>
         </div>
 
         {/* Nav sections */}

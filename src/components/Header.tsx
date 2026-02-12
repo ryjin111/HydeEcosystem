@@ -145,12 +145,29 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
       {chainMismatch && (
         <div className="mx-auto max-w-[420px] px-4 mt-3">
           <div
-            className="flex items-center justify-between rounded-xl px-4 py-2 text-sm text-pcs-text"
-            style={{ background: 'rgba(255, 64, 129, 0.08)', border: '1px solid rgba(255, 64, 129, 0.2)' }}
+            className="flex items-center justify-between gap-3 rounded-xl px-4 py-2.5"
+            style={{ background: 'rgba(255, 64, 129, 0.07)', border: '1px solid rgba(255, 64, 129, 0.25)' }}
           >
-            <span>Wrong network</span>
-            <button className="btn-primary py-1 px-3 text-xs" onClick={switchNetwork}>
-              Switch to {selectedNetwork.name}
+            {/* Left: icon + text */}
+            <div className="flex items-center gap-2 min-w-0">
+              <svg className="h-4 w-4 shrink-0 text-pcs-failure" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+              <span className="text-sm font-medium text-pcs-failure">Wrong network</span>
+              <span className="hidden sm:block text-xs text-pcs-textDim truncate">— connect to {selectedNetwork.name}</span>
+            </div>
+
+            {/* Right: action button */}
+            <button
+              onClick={switchNetwork}
+              className="shrink-0 rounded-lg px-3 py-1 text-xs font-semibold transition hover:opacity-90 active:scale-95"
+              style={{
+                background: 'rgba(255, 64, 129, 0.15)',
+                border: '1px solid rgba(255, 64, 129, 0.4)',
+                color: '#ff4081',
+              }}
+            >
+              Switch
             </button>
           </div>
         </div>

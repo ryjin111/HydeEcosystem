@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { formatUnits, parseUnits } from "viem";
+import { formatUnits, parseUnits, zeroAddress } from "viem";
 import { useAccount, useBalance, usePublicClient, useWalletClient } from "wagmi";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
-import { V4_CONTRACTS_BY_CHAIN, universalRouterAbi, v4QuoterAbi } from "../utils/constants";
-import { buildSwapTemplatePayload } from "../utils/v4Encoding";
+import { V4_CONTRACTS_BY_CHAIN, hydeGatewayAbi, v4QuoterAbi } from "../utils/constants";
+import { buildSwapTemplatePayload, feeToTickSpacing } from "../utils/v4Encoding";
+import { useApproval } from "../hooks/useApproval";
 import { TokenSelector } from "./TokenSelector";
 
 type V4SwapCardProps = {
@@ -38,6 +39,35 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
 
   const chainMismatch = isConnected && chainId !== network.id;
 
+  const amountInParsed = useMemo(() => {
+    try {
+      if (!amountIn || !tokenIn) return 0n;
+      return parseUnits(amountIn, tokenIn.decimals);
+    } catch { return 0n; }
+  }, [amountIn, tokenIn]);
+
+  const { needsApproval, approve: approveToken } = useApproval({
+    token: tokenIn?.address,
+    spender: contracts.permit2,
+    amount: amountInParsed,
+    chainId: network.id,
+  });
+
+  const [approving, setApproving] = useState(false);
+
+  const handleApprove = async () => {
+    try {
+      setApproving(true);
+      toast.loading("Approving token...", { id: "approve" });
+      await approveToken();
+      toast.success("Token approved", { id: "approve" });
+    } catch {
+      toast.error("Approval failed", { id: "approve" });
+    } finally {
+      setApproving(false);
+    }
+  };
+
   const { data: tokenInBalance } = useBalance({
     address,
     token: tokenIn?.address as `0x${string}` | undefined,
@@ -50,7 +80,10 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
     setTokenOut(tokens[1]);
   }, [tokens]);
 
+  const quoteIdRef = useRef(0);
+
   useEffect(() => {
+    const id = ++quoteIdRef.current;
     const quote = async () => {
       if (!publicClient || !tokenIn || !tokenOut || !amountIn || Number(amountIn) <= 0) {
         setQuotedOut("");
@@ -58,14 +91,31 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
       }
       try {
         const amountParsed = parseUnits(amountIn, tokenIn.decimals);
-        const out = await publicClient.readContract({
+        const zeroForOne = tokenIn.address.toLowerCase() < tokenOut.address.toLowerCase();
+        const currency0 = zeroForOne ? tokenIn.address : tokenOut.address;
+        const currency1 = zeroForOne ? tokenOut.address : tokenIn.address;
+        const result = await publicClient.simulateContract({
           address: contracts.quoter,
           abi: v4QuoterAbi,
           functionName: "quoteExactInputSingle",
-          args: [tokenIn.address, tokenOut.address, amountParsed, Number(feeTier), 0n]
+          args: [{
+            poolKey: {
+              currency0,
+              currency1,
+              fee: Number(feeTier),
+              tickSpacing: feeToTickSpacing(Number(feeTier)),
+              hooks: zeroAddress
+            },
+            zeroForOne,
+            exactAmount: BigInt(amountParsed),
+            hookData: "0x"
+          }]
         });
-        setQuotedOut(formatUnits(out as bigint, tokenOut.decimals));
+        const [amountOut] = result.result as [bigint, bigint];
+        if (id !== quoteIdRef.current) return;
+        setQuotedOut(formatUnits(amountOut, tokenOut.decimals));
       } catch {
+        if (id !== quoteIdRef.current) return;
         setQuotedOut("");
       }
     };
@@ -76,37 +126,57 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
     return Boolean(
       isConnected &&
         !chainMismatch &&
+        !needsApproval &&
         tokenIn &&
         tokenOut &&
         tokenIn.address !== tokenOut.address &&
         amountIn &&
         commandsHex.startsWith("0x")
     );
-  }, [isConnected, chainMismatch, tokenIn, tokenOut, amountIn, commandsHex]);
+  }, [isConnected, chainMismatch, needsApproval, tokenIn, tokenOut, amountIn, commandsHex]);
 
   const executeSwap = async () => {
     if (!walletClient || !publicClient || !address || !canSwap) {
       toast.error("Invalid swap input");
       return;
     }
+    // Validate deadline (1–4320 mins)
+    const deadlineMinsNum = Number(deadlineMins);
+    if (!Number.isFinite(deadlineMinsNum) || deadlineMinsNum < 1 || deadlineMinsNum > 4320) {
+      toast.error("Deadline must be between 1 and 4320 minutes");
+      return;
+    }
+    // Validate slippage (0–50%)
+    const slippageNum = Number(slippage);
+    if (!Number.isFinite(slippageNum) || slippageNum < 0 || slippageNum > 50) {
+      toast.error("Slippage must be between 0% and 50%");
+      return;
+    }
     try {
       setSubmitting(true);
       const decodedInputs = JSON.parse(inputsJson) as `0x${string}`[];
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + Number(deadlineMins) * 60);
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + deadlineMinsNum * 60);
 
       toast.loading("Sending V4 swap...", { id: "v4-swap" });
       const hash = await walletClient.writeContract({
-        address: contracts.universalRouter,
-        abi: universalRouterAbi,
-        functionName: "execute",
+        address: contracts.gateway,
+        abi: hydeGatewayAbi,
+        functionName: "executeSwap",
         args: [commandsHex as `0x${string}`, decodedInputs, deadline],
         account: address,
         chain: walletClient.chain
       });
       await publicClient.waitForTransactionReceipt({ hash });
       toast.success("V4 swap executed", { id: "v4-swap" });
-    } catch {
-      toast.error("V4 swap failed. Check commands/inputs encoding.", { id: "v4-swap" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      if (msg.includes("User rejected") || msg.includes("denied")) {
+        toast.error("Transaction rejected", { id: "v4-swap" });
+      } else if (msg.includes("insufficient")) {
+        toast.error("Insufficient balance or allowance", { id: "v4-swap" });
+      } else {
+        toast.error(`Swap failed: ${msg.slice(0, 80)}`, { id: "v4-swap" });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -146,14 +216,12 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
 
   return (
     <div className="card">
-      {/* Card header - PCS v1 style with title + icons */}
       <div className="mb-5 flex items-start justify-between">
         <div>
           <h2 className="text-lg font-bold text-pcs-text">Exchange</h2>
           <p className="mt-0.5 text-xs text-pcs-textDim">Trade tokens in an instant</p>
         </div>
         <div className="flex items-center gap-1">
-          {/* Settings icon */}
           <button
             type="button"
             onClick={() => setShowSettings((s) => !s)}
@@ -163,7 +231,6 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
             </svg>
           </button>
-          {/* History icon */}
           <button
             type="button"
             className="rounded-lg p-2 text-pcs-textDim hover:text-pcs-primary transition"
@@ -175,7 +242,6 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         </div>
       </div>
 
-      {/* Settings panel */}
       {showSettings && (
         <div className="mb-4 rounded-2xl p-4 space-y-3" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.08)' }}>
           <div className="flex items-center justify-between">
@@ -199,12 +265,20 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
               <div className="flex items-center gap-1">
                 <input
                   className="w-14 rounded-lg border-0 bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none"
-                  style={{ border: '1px solid rgba(0, 212, 255, 0.1)' }}
+                  style={{ border: `1px solid ${Number(slippage) > 5 ? 'rgba(255,100,0,0.5)' : 'rgba(0, 212, 255, 0.1)'}` }}
                   value={slippage}
-                  onChange={(e) => setSlippage(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    // Allow free typing but reject values outside 0-50
+                    const n = Number(v);
+                    if (v === "" || v === "." || (Number.isFinite(n) && n >= 0 && n <= 50)) setSlippage(v);
+                  }}
                 />
                 <span className="text-xs text-pcs-textDim">%</span>
               </div>
+              {Number(slippage) > 5 && (
+                <span className="w-full text-right text-[10px] text-orange-400">High slippage — you may lose funds</span>
+              )}
             </div>
           </div>
           <div className="flex items-center justify-between">
@@ -214,7 +288,11 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
                 className="w-14 rounded-lg border-0 bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none"
                 style={{ border: '1px solid rgba(0, 212, 255, 0.1)' }}
                 value={deadlineMins}
-                onChange={(e) => setDeadlineMins(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const n = Number(v);
+                  if (v === "" || (Number.isFinite(n) && n >= 1 && n <= 4320)) setDeadlineMins(v);
+                }}
               />
               <span className="text-xs text-pcs-textDim">min</span>
             </div>
@@ -232,7 +310,6 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         </div>
       )}
 
-      {/* From token - PCS v1 style input row */}
       <div className="rounded-2xl p-4 overflow-hidden" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs font-medium text-pcs-textDim">From</span>
@@ -270,7 +347,6 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         </div>
       </div>
 
-      {/* Swap direction arrow — sits in its own row, no box overlap */}
       <div className="flex justify-center py-1">
         <button
           type="button"
@@ -284,7 +360,6 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         </button>
       </div>
 
-      {/* To token */}
       <div className="rounded-2xl p-4 overflow-hidden" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
         <div className="mb-2 text-xs font-medium text-pcs-textDim">To (estimated)</div>
         <div className="flex items-center gap-3">
@@ -305,7 +380,6 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         </div>
       </div>
 
-      {/* Price info */}
       {tokenIn && tokenOut && quotedOut && Number(quotedOut) > 0 && (
         <div className="mt-3 px-1 space-y-1">
           <div className="flex items-center justify-between text-xs">
@@ -321,7 +395,6 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         </div>
       )}
 
-      {/* Advanced Router Payload */}
       <details className="mt-4 rounded-2xl" style={{ background: 'rgba(0, 212, 255, 0.02)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
         <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-pcs-textDim hover:text-pcs-primary transition">
           Advanced Router Payload
@@ -351,26 +424,38 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         </div>
       </details>
 
-      {/* Swap button */}
-      <button
-        className="btn-neon mt-5 w-full py-3 text-base"
-        disabled={!canSwap || submitting}
-        onClick={executeSwap}
-      >
-        {submitting
-          ? "Swapping..."
-          : !isConnected
-            ? "Connect Wallet"
-            : chainMismatch
-              ? "Wrong Network"
-              : !tokenIn || !tokenOut
-                ? "Select Tokens"
-                : !amountIn
-                  ? "Enter Amount"
-                  : !commandsHex.startsWith("0x")
-                    ? "Build Payload First"
-                    : "Swap"}
-      </button>
+      <div className="mt-5 space-y-2">
+        {needsApproval && tokenIn && amountIn && (
+          <button
+            className="btn-secondary w-full py-3 text-base"
+            disabled={approving}
+            onClick={handleApprove}
+          >
+            {approving ? "Approving..." : `Approve ${tokenIn.symbol}`}
+          </button>
+        )}
+        <button
+          className="btn-neon w-full py-3 text-base"
+          disabled={!canSwap || submitting}
+          onClick={executeSwap}
+        >
+          {submitting
+            ? "Swapping..."
+            : !isConnected
+              ? "Connect Wallet"
+              : chainMismatch
+                ? "Wrong Network"
+                : !tokenIn || !tokenOut
+                  ? "Select Tokens"
+                  : !amountIn
+                    ? "Enter Amount"
+                    : needsApproval
+                      ? "Approve First"
+                      : !commandsHex.startsWith("0x")
+                        ? "Build Payload First"
+                        : "Swap"}
+        </button>
+      </div>
     </div>
   );
 }

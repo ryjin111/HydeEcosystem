@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
+import { parseUnits } from "viem";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
-import { V4_CONTRACTS_BY_CHAIN, v4PositionManagerAbi } from "../utils/constants";
+import { V4_CONTRACTS_BY_CHAIN, hydeGatewayAbi } from "../utils/constants";
 import { buildAddLiquidityTemplatePayload, buildRemoveLiquidityTemplatePayload } from "../utils/v4Encoding";
+import { useApproval } from "../hooks/useApproval";
 import { TokenSelector } from "./TokenSelector";
 
 type V4LiquidityCardProps = {
@@ -42,6 +44,73 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
   const chainMismatch = isConnected && chainId !== network.id;
   const isAdd = mode === "add";
 
+  const amount0Parsed = useMemo(() => {
+    try {
+      if (!amount0Desired || !tokenA) return 0n;
+      return parseUnits(amount0Desired, tokenA.decimals);
+    } catch { return 0n; }
+  }, [amount0Desired, tokenA]);
+
+  const amount1Parsed = useMemo(() => {
+    try {
+      if (!amount1Desired || !tokenB) return 0n;
+      return parseUnits(amount1Desired, tokenB.decimals);
+    } catch { return 0n; }
+  }, [amount1Desired, tokenB]);
+
+  const { needsApproval: needsApprovalA, approve: approveA } = useApproval({
+    token: tokenA?.address,
+    spender: contracts.permit2,
+    amount: amount0Parsed,
+    chainId: network.id,
+  });
+
+  const { needsApproval: needsApprovalB, approve: approveB } = useApproval({
+    token: tokenB?.address,
+    spender: contracts.permit2,
+    amount: amount1Parsed,
+    chainId: network.id,
+  });
+
+  const [approvingA, setApprovingA] = useState(false);
+  const [approvingB, setApprovingB] = useState(false);
+
+  const handleApproveA = async () => {
+    try {
+      setApprovingA(true);
+      toast.loading(`Approving ${tokenA?.symbol}...`, { id: "approve-a" });
+      await approveA();
+      toast.success(`${tokenA?.symbol} approved`, { id: "approve-a" });
+    } catch {
+      toast.error("Approval failed", { id: "approve-a" });
+    } finally {
+      setApprovingA(false);
+    }
+  };
+
+  const handleApproveB = async () => {
+    try {
+      setApprovingB(true);
+      toast.loading(`Approving ${tokenB?.symbol}...`, { id: "approve-b" });
+      await approveB();
+      toast.success(`${tokenB?.symbol} approved`, { id: "approve-b" });
+    } catch {
+      toast.error("Approval failed", { id: "approve-b" });
+    } finally {
+      setApprovingB(false);
+    }
+  };
+
+  const canSubmit = useMemo(() => {
+    if (!isConnected || chainMismatch || !tokenA || !tokenB || tokenA.address === tokenB.address) return false;
+    if (isAdd) {
+      if (!amount0Desired && !amount1Desired) return false;
+      if ((amount0Desired && needsApprovalA) || (amount1Desired && needsApprovalB)) return false;
+      return true;
+    }
+    return Boolean(tokenId && liquidityRaw);
+  }, [isConnected, chainMismatch, tokenA, tokenB, isAdd, amount0Desired, amount1Desired, tokenId, liquidityRaw, needsApprovalA, needsApprovalB]);
+
   const submit = async () => {
     if (!walletClient || !publicClient || !address) {
       toast.error("Connect wallet first");
@@ -61,17 +130,22 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
       const deadline = BigInt(Math.floor(Date.now() / 1000) + Number(deadlineMins) * 60);
       toast.loading(isAdd ? "Submitting add-liquidity..." : "Submitting remove-liquidity...", { id: "v4-liq" });
       const hash = await walletClient.writeContract({
-        address: contracts.positionManager,
-        abi: v4PositionManagerAbi,
-        functionName: "multicall",
+        address: contracts.gateway,
+        abi: hydeGatewayAbi,
+        functionName: "executePositionMulticall",
         args: [payload, deadline],
         account: address,
         chain: walletClient.chain
       });
       await publicClient.waitForTransactionReceipt({ hash });
       toast.success(isAdd ? "Liquidity added (V4)" : "Liquidity removed (V4)", { id: "v4-liq" });
-    } catch {
-      toast.error("V4 liquidity tx failed. Check multicall bytes payload.", { id: "v4-liq" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      if (msg.includes("User rejected") || msg.includes("denied")) {
+        toast.error("Transaction rejected", { id: "v4-liq" });
+      } else {
+        toast.error(`Liquidity tx failed: ${msg.slice(0, 80)}`, { id: "v4-liq" });
+      }
     } finally {
       setLoading(false);
     }
@@ -252,22 +326,50 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
         </div>
       </details>
 
-      {/* Submit button */}
-      <button
-        className="btn-neon mt-5 w-full py-3 text-base"
-        disabled={loading}
-        onClick={submit}
-      >
-        {loading
-          ? "Processing..."
-          : !isConnected
-            ? "Connect Wallet"
-            : chainMismatch
-              ? "Wrong Network"
-              : isAdd
-                ? "Supply"
-                : "Remove"}
-      </button>
+      {/* Approval + Submit buttons */}
+      <div className="mt-5 space-y-2">
+        {isAdd && needsApprovalA && tokenA && amount0Desired && (
+          <button
+            className="btn-secondary w-full py-3 text-base"
+            disabled={approvingA}
+            onClick={handleApproveA}
+          >
+            {approvingA ? "Approving..." : `Approve ${tokenA.symbol}`}
+          </button>
+        )}
+        {isAdd && needsApprovalB && tokenB && amount1Desired && (
+          <button
+            className="btn-secondary w-full py-3 text-base"
+            disabled={approvingB}
+            onClick={handleApproveB}
+          >
+            {approvingB ? "Approving..." : `Approve ${tokenB.symbol}`}
+          </button>
+        )}
+        <button
+          className="btn-neon w-full py-3 text-base"
+          disabled={!canSubmit || loading}
+          onClick={submit}
+        >
+          {loading
+            ? "Processing..."
+            : !isConnected
+              ? "Connect Wallet"
+              : chainMismatch
+                ? "Wrong Network"
+                : !tokenA || !tokenB
+                  ? "Select Tokens"
+                  : tokenA.address === tokenB.address
+                    ? "Select Different Tokens"
+                    : isAdd && !amount0Desired && !amount1Desired
+                      ? "Enter Amounts"
+                      : !isAdd && (!tokenId || !liquidityRaw)
+                        ? "Enter Position Details"
+                        : isAdd
+                          ? "Supply"
+                          : "Remove"}
+        </button>
+      </div>
     </div>
   );
 }

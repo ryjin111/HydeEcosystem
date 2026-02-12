@@ -1,7 +1,51 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { getAddress } from "viem";
 import type { Address } from "viem";
 import { useAccount, useBalance } from "wagmi";
 import type { TokenInfo } from "../utils/constants";
+
+function isSafeLogoUri(uri: string | undefined): boolean {
+  if (!uri) return false;
+  return uri.startsWith("/tokens/") || uri.startsWith("/logo/");
+}
+
+/** Renders a token logo image, falling back to a colored initials circle */
+function TokenLogo({
+  token,
+  size = "md",
+}: {
+  token: TokenInfo;
+  size?: "sm" | "md" | "lg";
+}) {
+  const [errored, setErrored] = useState(false);
+  const color = getTokenColor(token.symbol);
+  const dims = size === "sm" ? "h-5 w-5 text-[8px]" : size === "lg" ? "h-10 w-10 text-sm" : "h-8 w-8 text-[10px]";
+
+  if (isSafeLogoUri(token.logoURI) && !errored) {
+    return (
+      <img
+        src={token.logoURI}
+        alt={token.symbol}
+        className={`${dims} rounded-full object-cover shrink-0`}
+        style={{ background: `${color}18` }}
+        onError={() => setErrored(true)}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`flex ${dims} items-center justify-center rounded-full font-bold shrink-0`}
+      style={{
+        background: `${color}18`,
+        border: `1.5px solid ${color}40`,
+        color,
+      }}
+    >
+      {token.symbol.slice(0, 2).toUpperCase()}
+    </div>
+  );
+}
 
 type TokenSelectorProps = {
   label: string;
@@ -44,8 +88,6 @@ function TokenRow({
     query: { enabled: Boolean(address) },
   });
 
-  const color = getTokenColor(token.symbol);
-
   return (
     <button
       type="button"
@@ -54,17 +96,7 @@ function TokenRow({
       }`}
       onClick={() => onSelect(token)}
     >
-      {/* Token icon */}
-      <div
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold"
-        style={{
-          background: `${color}18`,
-          border: `1.5px solid ${color}40`,
-          color,
-        }}
-      >
-        {token.symbol.slice(0, 2).toUpperCase()}
-      </div>
+      <TokenLogo token={token} size="md" />
 
       {/* Name */}
       <div className="min-w-0 flex-1">
@@ -94,6 +126,7 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
   const [query, setQuery] = useState("");
   const [showCustom, setShowCustom] = useState(false);
   const [customAddress, setCustomAddress] = useState("");
+  const [customAddressError, setCustomAddressError] = useState("");
   const [customSymbol, setCustomSymbol] = useState("");
   const [customName, setCustomName] = useState("");
   const [customDecimals, setCustomDecimals] = useState("18");
@@ -123,16 +156,24 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
   );
 
   const addCustom = () => {
-    if (!customAddress.startsWith("0x") || customAddress.length !== 42) return;
+    let checksummed: Address;
+    try {
+      checksummed = getAddress(customAddress.trim()) as Address;
+      setCustomAddressError("");
+    } catch {
+      setCustomAddressError("Invalid address — must be a valid EIP-55 checksummed address");
+      return;
+    }
     const decimals = Number(customDecimals);
     onAddCustom({
-      address: customAddress as Address,
+      address: checksummed,
       symbol: customSymbol || "CUSTOM",
       name: customName || customSymbol || "Custom Token",
-      decimals: Number.isFinite(decimals) ? decimals : 18,
+      decimals: Number.isFinite(decimals) && decimals >= 0 && decimals <= 18 ? decimals : 18,
     });
     setShowCustom(false);
     setCustomAddress("");
+    setCustomAddressError("");
     setCustomSymbol("");
     setCustomName("");
     setCustomDecimals("18");
@@ -169,16 +210,7 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
       >
         {selected ? (
           <>
-            <div
-              className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shrink-0"
-              style={{
-                background: `${selectedColor}25`,
-                border: `1px solid ${selectedColor}40`,
-                color: selectedColor,
-              }}
-            >
-              {selected.symbol.slice(0, 2).toUpperCase()}
-            </div>
+            <TokenLogo token={selected} size="sm" />
             <span className="max-w-[80px] truncate text-[15px]">{selected.symbol}</span>
           </>
         ) : (
@@ -247,12 +279,7 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
                         color: isSelected ? c : "#94a3b8",
                       }}
                     >
-                      <span
-                        className="flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold"
-                        style={{ background: `${c}25`, color: c }}
-                      >
-                        {t.symbol.slice(0, 1)}
-                      </span>
+                      <TokenLogo token={t} size="sm" />
                       {t.symbol}
                     </button>
                   );
@@ -300,8 +327,11 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
                     className="input text-xs"
                     placeholder="Token address (0x...)"
                     value={customAddress}
-                    onChange={(e) => setCustomAddress(e.target.value.trim())}
+                    onChange={(e) => { setCustomAddress(e.target.value.trim()); setCustomAddressError(""); }}
                   />
+                  {customAddressError && (
+                    <p className="text-[10px] text-red-400">{customAddressError}</p>
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     <input
                       className="input text-xs"
