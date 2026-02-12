@@ -37,13 +37,31 @@ const robinhoodChain = defineChain({
   testnet: true
 });
 
-export const supportedChains = [tempoChain, robinhoodChain] as const;
+const pharosChain = defineChain({
+  id: NETWORKS[2].id,
+  name: NETWORKS[2].name,
+  nativeCurrency: {
+    name: "USD",
+    symbol: "USD",
+    decimals: 18
+  },
+  rpcUrls: {
+    default: { http: [NETWORKS[2].rpcUrl] }
+  },
+  blockExplorers: {
+    default: { name: "Explorer", url: NETWORKS[2].explorerUrl }
+  },
+  testnet: true
+});
+
+export const supportedChains = [tempoChain, robinhoodChain, pharosChain] as const;
 
 export const wagmiConfig = createConfig({
   chains: supportedChains,
   connectors: [injected()],
   transports: {
     [tempoChain.id]: http(tempoChain.rpcUrls.default.http[0]),
-    [robinhoodChain.id]: http(robinhoodChain.rpcUrls.default.http[0])
+    [robinhoodChain.id]: http(robinhoodChain.rpcUrls.default.http[0]),
+    [pharosChain.id]: http(pharosChain.rpcUrls.default.http[0])
   }
 });

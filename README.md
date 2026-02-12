@@ -1,8 +1,9 @@
 # Hyde (Frontend)
 
-HydeSwap + HydeNFTs frontend with PancakeSwap V1-style UX and Uniswap V4 integration for two testnets:
+HydeSwap + HydeNFTs frontend with PancakeSwap V1-style UX and Uniswap V4 integration for testnets:
 - Tempo Moderato Testnet (`chainId: 42431`, RPC: `https://rpc.moderato.tempo.xyz`)
 - Robinhood Testnet (placeholder RPC in `src/utils/constants.ts`, replace before use)
+- Pharos Atlantic Testnet (`chainId: 688689`, RPC: `https://atlantic.dplabs-internal.com`, WSS: `wss://atlantic.dplabs-internal.com`)
 
 ## Setup
 
@@ -27,6 +28,7 @@ Update per network in `src/utils/constants.ts`:
 - `router`
 - token addresses
 - Robinhood RPC / explorer
+- Pharos RPC / explorer (already prefilled, edit if needed)
  - `V4_CONTRACTS_BY_CHAIN` (`poolManager`, `universalRouter`, `quoter`, `positionManager`, `permit2`)
 
 ## MetaMask Network Add Snippet
@@ -63,3 +65,7 @@ Edit:
 - `src/utils/constants.ts` -> `V4_ENCODING_TEMPLATES`
 
 If your router/position manager expects different argument layouts or command bytes, update these templates.
+
+## Contracts Deployment Plan
+
+See `contracts/DEPLOY_PLAN.md` for the full Uniswap V4 deployment order and per-network checklist (Tempo, Robinhood, Pharos).

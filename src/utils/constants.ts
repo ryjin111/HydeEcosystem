@@ -11,6 +11,7 @@ export type NetworkConfig = {
   id: number;
   name: string;
   rpcUrl: string;
+  wssUrl?: string;
   explorerUrl: string;
   currencySymbol: string;
   factory: Address;
@@ -110,7 +111,44 @@ export const ROBINHOOD_TESTNET: NetworkConfig = {
   ]
 };
 
-export const NETWORKS: NetworkConfig[] = [TEMPO_MODERATO, ROBINHOOD_TESTNET];
+export const PHAROS_ATLANTIC_TESTNET: NetworkConfig = {
+  id: 688689,
+  name: "Pharos Atlantic Testnet",
+  rpcUrl: "https://atlantic.dplabs-internal.com",
+  wssUrl: "wss://atlantic.dplabs-internal.com",
+  explorerUrl: "https://atlantic.pharosscan.xyz/",
+  currencySymbol: "USD",
+  factory: PLACEHOLDER_FACTORY,
+  router: PLACEHOLDER_ROUTER,
+  faucetTokens: [
+    {
+      symbol: "pathUSD",
+      name: "Path USD",
+      address: "0x9999999999999999999999999999999999999999",
+      decimals: 18
+    },
+    {
+      symbol: "AlphaUSD",
+      name: "Alpha USD",
+      address: "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      decimals: 18
+    },
+    {
+      symbol: "BetaUSD",
+      name: "Beta USD",
+      address: "0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+      decimals: 18
+    },
+    {
+      symbol: "ThetaUSD",
+      name: "Theta USD",
+      address: "0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+      decimals: 18
+    }
+  ]
+};
+
+export const NETWORKS: NetworkConfig[] = [TEMPO_MODERATO, ROBINHOOD_TESTNET, PHAROS_ATLANTIC_TESTNET];
 
 const PLACEHOLDER_V4_POOL_MANAGER = "0x000000000000000000000000000000000000beef" as Address;
 const PLACEHOLDER_V4_UNIVERSAL_ROUTER = "0x000000000000000000000000000000000000cafe" as Address;
@@ -127,6 +165,13 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     permit2: PLACEHOLDER_V4_PERMIT2
   },
   [ROBINHOOD_TESTNET.id]: {
+    poolManager: PLACEHOLDER_V4_POOL_MANAGER,
+    universalRouter: PLACEHOLDER_V4_UNIVERSAL_ROUTER,
+    quoter: PLACEHOLDER_V4_QUOTER,
+    positionManager: PLACEHOLDER_V4_POSITION_MANAGER,
+    permit2: PLACEHOLDER_V4_PERMIT2
+  },
+  [PHAROS_ATLANTIC_TESTNET.id]: {
     poolManager: PLACEHOLDER_V4_POOL_MANAGER,
     universalRouter: PLACEHOLDER_V4_UNIVERSAL_ROUTER,
     quoter: PLACEHOLDER_V4_QUOTER,
