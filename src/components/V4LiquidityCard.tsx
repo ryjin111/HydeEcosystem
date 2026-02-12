@@ -40,6 +40,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
   const [loading, setLoading] = useState(false);
 
   const chainMismatch = isConnected && chainId !== network.id;
+  const isAdd = mode === "add";
 
   const submit = async () => {
     if (!walletClient || !publicClient || !address) {
@@ -58,7 +59,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
       setLoading(true);
       const payload = JSON.parse(multicallDataJson) as `0x${string}`[];
       const deadline = BigInt(Math.floor(Date.now() / 1000) + Number(deadlineMins) * 60);
-      toast.loading(mode === "add" ? "Submitting add-liquidity..." : "Submitting remove-liquidity...", { id: "v4-liq" });
+      toast.loading(isAdd ? "Submitting add-liquidity..." : "Submitting remove-liquidity...", { id: "v4-liq" });
       const hash = await walletClient.writeContract({
         address: contracts.positionManager,
         abi: v4PositionManagerAbi,
@@ -68,7 +69,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
         chain: walletClient.chain
       });
       await publicClient.waitForTransactionReceipt({ hash });
-      toast.success(mode === "add" ? "Liquidity added (V4)" : "Liquidity removed (V4)", { id: "v4-liq" });
+      toast.success(isAdd ? "Liquidity added (V4)" : "Liquidity removed (V4)", { id: "v4-liq" });
     } catch {
       toast.error("V4 liquidity tx failed. Check multicall bytes payload.", { id: "v4-liq" });
     } finally {
@@ -82,7 +83,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
       return;
     }
     try {
-      if (mode === "add") {
+      if (isAdd) {
         const payload = buildAddLiquidityTemplatePayload({
           token0: tokenA.address,
           token1: tokenB.address,
@@ -116,7 +117,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
     }
   };
 
-  const isAdd = mode === "add";
+  const inputBoxStyle = { background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' };
 
   return (
     <div className="card">
@@ -125,15 +126,15 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
         <h2 className="text-lg font-bold text-pcs-text">
           {isAdd ? "Add Liquidity" : "Remove Liquidity"}
         </h2>
-        <p className="text-xs text-pcs-textDim">
+        <p className="mt-0.5 text-xs text-pcs-textDim">
           {isAdd ? "Add tokens to a liquidity pool" : "Remove your liquidity position"}
         </p>
       </div>
 
       {/* Token pair selection */}
       <div className="flex items-center gap-3 mb-4">
-        <div className="flex-1 rounded-2xl bg-pcs-input p-3">
-          <span className="mb-1 block text-xs font-medium text-pcs-textDim">Token A</span>
+        <div className="flex-1 rounded-2xl p-3" style={inputBoxStyle}>
+          <span className="mb-1.5 block text-xs font-medium text-pcs-textDim">Token A</span>
           <TokenSelector
             label="Token A"
             selected={tokenA}
@@ -142,13 +143,13 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
             onAddCustom={onAddCustomToken}
           />
         </div>
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-pcs-cardLight text-pcs-primary">
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-pcs-primary" style={{ background: 'rgba(0, 212, 255, 0.08)' }}>
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
         </div>
-        <div className="flex-1 rounded-2xl bg-pcs-input p-3">
-          <span className="mb-1 block text-xs font-medium text-pcs-textDim">Token B</span>
+        <div className="flex-1 rounded-2xl p-3" style={inputBoxStyle}>
+          <span className="mb-1.5 block text-xs font-medium text-pcs-textDim">Token B</span>
           <TokenSelector
             label="Token B"
             selected={tokenB}
@@ -187,21 +188,11 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-xs font-medium text-pcs-textDim">Amount A</label>
-                <input
-                  className="input text-sm"
-                  value={amount0Desired}
-                  onChange={(e) => setAmount0Desired(e.target.value)}
-                  placeholder="0.0"
-                />
+                <input className="input text-sm" value={amount0Desired} onChange={(e) => setAmount0Desired(e.target.value)} placeholder="0.0" />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-pcs-textDim">Amount B</label>
-                <input
-                  className="input text-sm"
-                  value={amount1Desired}
-                  onChange={(e) => setAmount1Desired(e.target.value)}
-                  placeholder="0.0"
-                />
+                <input className="input text-sm" value={amount1Desired} onChange={(e) => setAmount1Desired(e.target.value)} placeholder="0.0" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -242,16 +233,16 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
       </div>
 
       {/* Advanced Multicall */}
-      <details className="mt-4 rounded-2xl bg-pcs-cardLight">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-pcs-textSub hover:text-pcs-primary transition">
+      <details className="mt-4 rounded-2xl" style={{ background: 'rgba(0, 212, 255, 0.02)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
+        <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-pcs-textDim hover:text-pcs-primary transition">
           Position Manager Multicall Data
         </summary>
-        <div className="border-t border-pcs-border/30 px-4 pb-4 pt-3 space-y-3">
+        <div className="px-4 pb-4 pt-1 space-y-3" style={{ borderTop: '1px solid rgba(0, 212, 255, 0.04)' }}>
           <button type="button" className="btn-secondary w-full py-2 text-xs" onClick={autoBuildMulticall}>
             Auto Build Multicall
           </button>
           <textarea
-            className="input min-h-20 resize-y text-xs"
+            className="input min-h-16 resize-y text-xs"
             value={multicallDataJson}
             onChange={(e) => setMulticallDataJson(e.target.value)}
             placeholder='["0x...", "0x..."]'
@@ -261,7 +252,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
 
       {/* Submit button */}
       <button
-        className="btn-neon mt-4 w-full py-3.5 text-base"
+        className="btn-neon mt-5 w-full py-3 text-base"
         disabled={loading}
         onClick={submit}
       >

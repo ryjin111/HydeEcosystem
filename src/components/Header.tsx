@@ -1,5 +1,4 @@
-import { useMemo, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { useMemo } from "react";
 import toast from "react-hot-toast";
 import { useAccount, useBalance, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import type { NetworkConfig } from "../utils/constants";
@@ -9,18 +8,19 @@ type HeaderProps = {
   selectedNetwork: NetworkConfig;
   onNetworkChange: (id: number) => void;
   networks: NetworkConfig[];
+  onToggleSidebar: () => void;
+  sidebarOpen: boolean;
 };
 
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
 
-export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderProps) {
+export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSidebar, sidebarOpen }: HeaderProps) {
   const { address, isConnected, chainId } = useAccount();
   const { connectAsync, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const { data: nativeBalance } = useBalance({
     address,
@@ -83,129 +83,81 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
     }
   };
 
-  const navLinks = [
-    { to: "/swap", label: "Swap" },
-    { to: "/add-liquidity", label: "Liquidity" },
-  ];
-
-  const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `px-4 py-2 text-sm font-semibold rounded-2xl transition ${
-      isActive
-        ? "bg-pcs-cardLight text-pcs-primary"
-        : "text-pcs-textSub hover:text-pcs-text"
-    }`;
-
   return (
     <>
-      <header className="sticky top-0 z-40 bg-pcs-card/95 backdrop-blur-md" style={{ borderBottom: '1px solid rgba(0, 212, 255, 0.1)' }}>
-        <div className="mx-auto flex h-14 max-w-[1200px] items-center justify-between px-4">
-          {/* Left: Logo + Nav */}
-          <div className="flex items-center gap-6">
-            <h1 className="text-xl font-bold tracking-tight" style={{ color: '#00d4ff', textShadow: '0 0 10px rgba(0, 212, 255, 0.5), 0 0 20px rgba(0, 212, 255, 0.2)' }}>
-              Hyde
-            </h1>
-            <nav className="hidden items-center gap-1 md:flex">
-              {navLinks.map((item) => (
-                <NavLink key={item.to} to={item.to} className={linkClass}>
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-          </div>
-
-          {/* Right: Network + Wallet */}
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedNetwork.id}
-              onChange={(e) => onNetworkChange(Number(e.target.value))}
-              className="hidden sm:block rounded-2xl border-0 bg-pcs-input px-3 py-2 text-xs font-medium text-pcs-text outline-none cursor-pointer"
-            >
-              {networks.map((net) => (
-                <option key={net.id} value={net.id}>
-                  {net.name}
-                </option>
-              ))}
-            </select>
-
-            <button
-              onClick={addNetworkToWallet}
-              className="hidden sm:inline-flex rounded-2xl bg-pcs-input px-3 py-2 text-xs font-medium text-pcs-textSub hover:text-pcs-text transition"
-            >
-              Add Net
-            </button>
-
-            {!isConnected ? (
-              <button className="btn-primary px-4 py-2 text-sm" onClick={connectWallet} disabled={isPending}>
-                {isPending ? "Connecting..." : "Connect Wallet"}
-              </button>
+      <header
+        className="sticky top-0 z-20 flex h-14 items-center justify-between px-4 backdrop-blur-md"
+        style={{ background: 'rgba(13, 18, 32, 0.9)', borderBottom: '1px solid rgba(0, 212, 255, 0.06)' }}
+      >
+        {/* Left: sidebar toggle */}
+        <button
+          onClick={onToggleSidebar}
+          className="rounded-lg p-2 text-pcs-textSub hover:text-pcs-primary hover:bg-white/[0.03] transition"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            {sidebarOpen ? (
+              <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5" />
             ) : (
-              <div className="flex items-center gap-2">
-                <div className="hidden sm:block rounded-2xl bg-pcs-input px-3 py-2 text-xs font-medium text-pcs-textSub">
-                  {nativeBalance?.formatted ? Number(nativeBalance.formatted).toFixed(4) : "0"} {selectedNetwork.currencySymbol}
-                </div>
-                <button
-                  className="rounded-2xl bg-pcs-primary px-4 py-2 text-xs font-semibold text-pcs-bg hover:opacity-90 transition"
-                  onClick={() => disconnect()}
-                >
-                  {shortenAddress(address)}
-                </button>
-              </div>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9h16.5m-16.5 6.75h16.5" />
             )}
+          </svg>
+        </button>
 
-            {/* Mobile menu button */}
-            <button
-              className="ml-1 md:hidden rounded-xl p-2 text-pcs-textSub hover:text-pcs-text"
-              onClick={() => setMobileMenuOpen((s) => !s)}
-            >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                {mobileMenuOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9h16.5m-16.5 6.75h16.5" />
-                )}
-              </svg>
+        {/* Right: network + wallet */}
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedNetwork.id}
+            onChange={(e) => onNetworkChange(Number(e.target.value))}
+            className="rounded-xl bg-pcs-card px-3 py-1.5 text-xs font-medium text-pcs-textSub outline-none cursor-pointer"
+            style={{ border: '1px solid rgba(0, 212, 255, 0.1)' }}
+          >
+            {networks.map((net) => (
+              <option key={net.id} value={net.id}>
+                {net.name}
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={addNetworkToWallet}
+            className="hidden sm:inline-flex rounded-xl px-3 py-1.5 text-xs font-medium text-pcs-textDim hover:text-pcs-textSub transition"
+            style={{ border: '1px solid rgba(0, 212, 255, 0.08)' }}
+          >
+            + Net
+          </button>
+
+          {!isConnected ? (
+            <button className="btn-primary px-4 py-1.5 text-sm" onClick={connectWallet} disabled={isPending}>
+              {isPending ? "Connecting..." : "Connect"}
             </button>
-          </div>
-        </div>
-
-        {/* Mobile nav dropdown */}
-        {mobileMenuOpen && (
-          <div className="border-t border-pcs-border/50 px-4 py-3 md:hidden">
-            <nav className="flex flex-col gap-1">
-              {navLinks.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={linkClass}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-            <div className="mt-3 flex flex-col gap-2">
-              <select
-                value={selectedNetwork.id}
-                onChange={(e) => onNetworkChange(Number(e.target.value))}
-                className="rounded-2xl border-0 bg-pcs-input px-3 py-2 text-xs font-medium text-pcs-text outline-none"
+          ) : (
+            <div className="flex items-center gap-2">
+              <div
+                className="hidden sm:block rounded-xl px-3 py-1.5 text-xs font-medium text-pcs-textSub"
+                style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid rgba(0, 212, 255, 0.1)' }}
               >
-                {networks.map((net) => (
-                  <option key={net.id} value={net.id}>
-                    {net.name}
-                  </option>
-                ))}
-              </select>
+                {nativeBalance?.formatted ? Number(nativeBalance.formatted).toFixed(4) : "0"} {selectedNetwork.currencySymbol}
+              </div>
+              <button
+                className="rounded-xl bg-pcs-primary px-4 py-1.5 text-xs font-semibold text-pcs-bg hover:shadow-neon transition"
+                onClick={() => disconnect()}
+              >
+                {shortenAddress(address)}
+              </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
       {/* Chain mismatch banner */}
       {chainMismatch && (
-        <div className="mx-auto max-w-swap px-4 mt-3">
-          <div className="flex items-center justify-between rounded-2xl bg-pcs-failure/10 border border-pcs-failure/30 px-4 py-2 text-sm text-pcs-text">
+        <div className="mx-auto max-w-[420px] px-4 mt-3">
+          <div
+            className="flex items-center justify-between rounded-xl px-4 py-2 text-sm text-pcs-text"
+            style={{ background: 'rgba(255, 64, 129, 0.08)', border: '1px solid rgba(255, 64, 129, 0.2)' }}
+          >
             <span>Wrong network</span>
-            <button className="btn-primary py-1.5 px-3 text-xs" onClick={switchNetwork}>
+            <button className="btn-primary py-1 px-3 text-xs" onClick={switchNetwork}>
               Switch to {selectedNetwork.name}
             </button>
           </div>

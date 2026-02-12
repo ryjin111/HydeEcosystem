@@ -68,27 +68,30 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom }
 
   return (
     <>
-      {/* Trigger button - inline PancakeSwap style */}
+      {/* Trigger button - PCS v1 "Select a currency" style */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-2 rounded-2xl bg-pcs-primary px-3 py-1.5 text-sm font-semibold text-pcs-bg hover:opacity-90 transition shrink-0"
+        className="flex items-center gap-2 shrink-0 rounded-2xl px-3 py-2 text-sm font-semibold transition hover:opacity-80"
+        style={
+          selected
+            ? { background: 'rgba(0, 212, 255, 0.08)', border: '1px solid rgba(0, 212, 255, 0.15)', color: '#e0f7ff' }
+            : { background: '#00d4ff', color: '#0a0f1e' }
+        }
       >
         {selected ? (
           <>
-            <span className="text-sm font-bold">{selected.symbol}</span>
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-            </svg>
+            <div className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold" style={{ background: 'rgba(0, 212, 255, 0.15)', color: '#00d4ff' }}>
+              {selected.symbol.slice(0, 2)}
+            </div>
+            <span>{selected.symbol}</span>
           </>
         ) : (
-          <>
-            <span>Select</span>
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-            </svg>
-          </>
+          <span>Select a currency</span>
         )}
+        <svg className="h-3 w-3 opacity-60" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
       </button>
 
       {/* Modal overlay */}
