@@ -270,8 +270,8 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         </div>
       </div>
 
-      {/* Swap direction arrow */}
-      <div className="relative flex justify-center -my-3 z-10">
+      {/* Swap direction arrow — sits in its own row, no box overlap */}
+      <div className="flex justify-center py-1">
         <button
           type="button"
           onClick={swapTokenDirection}

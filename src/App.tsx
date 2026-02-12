@@ -2,7 +2,6 @@ import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { useMemo, useState } from "react";
 import { Header } from "./components/Header";
 import { AddLiquidityPage } from "./pages/AddLiquidity";
-import { RemoveLiquidityPage } from "./pages/RemoveLiquidity";
 import { SwapPage } from "./pages/Swap";
 import { NETWORKS } from "./utils/constants";
 import { useTokenList } from "./hooks/useTokenList";
@@ -26,7 +25,6 @@ function App() {
       items: [
         { to: "/swap", label: "Exchange", icon: SwapIcon },
         { to: "/add-liquidity", label: "Liquidity", icon: LiquidityIcon },
-        { to: "/remove-liquidity", label: "Remove LP", icon: RemoveIcon },
       ],
     },
     {
@@ -46,9 +44,7 @@ function App() {
   ];
 
   // Determine active tab for the tab bar
-  const activeTab = location.pathname.startsWith("/add-liquidity") || location.pathname.startsWith("/remove-liquidity")
-    ? "liquidity"
-    : "swap";
+  const activeTab = location.pathname.startsWith("/add-liquidity") ? "liquidity" : "swap";
 
   return (
     <div className="min-h-screen flex">
@@ -167,12 +163,7 @@ function App() {
                 path="/add-liquidity"
                 element={<AddLiquidityPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />}
               />
-              <Route
-                path="/remove-liquidity"
-                element={
-                  <RemoveLiquidityPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />
-                }
-              />
+              <Route path="/remove-liquidity" element={<Navigate to="/add-liquidity" replace />} />
               <Route path="*" element={<Navigate to="/swap" replace />} />
             </Routes>
           </div>
@@ -200,13 +191,6 @@ function LiquidityIcon() {
   );
 }
 
-function RemoveIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12h-15" />
-    </svg>
-  );
-}
 
 function FarmIcon() {
   return (
