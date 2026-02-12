@@ -112,7 +112,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
               <div className="rounded-xl border border-cyber-tealDeep bg-cyber-navy px-3 py-2 text-xs font-semibold text-neutral-50">
                 {nativeBalance?.formatted ?? "0"} {selectedNetwork.currencySymbol}
               </div>
-              <button className="btn-secondary" onClick={disconnect}>
+              <button className="btn-secondary" onClick={() => disconnect()}>
                 {shortenAddress(address)}
               </button>
             </>
