@@ -82,17 +82,21 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
   };
 
   return (
-    <header className="mb-6 rounded-2xl border border-cyber-tealDeep bg-cyber-navyDeep px-4 py-3 shadow-card">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-xl font-black text-brand-blue">Hyde</h1>
-          <p className="text-xs text-neutral-100">HydeSwap + HydeNFTs (more coming soon)</p>
+    <header className="sticky top-0 z-40 border-b border-cyber-tealDeep/50 bg-cyber-black/85 px-4 py-3 backdrop-blur">
+      <div className="mx-auto flex max-w-[1800px] items-center gap-3">
+        <div className="min-w-[140px]">
+          <h1 className="text-2xl font-black italic text-brand-yellow">Hyde</h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="hidden flex-1 lg:block">
+          <input className="input max-w-xl" placeholder="Search for token, wallet or contract" />
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <button className="btn-secondary px-3 py-2 text-sm">HydeSwap</button>
+          <button className="btn-primary px-3 py-2 text-sm">+ HydeNFTs</button>
           <select
             value={selectedNetwork.id}
             onChange={(e) => onNetworkChange(Number(e.target.value))}
-            className="input w-auto min-w-[180px]"
+            className="input w-auto min-w-[150px]"
           >
             {networks.map((net) => (
               <option key={net.id} value={net.id}>
@@ -100,11 +104,11 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
               </option>
             ))}
           </select>
-          <button onClick={addNetworkToWallet} className="btn-secondary">
-            Add Network
+          <button onClick={addNetworkToWallet} className="btn-secondary px-3 py-2 text-sm">
+            Add Net
           </button>
           {!isConnected ? (
-            <button className="btn-primary" onClick={connectWallet} disabled={isPending}>
+            <button className="btn-secondary" onClick={connectWallet} disabled={isPending}>
               {isPending ? "Connecting..." : "Connect Wallet"}
             </button>
           ) : (
@@ -120,7 +124,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
         </div>
       </div>
       {chainMismatch && (
-        <div className="mt-3 flex items-center justify-between rounded-xl border border-error/40 bg-error/10 px-3 py-2 text-sm text-neutral-50">
+        <div className="mx-auto mt-3 flex max-w-[1800px] items-center justify-between rounded-xl border border-error/40 bg-error/10 px-3 py-2 text-sm text-neutral-50">
           <span>Wallet is on another network</span>
           <button className="btn-primary py-1 text-sm" onClick={switchNetwork}>
             Switch to {selectedNetwork.name}
