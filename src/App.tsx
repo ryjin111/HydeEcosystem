@@ -20,7 +20,7 @@ function App() {
 
   const sidebarSections: SidebarSection[] = [
     {
-      title: "Trade",
+      title: "HydeSwap",
       items: [
         { to: "/swap", label: "Exchange", icon: SwapIcon },
         { to: "/add-liquidity", label: "Liquidity", icon: LiquidityIcon },

@@ -333,7 +333,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
           <div>
             <label className="mb-1 block text-[11px] font-medium text-pcs-textDim">Commands (hex)</label>
             <input
-              className="input text-xs"
+              className="input font-mono text-xs"
               value={commandsHex}
               onChange={(e) => setCommandsHex(e.target.value.trim())}
               placeholder="0x..."
@@ -342,7 +342,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
           <div>
             <label className="mb-1 block text-[11px] font-medium text-pcs-textDim">Inputs (JSON bytes[])</label>
             <textarea
-              className="input min-h-16 resize-y text-xs"
+              className="input font-mono min-h-16 resize-y text-xs"
               value={inputsJson}
               onChange={(e) => setInputsJson(e.target.value)}
               placeholder='["0x...", "0x..."]'

@@ -43,7 +43,8 @@ module.exports = {
         'swap': '480px',
       },
       fontFamily: {
-        sans: ['Exo 2', 'Inter', 'sans-serif'],
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'JetBrains Mono', 'monospace'],
       },
     }
   },

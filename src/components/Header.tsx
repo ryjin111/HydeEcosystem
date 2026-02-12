@@ -131,7 +131,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
                 {nativeBalance?.formatted ? Number(nativeBalance.formatted).toFixed(4) : "0"} {selectedNetwork.currencySymbol}
               </div>
               <button
-                className="rounded-xl bg-pcs-primary px-4 py-1.5 text-xs font-semibold text-pcs-bg hover:shadow-neon transition"
+                className="rounded-xl bg-pcs-primary px-4 py-1.5 font-mono text-xs font-semibold text-pcs-bg hover:shadow-neon transition"
                 onClick={() => disconnect()}
               >
                 {shortenAddress(address)}

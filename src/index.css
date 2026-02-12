@@ -32,6 +32,11 @@ body {
   pointer-events: none;
 }
 
+/* Monospace elements — advanced payload fields, addresses */
+.font-code {
+  font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+}
+
 /* Input - deep dark input field */
 .input {
   @apply w-full rounded-2xl border bg-pcs-input px-4 py-3 text-sm text-pcs-text outline-none transition placeholder:text-pcs-textDim;
