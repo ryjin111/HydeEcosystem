@@ -119,9 +119,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
   return (
     <div className="card">
       <h2 className="mb-2 text-lg font-bold text-brand-blue">{mode === "add" ? "Add Liquidity (V4)" : "Remove Liquidity (V4)"}</h2>
-      <p className="mb-4 text-xs text-neutral-100">
-        Keep the simple V1 look while executing through V4 Position Manager multicall.
-      </p>
+      <p className="mb-4 text-xs text-neutral-100">Simple V1-style form with V4 Position Manager execution.</p>
 
       <div className="grid gap-4 md:grid-cols-2">
         <TokenSelector
@@ -199,21 +197,20 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
         </div>
       )}
 
-      <div className="mt-4 rounded-xl border border-cyber-tealDeep bg-cyber-navy p-3">
-        <p className="mb-2 text-xs font-semibold text-brand-blue">Position Manager Multicall Data</p>
-        <button type="button" className="btn-secondary mb-3 w-full" onClick={autoBuildMulticall}>
-          Auto Build Multicall
-        </button>
-        <textarea
-          className="input min-h-24 resize-y"
-          value={multicallDataJson}
-          onChange={(e) => setMulticallDataJson(e.target.value)}
-          placeholder='["0x...", "0x..."]'
-        />
-        <p className="mt-2 text-xs text-neutral-100">
-          Uses `V4_ENCODING_TEMPLATES` in `src/utils/constants.ts`. Update those templates to match your deployed V4 periphery.
-        </p>
-      </div>
+      <details className="mt-4 rounded-xl border border-cyber-tealDeep bg-cyber-navy p-3">
+        <summary className="cursor-pointer text-sm font-semibold text-brand-blue">Position Manager Multicall Data</summary>
+        <div className="mt-3">
+          <button type="button" className="btn-secondary mb-3 w-full" onClick={autoBuildMulticall}>
+            Auto Build Multicall
+          </button>
+          <textarea
+            className="input min-h-24 resize-y"
+            value={multicallDataJson}
+            onChange={(e) => setMulticallDataJson(e.target.value)}
+            placeholder='["0x...", "0x..."]'
+          />
+        </div>
+      </details>
 
       <button className="btn-primary mt-4 w-full py-3" disabled={loading} onClick={submit}>
         {loading ? "Processing..." : chainMismatch ? "Switch Network" : mode === "add" ? "Supply" : "Remove"}

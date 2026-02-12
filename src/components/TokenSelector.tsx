@@ -12,6 +12,7 @@ type TokenSelectorProps = {
 
 export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom }: TokenSelectorProps) {
   const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
   const [customAddress, setCustomAddress] = useState("");
   const [customSymbol, setCustomSymbol] = useState("");
@@ -52,34 +53,53 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom }
   return (
     <div className="rounded-xl border border-cyber-tealDeep/70 bg-cyber-navyDeep/70 p-3">
       <p className="mb-2 text-xs font-semibold uppercase text-neutral-100">{label}</p>
-      <div className="mb-2 flex gap-2">
-        <input
-          className="input"
-          placeholder="Search token or address"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <button type="button" className="btn-secondary whitespace-nowrap" onClick={() => setShowCustom((s) => !s)}>
-          Add Custom
-        </button>
-      </div>
-      <div className="max-h-44 space-y-1 overflow-auto">
-        {filtered.map((token) => (
-          <button
-            key={token.address}
-            type="button"
-            className={`w-full rounded-lg border px-2 py-2 text-left text-sm transition ${
-              selected?.address === token.address
-                ? "border-brand-blue bg-cyber-tealDeep/30 text-brand-blue"
-                : "border-transparent bg-cyber-navy hover:border-cyber-tealDeep text-neutral-50"
-            }`}
-            onClick={() => onSelect(token)}
-          >
-            <div className="font-semibold">{token.symbol}</div>
-            <div className="truncate text-xs text-neutral-100">{token.address}</div>
-          </button>
-        ))}
-      </div>
+      <button
+        type="button"
+        onClick={() => setOpen((s) => !s)}
+        className="flex w-full items-center justify-between rounded-xl border border-cyber-tealDeep bg-cyber-navy px-3 py-3 text-left"
+      >
+        <span>
+          <span className="block text-sm font-bold text-neutral-50">{selected?.symbol ?? "Select token"}</span>
+          <span className="block text-xs text-neutral-100">{selected?.name ?? "Choose a token"}</span>
+        </span>
+        <span className="text-xs text-brand-blue">{open ? "Close" : "Select"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-xl border border-cyber-tealDeep bg-cyber-navy p-2">
+          <div className="mb-2 flex gap-2">
+            <input
+              className="input"
+              placeholder="Search token or address"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button type="button" className="btn-secondary whitespace-nowrap" onClick={() => setShowCustom((s) => !s)}>
+              Add
+            </button>
+          </div>
+          <div className="max-h-52 space-y-1 overflow-auto">
+            {filtered.map((token) => (
+              <button
+                key={token.address}
+                type="button"
+                className={`w-full rounded-lg border px-2 py-2 text-left text-sm transition ${
+                  selected?.address === token.address
+                    ? "border-brand-blue bg-cyber-tealDeep/30 text-brand-blue"
+                    : "border-transparent bg-cyber-navyDeep hover:border-cyber-tealDeep text-neutral-50"
+                }`}
+                onClick={() => {
+                  onSelect(token);
+                  setOpen(false);
+                }}
+              >
+                <div className="font-semibold">{token.symbol}</div>
+                <div className="truncate text-xs text-neutral-100">{token.address}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {showCustom && (
         <div className="mt-3 space-y-2 rounded-lg border border-cyber-tealDeep bg-cyber-navy p-2">
           <input

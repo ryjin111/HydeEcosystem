@@ -9,16 +9,16 @@
 
 body {
   @apply min-h-screen bg-app-bg text-neutral-50;
-  background-image: radial-gradient(circle at top right, rgba(225, 58, 106, 0.16), transparent 40%),
-    radial-gradient(circle at top left, rgba(83, 235, 228, 0.18), transparent 36%);
+  background-image: radial-gradient(circle at top right, rgba(225, 58, 106, 0.12), transparent 40%),
+    radial-gradient(circle at top left, rgba(83, 235, 228, 0.12), transparent 36%);
 }
 
 .app-shell {
-  @apply mx-auto max-w-5xl px-4 pb-10 pt-6;
+  @apply mx-auto max-w-6xl px-4 pb-10 pt-6;
 }
 
 .card {
-  @apply rounded-2xl border border-cyber-tealDeep/50 bg-app-card p-4 shadow-card md:p-6;
+  @apply rounded-3xl border border-cyber-tealDeep/60 bg-app-card p-4 shadow-card md:p-6;
 }
 
 .input {
@@ -26,9 +26,9 @@ body {
 }
 
 .btn-primary {
-  @apply rounded-xl bg-brand-blue px-4 py-2 font-semibold text-cyber-black transition hover:bg-cyber-cyan disabled:cursor-not-allowed disabled:opacity-60;
+  @apply rounded-xl bg-brand-yellow px-4 py-2 font-semibold text-neutral-50 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .btn-secondary {
-  @apply rounded-xl border border-cyber-tealDeep bg-cyber-navy px-4 py-2 font-semibold text-brand-blue transition hover:bg-cyber-navyDeep disabled:cursor-not-allowed disabled:opacity-60;
+  @apply rounded-xl border border-cyber-tealDeep bg-cyber-navy px-4 py-2 font-semibold text-neutral-50 transition hover:bg-cyber-navyDeep disabled:cursor-not-allowed disabled:opacity-60;
 }

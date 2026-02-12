@@ -132,11 +132,9 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
   return (
     <div className="card">
       <h2 className="mb-2 text-lg font-bold text-brand-blue">Swap (V4)</h2>
-      <p className="mb-4 text-xs text-neutral-100">
-        Old-school UI, V4 backend. Provide Universal Router encoded commands/inputs for execution.
-      </p>
+      <p className="mb-4 text-xs text-neutral-100">Classic swap UI with V4 execution under the hood.</p>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         <TokenSelector
           label="From Token"
           selected={tokenIn}
@@ -153,7 +151,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         />
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
         <div>
           <label className="mb-1 block text-xs font-semibold text-neutral-100">Amount In</label>
           <input className="input" value={amountIn} onChange={(e) => setAmountIn(e.target.value)} placeholder="0.0" />
@@ -162,6 +160,9 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
           <label className="mb-1 block text-xs font-semibold text-neutral-100">Fee Tier</label>
           <input className="input" value={feeTier} onChange={(e) => setFeeTier(e.target.value)} placeholder="3000" />
         </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
         <div>
           <label className="mb-1 block text-xs font-semibold text-neutral-100">Slippage (%)</label>
           <input className="input" value={slippage} onChange={(e) => setSlippage(e.target.value)} placeholder="0.50" />
@@ -172,29 +173,28 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         </div>
       </div>
 
-      <div className="mt-4 rounded-xl border border-cyber-tealDeep bg-cyber-navy p-3">
-        <p className="mb-2 text-xs font-semibold text-brand-blue">Advanced Router Payload</p>
-        <button type="button" className="btn-secondary mb-3 w-full" onClick={autoBuildPayload}>
-          Auto Build Payload
-        </button>
-        <label className="mb-1 block text-xs font-semibold text-neutral-100">Commands (hex bytes)</label>
-        <input
-          className="input mb-2"
-          value={commandsHex}
-          onChange={(e) => setCommandsHex(e.target.value.trim())}
-          placeholder="0x..."
-        />
-        <label className="mb-1 block text-xs font-semibold text-neutral-100">Inputs (JSON bytes[])</label>
-        <textarea
-          className="input min-h-24 resize-y"
-          value={inputsJson}
-          onChange={(e) => setInputsJson(e.target.value)}
-          placeholder='["0x...", "0x..."]'
-        />
-        <p className="mt-2 text-xs text-neutral-100">
-          Auto builder uses template ABI/command config from `src/utils/constants.ts` (`V4_ENCODING_TEMPLATES`).
-        </p>
-      </div>
+      <details className="mt-4 rounded-xl border border-cyber-tealDeep bg-cyber-navy p-3">
+        <summary className="cursor-pointer text-sm font-semibold text-brand-blue">Advanced Router Payload</summary>
+        <div className="mt-3">
+          <button type="button" className="btn-secondary mb-3 w-full" onClick={autoBuildPayload}>
+            Auto Build Payload
+          </button>
+          <label className="mb-1 block text-xs font-semibold text-neutral-100">Commands (hex bytes)</label>
+          <input
+            className="input mb-2"
+            value={commandsHex}
+            onChange={(e) => setCommandsHex(e.target.value.trim())}
+            placeholder="0x..."
+          />
+          <label className="mb-1 block text-xs font-semibold text-neutral-100">Inputs (JSON bytes[])</label>
+          <textarea
+            className="input min-h-24 resize-y"
+            value={inputsJson}
+            onChange={(e) => setInputsJson(e.target.value)}
+            placeholder='["0x...", "0x..."]'
+          />
+        </div>
+      </details>
 
       <div className="mt-4">
         <label className="mb-1 block text-xs font-semibold text-neutral-100">Deadline (minutes)</label>

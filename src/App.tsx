@@ -30,10 +30,10 @@ function App() {
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
-              `rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              `rounded-2xl px-4 py-2 text-sm font-semibold transition ${
                 isActive
                   ? "bg-brand-yellow text-neutral-50 shadow-[0_0_20px_rgba(225,58,106,0.35)]"
-                  : "border border-cyber-tealDeep bg-cyber-navy text-brand-blue hover:bg-cyber-navyDeep"
+                  : "border border-cyber-tealDeep bg-cyber-navy text-neutral-50 hover:bg-cyber-navyDeep"
               }`
             }
           >
@@ -42,23 +42,25 @@ function App() {
         ))}
       </nav>
 
-      <Routes>
-        <Route
-          path="/swap"
-          element={<SwapPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />}
-        />
-        <Route
-          path="/add-liquidity"
-          element={<AddLiquidityPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />}
-        />
-        <Route
-          path="/remove-liquidity"
-          element={
-            <RemoveLiquidityPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />
-          }
-        />
-        <Route path="*" element={<Navigate to="/swap" replace />} />
-      </Routes>
+      <div className="mx-auto max-w-4xl">
+        <Routes>
+          <Route
+            path="/swap"
+            element={<SwapPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />}
+          />
+          <Route
+            path="/add-liquidity"
+            element={<AddLiquidityPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />}
+          />
+          <Route
+            path="/remove-liquidity"
+            element={
+              <RemoveLiquidityPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />
+            }
+          />
+          <Route path="*" element={<Navigate to="/swap" replace />} />
+        </Routes>
+      </div>
     </div>
   );
 }
