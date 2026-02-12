@@ -116,95 +116,142 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
     }
   };
 
+  const isAdd = mode === "add";
+
   return (
     <div className="card">
-      <h2 className="mb-2 text-lg font-bold text-brand-blue">{mode === "add" ? "Add Liquidity (V4)" : "Remove Liquidity (V4)"}</h2>
-      <p className="mb-4 text-xs text-neutral-100">Simple V1-style form with V4 Position Manager execution.</p>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <TokenSelector
-          label="Token A"
-          selected={tokenA}
-          tokens={tokens}
-          onSelect={setTokenA}
-          onAddCustom={onAddCustomToken}
-        />
-        <TokenSelector
-          label="Token B"
-          selected={tokenB}
-          tokens={tokens}
-          onSelect={setTokenB}
-          onAddCustom={onAddCustomToken}
-        />
+      {/* Card header */}
+      <div className="mb-5">
+        <h2 className="text-lg font-bold text-pcs-text">
+          {isAdd ? "Add Liquidity" : "Remove Liquidity"}
+        </h2>
+        <p className="text-xs text-pcs-textDim">
+          {isAdd ? "Add tokens to a liquidity pool" : "Remove your liquidity position"}
+        </p>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-neutral-100">Fee Tier</label>
-          <input className="input" value={feeTier} onChange={(e) => setFeeTier(e.target.value)} />
+      {/* Token pair selection */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="flex-1 rounded-2xl bg-pcs-input p-3">
+          <span className="mb-1 block text-xs font-medium text-pcs-textDim">Token A</span>
+          <TokenSelector
+            label="Token A"
+            selected={tokenA}
+            tokens={tokens}
+            onSelect={setTokenA}
+            onAddCustom={onAddCustomToken}
+          />
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-neutral-100">Deadline (minutes)</label>
-          <input className="input" value={deadlineMins} onChange={(e) => setDeadlineMins(e.target.value)} />
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-pcs-cardLight text-pcs-primary">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </div>
+        <div className="flex-1 rounded-2xl bg-pcs-input p-3">
+          <span className="mb-1 block text-xs font-medium text-pcs-textDim">Token B</span>
+          <TokenSelector
+            label="Token B"
+            selected={tokenB}
+            tokens={tokens}
+            onSelect={setTokenB}
+            onAddCustom={onAddCustomToken}
+          />
         </div>
       </div>
 
-      {mode === "add" ? (
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
+      {/* Parameters */}
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-xs font-semibold text-neutral-100">Tick Lower</label>
-            <input className="input" value={tickLower} onChange={(e) => setTickLower(e.target.value)} />
+            <label className="mb-1 block text-xs font-medium text-pcs-textDim">Fee Tier</label>
+            <input className="input text-sm" value={feeTier} onChange={(e) => setFeeTier(e.target.value)} />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-semibold text-neutral-100">Tick Upper</label>
-            <input className="input" value={tickUpper} onChange={(e) => setTickUpper(e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-neutral-100">Amount0 Desired</label>
-            <input className="input" value={amount0Desired} onChange={(e) => setAmount0Desired(e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-neutral-100">Amount1 Desired</label>
-            <input className="input" value={amount1Desired} onChange={(e) => setAmount1Desired(e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-neutral-100">Amount0 Min</label>
-            <input className="input" value={amount0Min} onChange={(e) => setAmount0Min(e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-neutral-100">Amount1 Min</label>
-            <input className="input" value={amount1Min} onChange={(e) => setAmount1Min(e.target.value)} />
+            <label className="mb-1 block text-xs font-medium text-pcs-textDim">Deadline (min)</label>
+            <input className="input text-sm" value={deadlineMins} onChange={(e) => setDeadlineMins(e.target.value)} />
           </div>
         </div>
-      ) : (
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-neutral-100">Position Token ID</label>
-            <input className="input" value={tokenId} onChange={(e) => setTokenId(e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-neutral-100">Liquidity (raw uint128)</label>
-            <input className="input" value={liquidityRaw} onChange={(e) => setLiquidityRaw(e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-neutral-100">Amount0 Min</label>
-            <input className="input" value={amount0Min} onChange={(e) => setAmount0Min(e.target.value)} />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-neutral-100">Amount1 Min</label>
-            <input className="input" value={amount1Min} onChange={(e) => setAmount1Min(e.target.value)} />
-          </div>
-        </div>
-      )}
 
-      <details className="mt-4 rounded-xl border border-cyber-tealDeep bg-cyber-navy p-3">
-        <summary className="cursor-pointer text-sm font-semibold text-brand-blue">Position Manager Multicall Data</summary>
-        <div className="mt-3">
-          <button type="button" className="btn-secondary mb-3 w-full" onClick={autoBuildMulticall}>
+        {isAdd ? (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-pcs-textDim">Tick Lower</label>
+                <input className="input text-sm" value={tickLower} onChange={(e) => setTickLower(e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-pcs-textDim">Tick Upper</label>
+                <input className="input text-sm" value={tickUpper} onChange={(e) => setTickUpper(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-pcs-textDim">Amount A</label>
+                <input
+                  className="input text-sm"
+                  value={amount0Desired}
+                  onChange={(e) => setAmount0Desired(e.target.value)}
+                  placeholder="0.0"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-pcs-textDim">Amount B</label>
+                <input
+                  className="input text-sm"
+                  value={amount1Desired}
+                  onChange={(e) => setAmount1Desired(e.target.value)}
+                  placeholder="0.0"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-pcs-textDim">Min A</label>
+                <input className="input text-sm" value={amount0Min} onChange={(e) => setAmount0Min(e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-pcs-textDim">Min B</label>
+                <input className="input text-sm" value={amount1Min} onChange={(e) => setAmount1Min(e.target.value)} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-pcs-textDim">Position Token ID</label>
+                <input className="input text-sm" value={tokenId} onChange={(e) => setTokenId(e.target.value)} placeholder="Token ID" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-pcs-textDim">Liquidity (uint128)</label>
+                <input className="input text-sm" value={liquidityRaw} onChange={(e) => setLiquidityRaw(e.target.value)} placeholder="0" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-pcs-textDim">Min A</label>
+                <input className="input text-sm" value={amount0Min} onChange={(e) => setAmount0Min(e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-pcs-textDim">Min B</label>
+                <input className="input text-sm" value={amount1Min} onChange={(e) => setAmount1Min(e.target.value)} />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Advanced Multicall */}
+      <details className="mt-4 rounded-2xl bg-pcs-cardLight">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-pcs-textSub hover:text-pcs-primary transition">
+          Position Manager Multicall Data
+        </summary>
+        <div className="border-t border-pcs-border/30 px-4 pb-4 pt-3 space-y-3">
+          <button type="button" className="btn-secondary w-full py-2 text-xs" onClick={autoBuildMulticall}>
             Auto Build Multicall
           </button>
           <textarea
-            className="input min-h-24 resize-y"
+            className="input min-h-20 resize-y text-xs"
             value={multicallDataJson}
             onChange={(e) => setMulticallDataJson(e.target.value)}
             placeholder='["0x...", "0x..."]'
@@ -212,8 +259,21 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: V4L
         </div>
       </details>
 
-      <button className="btn-primary mt-4 w-full py-3" disabled={loading} onClick={submit}>
-        {loading ? "Processing..." : chainMismatch ? "Switch Network" : mode === "add" ? "Supply" : "Remove"}
+      {/* Submit button */}
+      <button
+        className="btn-neon mt-4 w-full py-3.5 text-base"
+        disabled={loading}
+        onClick={submit}
+      >
+        {loading
+          ? "Processing..."
+          : !isConnected
+            ? "Connect Wallet"
+            : chainMismatch
+              ? "Wrong Network"
+              : isAdd
+                ? "Supply"
+                : "Remove"}
       </button>
     </div>
   );

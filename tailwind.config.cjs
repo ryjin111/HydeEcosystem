@@ -4,45 +4,47 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        cyber: {
-          cyan: "#53ebe4",
-          teal: "#0f9595",
-          tealDeep: "#084f64",
-          navy: "#03274c",
-          navyDeep: "#08173d",
-          black: "#0b001b",
-          purple: "#4d004f",
-          magenta: "#c1115a",
-          pinkHot: "#e13a6a",
-          pinkSoft: "#e46a87",
-          pinkLight: "#eca6c0"
+        // Cyberpunk Neon Dark palette
+        pcs: {
+          bg: "#0a0f1e",
+          card: "#111827",
+          cardLight: "#1a2236",
+          input: "#0d1426",
+          border: "#1e2d44",
+          hover: "#1a2540",
+          text: "#e0f7ff",
+          textSub: "#94a3b8",
+          textDim: "#4a6080",
+          primary: "#00d4ff",
+          primaryDark: "#0098b8",
+          primaryBright: "#00ffff",
+          secondary: "#7c3aed",
+          success: "#00ff9f",
+          warning: "#ffb237",
+          failure: "#ff4081",
         },
         brand: {
-          yellow: "#e13a6a",
-          blue: "#53ebe4"
+          yellow: "#ff4081",
+          blue: "#00d4ff"
         },
-        success: "#00ff9f",
-        error: "#ff3366",
-        neutral: {
-          50: "#aaaaaa",
-          100: "#8e8e8e",
-          200: "#737373",
-          300: "#5d5d5d",
-          400: "#494949",
-          500: "#383838",
-          600: "#2a2a2a",
-          700: "#1f1f1f",
-          800: "#161616",
-          900: "#111111"
-        },
-        app: {
-          bg: "#0b001b",
-          card: "#08173d"
-        }
       },
       boxShadow: {
-        card: "0 14px 34px rgba(8, 79, 100, 0.35)"
-      }
+        card: "0 0 1px rgba(0, 212, 255, 0.05), 0 4px 16px rgba(0, 0, 0, 0.3), 0 8px 32px rgba(0, 0, 0, 0.2)",
+        swap: "0 0 20px rgba(0, 212, 255, 0.08)",
+        neon: "0 0 8px rgba(0, 212, 255, 0.3), 0 0 20px rgba(0, 212, 255, 0.1)",
+        neonPink: "0 0 8px rgba(255, 64, 129, 0.3), 0 0 20px rgba(255, 64, 129, 0.1)",
+      },
+      borderRadius: {
+        '2.5xl': '1.25rem',
+        '3xl': '1.5rem',
+        '4xl': '2rem',
+      },
+      maxWidth: {
+        'swap': '480px',
+      },
+      fontFamily: {
+        sans: ['Exo 2', 'Inter', 'sans-serif'],
+      },
     }
   },
   plugins: []

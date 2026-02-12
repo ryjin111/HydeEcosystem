@@ -34,6 +34,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
   const [commandsHex, setCommandsHex] = useState("");
   const [inputsJson, setInputsJson] = useState("[]");
   const [submitting, setSubmitting] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const chainMismatch = isConnected && chainId !== network.id;
 
@@ -129,80 +130,209 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
     }
   };
 
+  const swapTokenDirection = () => {
+    setTokenIn(tokenOut);
+    setTokenOut(tokenIn);
+    setAmountIn(quotedOut);
+    setQuotedOut("");
+  };
+
   return (
     <div className="card">
-      <h2 className="mb-2 text-lg font-bold text-brand-blue">Swap (V4)</h2>
-      <p className="mb-4 text-xs text-neutral-100">Classic swap UI with V4 execution under the hood.</p>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <TokenSelector
-          label="From Token"
-          selected={tokenIn}
-          tokens={tokens}
-          onSelect={setTokenIn}
-          onAddCustom={onAddCustomToken}
-        />
-        <TokenSelector
-          label="To Token"
-          selected={tokenOut}
-          tokens={tokens}
-          onSelect={setTokenOut}
-          onAddCustom={onAddCustomToken}
-        />
+      {/* Card header */}
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-pcs-text">Exchange</h2>
+          <p className="text-xs text-pcs-textDim">Trade tokens in an instant</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowSettings((s) => !s)}
+          className="rounded-xl p-2 text-pcs-textDim hover:text-pcs-primary hover:bg-pcs-cardLight transition"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-neutral-100">Amount In</label>
-          <input className="input" value={amountIn} onChange={(e) => setAmountIn(e.target.value)} placeholder="0.0" />
+      {/* Settings panel */}
+      {showSettings && (
+        <div className="mb-4 rounded-2xl bg-pcs-cardLight p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-pcs-textSub">Slippage Tolerance</span>
+            <div className="flex items-center gap-2">
+              {["0.1", "0.5", "1.0"].map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setSlippage(val)}
+                  className={`rounded-xl px-3 py-1 text-xs font-medium transition ${
+                    slippage === val
+                      ? "bg-pcs-primary text-pcs-bg"
+                      : "bg-pcs-input text-pcs-textSub hover:text-pcs-text"
+                  }`}
+                >
+                  {val}%
+                </button>
+              ))}
+              <div className="flex items-center gap-1">
+                <input
+                  className="w-16 rounded-xl border-0 bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none focus:ring-2 focus:ring-pcs-primary/40"
+                  value={slippage}
+                  onChange={(e) => setSlippage(e.target.value)}
+                />
+                <span className="text-xs text-pcs-textDim">%</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-pcs-textSub">Tx Deadline</span>
+            <div className="flex items-center gap-1">
+              <input
+                className="w-16 rounded-xl border-0 bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none focus:ring-2 focus:ring-pcs-primary/40"
+                value={deadlineMins}
+                onChange={(e) => setDeadlineMins(e.target.value)}
+              />
+              <span className="text-xs text-pcs-textDim">min</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-pcs-textSub">Fee Tier</span>
+            <input
+              className="w-20 rounded-xl border-0 bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none focus:ring-2 focus:ring-pcs-primary/40"
+              value={feeTier}
+              onChange={(e) => setFeeTier(e.target.value)}
+              placeholder="3000"
+            />
+          </div>
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-neutral-100">Fee Tier</label>
-          <input className="input" value={feeTier} onChange={(e) => setFeeTier(e.target.value)} placeholder="3000" />
+      )}
+
+      {/* From token */}
+      <div className="rounded-2xl bg-pcs-input p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-medium text-pcs-textDim">From</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            className="flex-1 bg-transparent text-2xl font-semibold text-pcs-text outline-none placeholder:text-pcs-textDim"
+            value={amountIn}
+            onChange={(e) => setAmountIn(e.target.value)}
+            placeholder="0.0"
+            inputMode="decimal"
+          />
+          <TokenSelector
+            label="From Token"
+            selected={tokenIn}
+            tokens={tokens}
+            onSelect={setTokenIn}
+            onAddCustom={onAddCustomToken}
+          />
         </div>
       </div>
 
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-neutral-100">Slippage (%)</label>
-          <input className="input" value={slippage} onChange={(e) => setSlippage(e.target.value)} placeholder="0.50" />
+      {/* Swap direction button */}
+      <div className="relative flex justify-center -my-3 z-10">
+        <button
+          type="button"
+          onClick={swapTokenDirection}
+          className="rounded-xl border-4 border-pcs-card bg-pcs-cardLight p-1.5 text-pcs-primary hover:bg-pcs-primary hover:text-pcs-bg hover:shadow-neon transition"
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5L12 21m0 0l-7.5-7.5M12 21V3" />
+          </svg>
+        </button>
+      </div>
+
+      {/* To token */}
+      <div className="rounded-2xl bg-pcs-input p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs font-medium text-pcs-textDim">To (estimated)</span>
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-semibold text-neutral-100">Quoted Amount Out</label>
-          <input className="input" value={quotedOut} readOnly placeholder="0.0" />
+        <div className="flex items-center gap-3">
+          <input
+            className="flex-1 bg-transparent text-2xl font-semibold text-pcs-text outline-none placeholder:text-pcs-textDim"
+            value={quotedOut}
+            readOnly
+            placeholder="0.0"
+          />
+          <TokenSelector
+            label="To Token"
+            selected={tokenOut}
+            tokens={tokens}
+            onSelect={setTokenOut}
+            onAddCustom={onAddCustomToken}
+          />
         </div>
       </div>
 
-      <details className="mt-4 rounded-xl border border-cyber-tealDeep bg-cyber-navy p-3">
-        <summary className="cursor-pointer text-sm font-semibold text-brand-blue">Advanced Router Payload</summary>
-        <div className="mt-3">
-          <button type="button" className="btn-secondary mb-3 w-full" onClick={autoBuildPayload}>
+      {/* Price info */}
+      {tokenIn && tokenOut && quotedOut && Number(quotedOut) > 0 && (
+        <div className="mt-3 rounded-2xl bg-pcs-cardLight px-4 py-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-pcs-textDim">Price</span>
+            <span className="text-pcs-textSub">
+              1 {tokenIn.symbol} = {(Number(quotedOut) / Number(amountIn)).toFixed(6)} {tokenOut.symbol}
+            </span>
+          </div>
+          <div className="mt-1 flex items-center justify-between text-xs">
+            <span className="text-pcs-textDim">Slippage Tolerance</span>
+            <span className="text-pcs-textSub">{slippage}%</span>
+          </div>
+        </div>
+      )}
+
+      {/* Advanced Router Payload */}
+      <details className="mt-4 rounded-2xl bg-pcs-cardLight">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-pcs-textSub hover:text-pcs-primary transition">
+          Advanced Router Payload
+        </summary>
+        <div className="border-t border-pcs-border/30 px-4 pb-4 pt-3 space-y-3">
+          <button type="button" className="btn-secondary w-full py-2 text-xs" onClick={autoBuildPayload}>
             Auto Build Payload
           </button>
-          <label className="mb-1 block text-xs font-semibold text-neutral-100">Commands (hex bytes)</label>
-          <input
-            className="input mb-2"
-            value={commandsHex}
-            onChange={(e) => setCommandsHex(e.target.value.trim())}
-            placeholder="0x..."
-          />
-          <label className="mb-1 block text-xs font-semibold text-neutral-100">Inputs (JSON bytes[])</label>
-          <textarea
-            className="input min-h-24 resize-y"
-            value={inputsJson}
-            onChange={(e) => setInputsJson(e.target.value)}
-            placeholder='["0x...", "0x..."]'
-          />
+          <div>
+            <label className="mb-1 block text-xs font-medium text-pcs-textDim">Commands (hex bytes)</label>
+            <input
+              className="input text-xs"
+              value={commandsHex}
+              onChange={(e) => setCommandsHex(e.target.value.trim())}
+              placeholder="0x..."
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-pcs-textDim">Inputs (JSON bytes[])</label>
+            <textarea
+              className="input min-h-20 resize-y text-xs"
+              value={inputsJson}
+              onChange={(e) => setInputsJson(e.target.value)}
+              placeholder='["0x...", "0x..."]'
+            />
+          </div>
         </div>
       </details>
 
-      <div className="mt-4">
-        <label className="mb-1 block text-xs font-semibold text-neutral-100">Deadline (minutes)</label>
-        <input className="input" value={deadlineMins} onChange={(e) => setDeadlineMins(e.target.value)} />
-      </div>
-
-      <button className="btn-primary mt-4 w-full py-3" disabled={!canSwap || submitting} onClick={executeSwap}>
-        {submitting ? "Processing..." : chainMismatch ? "Switch Network" : "Swap"}
+      {/* Swap button */}
+      <button
+        className="btn-neon mt-4 w-full py-3.5 text-base"
+        disabled={!canSwap || submitting}
+        onClick={executeSwap}
+      >
+        {submitting
+          ? "Swapping..."
+          : !isConnected
+            ? "Connect Wallet"
+            : chainMismatch
+              ? "Wrong Network"
+              : !tokenIn || !tokenOut
+                ? "Select Tokens"
+                : !amountIn
+                  ? "Enter Amount"
+                  : !commandsHex.startsWith("0x")
+                    ? "Build Payload First"
+                    : "Swap"}
       </button>
     </div>
   );

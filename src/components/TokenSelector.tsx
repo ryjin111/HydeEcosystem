@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Address } from "viem";
 import type { TokenInfo } from "../utils/constants";
 
@@ -11,8 +11,8 @@ type TokenSelectorProps = {
 };
 
 export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom }: TokenSelectorProps) {
-  const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [showCustom, setShowCustom] = useState(false);
   const [customAddress, setCustomAddress] = useState("");
   const [customSymbol, setCustomSymbol] = useState("");
@@ -21,9 +21,7 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) {
-      return tokens;
-    }
+    if (!q) return tokens;
     return tokens.filter(
       (token) =>
         token.symbol.toLowerCase().includes(q) ||
@@ -32,10 +30,17 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom }
     );
   }, [query, tokens]);
 
+  const handleSelect = useCallback(
+    (token: TokenInfo) => {
+      onSelect(token);
+      setOpen(false);
+      setQuery("");
+    },
+    [onSelect]
+  );
+
   const addCustom = () => {
-    if (!customAddress.startsWith("0x") || customAddress.length !== 42) {
-      return;
-    }
+    if (!customAddress.startsWith("0x") || customAddress.length !== 42) return;
     const decimals = Number(customDecimals);
     onAddCustom({
       address: customAddress as Address,
@@ -48,91 +53,161 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom }
     setCustomSymbol("");
     setCustomName("");
     setCustomDecimals("18");
+    setOpen(false);
   };
 
+  // Close modal on Escape
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open]);
+
   return (
-    <div className="rounded-xl border border-cyber-tealDeep/70 bg-cyber-navyDeep/70 p-3">
-      <p className="mb-2 text-xs font-semibold uppercase text-neutral-100">{label}</p>
+    <>
+      {/* Trigger button - inline PancakeSwap style */}
       <button
         type="button"
-        onClick={() => setOpen((s) => !s)}
-        className="flex w-full items-center justify-between rounded-xl border border-cyber-tealDeep bg-cyber-navy px-3 py-3 text-left"
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-2 rounded-2xl bg-pcs-primary px-3 py-1.5 text-sm font-semibold text-pcs-bg hover:opacity-90 transition shrink-0"
       >
-        <span>
-          <span className="block text-sm font-bold text-neutral-50">{selected?.symbol ?? "Select token"}</span>
-          <span className="block text-xs text-neutral-100">{selected?.name ?? "Choose a token"}</span>
-        </span>
-        <span className="text-xs text-brand-blue">{open ? "Close" : "Select"}</span>
+        {selected ? (
+          <>
+            <span className="text-sm font-bold">{selected.symbol}</span>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+          </>
+        ) : (
+          <>
+            <span>Select</span>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+          </>
+        )}
       </button>
 
+      {/* Modal overlay */}
       {open && (
-        <div className="mt-2 rounded-xl border border-cyber-tealDeep bg-cyber-navy p-2">
-          <div className="mb-2 flex gap-2">
-            <input
-              className="input"
-              placeholder="Search token or address"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <button type="button" className="btn-secondary whitespace-nowrap" onClick={() => setShowCustom((s) => !s)}>
-              Add
-            </button>
-          </div>
-          <div className="max-h-52 space-y-1 overflow-auto">
-            {filtered.map((token) => (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
+
+          {/* Modal */}
+          <div className="relative w-full max-w-[420px] rounded-3xl bg-pcs-card shadow-card">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-pcs-border/50 px-5 py-4">
+              <h3 className="text-base font-semibold text-pcs-text">Select a Token</h3>
               <button
-                key={token.address}
-                type="button"
-                className={`w-full rounded-lg border px-2 py-2 text-left text-sm transition ${
-                  selected?.address === token.address
-                    ? "border-brand-blue bg-cyber-tealDeep/30 text-brand-blue"
-                    : "border-transparent bg-cyber-navyDeep hover:border-cyber-tealDeep text-neutral-50"
-                }`}
-                onClick={() => {
-                  onSelect(token);
-                  setOpen(false);
-                }}
+                onClick={() => setOpen(false)}
+                className="rounded-xl p-1.5 text-pcs-textDim hover:text-pcs-text hover:bg-pcs-cardLight transition"
               >
-                <div className="font-semibold">{token.symbol}</div>
-                <div className="truncate text-xs text-neutral-100">{token.address}</div>
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
-            ))}
+            </div>
+
+            {/* Search */}
+            <div className="px-5 pt-4">
+              <input
+                autoFocus
+                className="input"
+                placeholder="Search name or paste address"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+
+            {/* Token list */}
+            <div className="mt-3 max-h-[320px] overflow-auto px-2 pb-2">
+              {filtered.map((token) => (
+                <button
+                  key={token.address}
+                  type="button"
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+                    selected?.address === token.address
+                      ? "bg-pcs-primary/10"
+                      : "hover:bg-pcs-cardLight"
+                  }`}
+                  onClick={() => handleSelect(token)}
+                >
+                  {/* Token icon placeholder */}
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-pcs-cardLight text-xs font-bold text-pcs-primary">
+                    {token.symbol.slice(0, 2)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-pcs-text">{token.symbol}</div>
+                    <div className="truncate text-xs text-pcs-textDim">{token.name}</div>
+                  </div>
+                  {selected?.address === token.address && (
+                    <svg className="h-4 w-4 shrink-0 text-pcs-primary" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+              {filtered.length === 0 && (
+                <p className="px-3 py-6 text-center text-sm text-pcs-textDim">No tokens found</p>
+              )}
+            </div>
+
+            {/* Add custom token */}
+            <div className="border-t border-pcs-border/50 px-5 py-3">
+              {!showCustom ? (
+                <button
+                  type="button"
+                  onClick={() => setShowCustom(true)}
+                  className="w-full rounded-2xl border border-dashed border-pcs-border py-2 text-sm font-medium text-pcs-textSub hover:text-pcs-primary hover:border-pcs-primary/40 transition"
+                >
+                  + Add Custom Token
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    className="input text-xs"
+                    placeholder="Token address (0x...)"
+                    value={customAddress}
+                    onChange={(e) => setCustomAddress(e.target.value.trim())}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      className="input text-xs"
+                      placeholder="Symbol"
+                      value={customSymbol}
+                      onChange={(e) => setCustomSymbol(e.target.value)}
+                    />
+                    <input
+                      className="input text-xs"
+                      placeholder="Decimals"
+                      value={customDecimals}
+                      onChange={(e) => setCustomDecimals(e.target.value)}
+                    />
+                  </div>
+                  <input
+                    className="input text-xs"
+                    placeholder="Name"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <button className="btn-secondary flex-1 py-2 text-xs" type="button" onClick={() => setShowCustom(false)}>
+                      Cancel
+                    </button>
+                    <button className="btn-primary flex-1 py-2 text-xs" type="button" onClick={addCustom}>
+                      Add Token
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
-      {showCustom && (
-        <div className="mt-3 space-y-2 rounded-lg border border-cyber-tealDeep bg-cyber-navy p-2">
-          <input
-            className="input"
-            placeholder="Token address (0x...)"
-            value={customAddress}
-            onChange={(e) => setCustomAddress(e.target.value.trim())}
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              className="input"
-              placeholder="Symbol"
-              value={customSymbol}
-              onChange={(e) => setCustomSymbol(e.target.value)}
-            />
-            <input
-              className="input"
-              placeholder="Decimals"
-              value={customDecimals}
-              onChange={(e) => setCustomDecimals(e.target.value)}
-            />
-          </div>
-          <input
-            className="input"
-            placeholder="Name"
-            value={customName}
-            onChange={(e) => setCustomName(e.target.value)}
-          />
-          <button className="btn-primary w-full" type="button" onClick={addCustom}>
-            Save Token
-          </button>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

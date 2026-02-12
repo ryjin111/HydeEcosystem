@@ -3,32 +3,83 @@
 @tailwind utilities;
 
 :root {
-  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   color-scheme: dark;
 }
 
 body {
-  @apply min-h-screen bg-app-bg text-neutral-50;
-  background-image: radial-gradient(circle at top right, rgba(225, 58, 106, 0.12), transparent 40%),
-    radial-gradient(circle at top left, rgba(83, 235, 228, 0.12), transparent 36%);
+  @apply min-h-screen bg-pcs-bg text-pcs-text font-sans;
+  background-image:
+    radial-gradient(ellipse at 20% 0%, rgba(0, 212, 255, 0.07), transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(124, 58, 237, 0.06), transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(0, 255, 159, 0.02), transparent 60%);
 }
 
-.app-shell {
-  @apply mx-auto max-w-6xl px-4 pb-10 pt-6;
-}
-
+/* Card - cyberpunk dark card with subtle cyan border glow */
 .card {
-  @apply rounded-3xl border border-cyber-tealDeep/60 bg-app-card p-4 shadow-card md:p-6;
+  @apply rounded-3xl bg-pcs-card p-5 shadow-card;
+  border: 1px solid rgba(0, 212, 255, 0.12);
 }
 
+/* Input - deep dark input field */
 .input {
-  @apply w-full rounded-xl border border-cyber-tealDeep bg-cyber-navy px-3 py-2 text-sm text-neutral-50 outline-none transition placeholder:text-neutral-200 focus:border-brand-blue focus:ring-2 focus:ring-cyber-cyan/40;
+  @apply w-full rounded-2xl border bg-pcs-input px-4 py-3 text-sm text-pcs-text outline-none transition placeholder:text-pcs-textDim;
+  border-color: rgba(0, 212, 255, 0.1);
+}
+.input:focus {
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.1), 0 0 12px rgba(0, 212, 255, 0.08);
 }
 
+/* Primary action button - cyan neon with glow */
 .btn-primary {
-  @apply rounded-xl bg-brand-yellow px-4 py-2 font-semibold text-neutral-50 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60;
+  @apply rounded-2xl px-5 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  background: linear-gradient(135deg, #00d4ff 0%, #00ffff 50%, #00d4ff 100%);
+  color: #0a0f1e;
+  text-shadow: none;
+}
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.4), 0 0 32px rgba(0, 255, 255, 0.15);
 }
 
+/* Secondary / outline button - cyan border with glow on hover */
 .btn-secondary {
-  @apply rounded-xl border border-cyber-tealDeep bg-cyber-navy px-4 py-2 font-semibold text-neutral-50 transition hover:bg-cyber-navyDeep disabled:cursor-not-allowed disabled:opacity-60;
+  @apply rounded-2xl border bg-transparent px-4 py-2 font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  border-color: rgba(0, 212, 255, 0.35);
+  color: #00d4ff;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(0, 212, 255, 0.08);
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.15);
+}
+
+/* Neon gradient button variant (for swap CTA) */
+.btn-neon {
+  @apply rounded-2xl px-5 py-3 font-bold transition disabled:cursor-not-allowed disabled:opacity-40;
+  background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
+  color: #ffffff;
+}
+.btn-neon:hover:not(:disabled) {
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.35), 0 0 40px rgba(124, 58, 237, 0.2);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.15);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.3);
+}
+
+/* Selection highlight */
+::selection {
+  background: rgba(0, 212, 255, 0.25);
+  color: #e0f7ff;
 }
