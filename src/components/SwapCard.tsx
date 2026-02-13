@@ -34,6 +34,7 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
   const [loading, setLoading] = useState(false);
   const [balances, setBalances] = useState<Balances>({});
   const [allowance, setAllowance] = useState<bigint>(0n);
+  const [noLiquidity, setNoLiquidity] = useState(false);
 
   const chainMismatch = isConnected && chainId !== network.id;
   const slippageBps = Math.floor(Number(slippage || "0") * 100);
@@ -87,6 +88,7 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
     const quote = async () => {
       if (!publicClient || !tokenIn || !tokenOut || !amountIn || Number(amountIn) <= 0) {
         setAmountOut("");
+        setNoLiquidity(false);
         return;
       }
       try {
@@ -99,8 +101,10 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
         });
         const out = (amounts as bigint[])[1];
         setAmountOut(formatUnits(out, tokenOut.decimals));
+        setNoLiquidity(false);
       } catch {
         setAmountOut("");
+        setNoLiquidity(true);
       }
     };
     void quote();
@@ -246,12 +250,24 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
         </div>
       </div>
 
+      {noLiquidity && amountIn && Number(amountIn) > 0 && (
+        <div
+          className="mt-4 flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium"
+          style={{ background: 'rgba(255, 152, 0, 0.08)', border: '1px solid rgba(255, 152, 0, 0.3)', color: '#ffab40' }}
+        >
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+          No liquidity available for this pair
+        </div>
+      )}
+
       <button
         className="btn-primary mt-4 w-full py-3"
         onClick={swap}
-        disabled={loading || chainMismatch || !isConnected || !tokenIn || !tokenOut || tokenIn.address === tokenOut.address}
+        disabled={loading || chainMismatch || !isConnected || !tokenIn || !tokenOut || tokenIn.address === tokenOut.address || noLiquidity}
       >
-        {loading ? "Processing..." : chainMismatch ? "Switch Network" : "Swap"}
+        {loading ? "Processing..." : chainMismatch ? "Switch Network" : noLiquidity ? "No Liquidity" : "Swap"}
       </button>
     </div>
   );
