@@ -126,7 +126,14 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
     if (!walletClient || !publicClient || !address || !tokenIn) {
       return false;
     }
-    if (allowance >= amountParsed) {
+    // Read fresh allowance from chain — React state may be stale in this closure
+    const currentAllowance = await publicClient.readContract({
+      address: tokenIn.address,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [address, network.router]
+    }) as bigint;
+    if (currentAllowance >= amountParsed) {
       return true;
     }
     try {

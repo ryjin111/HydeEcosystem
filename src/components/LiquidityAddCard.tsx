@@ -136,11 +136,26 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Liquidit
       setLoading(true);
       const parsedA = parseUnits(amountA, tokenA.decimals);
       const parsedB = parseUnits(amountB, tokenB.decimals);
-      if (allowanceA < parsedA) {
+      // Read fresh allowances from chain — React state may be stale in this closure
+      const [freshAllowA, freshAllowB] = await Promise.all([
+        publicClient.readContract({
+          address: tokenA.address,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [address, network.router]
+        }) as Promise<bigint>,
+        publicClient.readContract({
+          address: tokenB.address,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [address, network.router]
+        }) as Promise<bigint>
+      ]);
+      if (freshAllowA < parsedA) {
         const okA = await approveToken(tokenA);
         if (!okA) return;
       }
-      if (allowanceB < parsedB) {
+      if (freshAllowB < parsedB) {
         const okB = await approveToken(tokenB);
         if (!okB) return;
       }

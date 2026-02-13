@@ -141,7 +141,14 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Liqui
     if (!walletClient || !publicClient || !address || !pairAddress) {
       return false;
     }
-    if (lpAllowance >= parsedLiquidity) {
+    // Read fresh allowance from chain — React state may be stale in this closure
+    const currentAllowance = await publicClient.readContract({
+      address: pairAddress,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [address, network.router]
+    }) as bigint;
+    if (currentAllowance >= parsedLiquidity) {
       return true;
     }
     try {
