@@ -57,7 +57,7 @@ export const TEMPO_MODERATO: NetworkConfig = {
 };
 
 export const ROBINHOOD_TESTNET: NetworkConfig = {
-  id: 43124,
+  id: 46630,
   name: "Robinhood Testnet",
   rpcUrl: "https://rpc.testnet.chain.robinhood.com",
   explorerUrl: "https://explorer.testnet.chain.robinhood.com",
