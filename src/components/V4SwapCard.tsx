@@ -51,6 +51,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
     spender: contracts.permit2,
     amount: amountInParsed,
     chainId: network.id,
+    isNative: tokenIn?.isNative,
   });
 
   const [approving, setApproving] = useState(false);
@@ -70,7 +71,8 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
 
   const { data: tokenInBalance } = useBalance({
     address,
-    token: tokenIn?.address as `0x${string}` | undefined,
+    // Omit `token` for native ETH so wagmi reads the native balance
+    token: tokenIn?.isNative ? undefined : (tokenIn?.address as `0x${string}` | undefined),
     chainId: network.id,
     query: { enabled: Boolean(address && tokenIn) },
   });
