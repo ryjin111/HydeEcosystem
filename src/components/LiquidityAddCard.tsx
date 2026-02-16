@@ -31,8 +31,6 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Liquidit
   const [deadlineMins, setDeadlineMins] = useState("20");
   const [loading, setLoading] = useState(false);
   const [balances, setBalances] = useState<Record<string, bigint>>({});
-  const [allowanceA, setAllowanceA] = useState<bigint>(0n);
-  const [allowanceB, setAllowanceB] = useState<bigint>(0n);
 
   const chainMismatch = isConnected && chainId !== network.id;
   const slippageBps = Math.floor(Number(slippage || "0") * 100);
@@ -47,39 +45,22 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Liquidit
       return;
     }
     try {
-      const [balA, balB, allowanceTokenA, allowanceTokenB] = await Promise.all([
-        publicClient.readContract({
-          address: tokenA.address,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [address]
-        }),
-        publicClient.readContract({
-          address: tokenB.address,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [address]
-        }),
-        publicClient.readContract({
-          address: tokenA.address,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, network.router]
-        }),
-        publicClient.readContract({
-          address: tokenB.address,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, network.router]
-        })
-      ]);
+      const fetchBal = async (t: TokenInfo) =>
+        t.isNative
+          ? publicClient.getBalance({ address })
+          : (publicClient.readContract({
+              address: t.address,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [address],
+            }) as Promise<bigint>);
+
+      const [balA, balB] = await Promise.all([fetchBal(tokenA), fetchBal(tokenB)]);
 
       setBalances({
         [tokenA.address]: balA as bigint,
-        [tokenB.address]: balB as bigint
+        [tokenB.address]: balB as bigint,
       });
-      setAllowanceA(allowanceTokenA as bigint);
-      setAllowanceB(allowanceTokenB as bigint);
     } catch {
       toast.error("Failed to load balances");
     }
@@ -89,10 +70,22 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Liquidit
     void fetchState();
   }, [publicClient, address, tokenA, tokenB]);
 
-  const approveToken = async (token: TokenInfo) => {
+  const approveToken = async (token: TokenInfo, amount: bigint) => {
     if (!walletClient || !publicClient || !address) {
       return false;
     }
+    // Native ETH never needs approval
+    if (token.isNative) return true;
+
+    // Read fresh allowance from chain
+    const currentAllowance = (await publicClient.readContract({
+      address: token.address,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [address, network.router],
+    })) as bigint;
+    if (currentAllowance >= amount) return true;
+
     try {
       toast.loading(`Approving ${token.symbol}...`, { id: `approve-${token.address}` });
       const hash = await walletClient.writeContract({
@@ -101,7 +94,7 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Liquidit
         functionName: "approve",
         args: [network.router, maxUint256],
         account: address,
-        chain: walletClient.chain
+        chain: walletClient.chain,
       });
       await publicClient.waitForTransactionReceipt({ hash });
       toast.success(`${token.symbol} approved`, { id: `approve-${token.address}` });
@@ -136,43 +129,50 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Liquidit
       setLoading(true);
       const parsedA = parseUnits(amountA, tokenA.decimals);
       const parsedB = parseUnits(amountB, tokenB.decimals);
-      // Read fresh allowances from chain — React state may be stale in this closure
-      const [freshAllowA, freshAllowB] = await Promise.all([
-        publicClient.readContract({
-          address: tokenA.address,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, network.router]
-        }) as Promise<bigint>,
-        publicClient.readContract({
-          address: tokenB.address,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, network.router]
-        }) as Promise<bigint>
-      ]);
-      if (freshAllowA < parsedA) {
-        const okA = await approveToken(tokenA);
-        if (!okA) return;
-      }
-      if (freshAllowB < parsedB) {
-        const okB = await approveToken(tokenB);
-        if (!okB) return;
-      }
+
+      const okA = await approveToken(tokenA, parsedA);
+      if (!okA) return;
+      const okB = await approveToken(tokenB, parsedB);
+      if (!okB) return;
 
       const minA = calcMinAmount(parsedA, slippageBps);
       const minB = calcMinAmount(parsedB, slippageBps);
       const deadline = BigInt(Math.floor(Date.now() / 1000) + Number(deadlineMins) * 60);
 
       toast.loading("Sending add liquidity tx...", { id: "add-liq" });
-      const hash = await walletClient.writeContract({
-        address: network.router,
-        abi: routerAbi,
-        functionName: "addLiquidity",
-        args: [tokenA.address, tokenB.address, parsedA, parsedB, minA, minB, address, deadline],
-        account: address,
-        chain: walletClient.chain
-      });
+
+      // Determine if one side is native ETH
+      const nativeToken = tokenA.isNative ? tokenA : tokenB.isNative ? tokenB : null;
+      const erc20Token = nativeToken === tokenA ? tokenB : nativeToken === tokenB ? tokenA : null;
+
+      let hash: `0x${string}`;
+      if (nativeToken && erc20Token) {
+        const isANative = tokenA.isNative;
+        const parsedToken = isANative ? parsedB : parsedA;
+        const parsedETH = isANative ? parsedA : parsedB;
+        const minToken = isANative ? minB : minA;
+        const minETH = isANative ? minA : minB;
+
+        hash = await walletClient.writeContract({
+          address: network.router,
+          abi: routerAbi,
+          functionName: "addLiquidityETH",
+          args: [erc20Token.address, parsedToken, minToken, minETH, address, deadline],
+          value: parsedETH,
+          account: address,
+          chain: walletClient.chain,
+        });
+      } else {
+        hash = await walletClient.writeContract({
+          address: network.router,
+          abi: routerAbi,
+          functionName: "addLiquidity",
+          args: [tokenA.address, tokenB.address, parsedA, parsedB, minA, minB, address, deadline],
+          account: address,
+          chain: walletClient.chain,
+        });
+      }
+
       await publicClient.waitForTransactionReceipt({ hash });
       toast.success("Liquidity supplied", { id: "add-liq" });
       await fetchState();

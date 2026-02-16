@@ -8,6 +8,8 @@ export type TokenInfo = {
   decimals: number;
   /** URL to a token logo image. Put files in /public/tokens/<symbol>.svg or <address>.png */
   logoURI?: string;
+  /** True for the chain's native currency (ETH). No approval needed; sent as msg.value. */
+  isNative?: boolean;
 };
 
 export type NetworkConfig = {
@@ -19,6 +21,8 @@ export type NetworkConfig = {
   currencySymbol: string;
   factory: Address;
   router: Address;
+  /** WETH address used by the router for native ETH pairs. */
+  weth: Address;
   /** Official token list for this chain. Users can add extra tokens via the custom token flow. */
   tokens: TokenInfo[];
 };
@@ -44,6 +48,7 @@ export type V4EncodingTemplates = {
 // Replace these with deployed addresses per network.
 const PLACEHOLDER_FACTORY = "0x000000000000000000000000000000000000fAc7" as Address;
 const PLACEHOLDER_ROUTER = "0x000000000000000000000000000000000000aAA1" as Address;
+const PLACEHOLDER_WETH = "0x0000000000000000000000000000000000000000" as Address;
 
 export const TEMPO_MODERATO: NetworkConfig = {
   id: 42431,
@@ -53,6 +58,7 @@ export const TEMPO_MODERATO: NetworkConfig = {
   currencySymbol: "USD",
   factory: PLACEHOLDER_FACTORY,
   router: PLACEHOLDER_ROUTER,
+  weth: PLACEHOLDER_WETH,
   tokens: TEMPO_MODERATO_TOKENS,
 };
 
@@ -64,6 +70,7 @@ export const ROBINHOOD_TESTNET: NetworkConfig = {
   currencySymbol: "ETH",
   factory: PLACEHOLDER_FACTORY,
   router: PLACEHOLDER_ROUTER,
+  weth: "0x7943e237c7F95DA44E0301572D358911207852Fa",
   tokens: ROBINHOOD_TESTNET_TOKENS,
 };
 
@@ -76,6 +83,7 @@ export const PHAROS_ATLANTIC_TESTNET: NetworkConfig = {
   currencySymbol: "USD",
   factory: PLACEHOLDER_FACTORY,
   router: PLACEHOLDER_ROUTER,
+  weth: PLACEHOLDER_WETH,
   tokens: PHAROS_ATLANTIC_TOKENS,
 };
 
@@ -194,6 +202,66 @@ export const routerAbi = [
     outputs: [
       { name: "amountA", type: "uint256" },
       { name: "amountB", type: "uint256" }
+    ]
+  },
+  {
+    type: "function",
+    name: "swapExactETHForTokens",
+    stateMutability: "payable",
+    inputs: [
+      { name: "amountOutMin", type: "uint256" },
+      { name: "path", type: "address[]" },
+      { name: "to", type: "address" },
+      { name: "deadline", type: "uint256" }
+    ],
+    outputs: [{ name: "amounts", type: "uint256[]" }]
+  },
+  {
+    type: "function",
+    name: "swapExactTokensForETH",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "amountIn", type: "uint256" },
+      { name: "amountOutMin", type: "uint256" },
+      { name: "path", type: "address[]" },
+      { name: "to", type: "address" },
+      { name: "deadline", type: "uint256" }
+    ],
+    outputs: [{ name: "amounts", type: "uint256[]" }]
+  },
+  {
+    type: "function",
+    name: "addLiquidityETH",
+    stateMutability: "payable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "amountTokenDesired", type: "uint256" },
+      { name: "amountTokenMin", type: "uint256" },
+      { name: "amountETHMin", type: "uint256" },
+      { name: "to", type: "address" },
+      { name: "deadline", type: "uint256" }
+    ],
+    outputs: [
+      { name: "amountToken", type: "uint256" },
+      { name: "amountETH", type: "uint256" },
+      { name: "liquidity", type: "uint256" }
+    ]
+  },
+  {
+    type: "function",
+    name: "removeLiquidityETH",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "liquidity", type: "uint256" },
+      { name: "amountTokenMin", type: "uint256" },
+      { name: "amountETHMin", type: "uint256" },
+      { name: "to", type: "address" },
+      { name: "deadline", type: "uint256" }
+    ],
+    outputs: [
+      { name: "amountToken", type: "uint256" },
+      { name: "amountETH", type: "uint256" }
     ]
   }
 ] as const;

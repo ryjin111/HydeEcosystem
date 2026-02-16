@@ -31,12 +31,15 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Liqui
   const [deadlineMins, setDeadlineMins] = useState("20");
   const [loading, setLoading] = useState(false);
   const [lpBalance, setLpBalance] = useState<bigint>(0n);
-  const [lpAllowance, setLpAllowance] = useState<bigint>(0n);
   const [estimatedA, setEstimatedA] = useState<bigint>(0n);
   const [estimatedB, setEstimatedB] = useState<bigint>(0n);
 
   const chainMismatch = isConnected && chainId !== network.id;
   const slippageBps = Math.floor(Number(slippage || "0") * 100);
+
+  /** Resolve token address for factory/router (native ETH → WETH). */
+  const resolveAddress = (token: TokenInfo) =>
+    token.isNative ? network.weth : token.address;
 
   useEffect(() => {
     setTokenA(tokens[0]);
@@ -52,36 +55,26 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Liqui
         address: network.factory,
         abi: factoryAbi,
         functionName: "getPair",
-        args: [tokenA.address, tokenB.address]
+        args: [resolveAddress(tokenA), resolveAddress(tokenB)],
       });
 
       const resolvedPair = pair as `0x${string}`;
       setPairAddress(resolvedPair);
       if (resolvedPair === zeroAddress) {
         setLpBalance(0n);
-        setLpAllowance(0n);
         setEstimatedA(0n);
         setEstimatedB(0n);
         return;
       }
 
-      const [balance, allowance] = await Promise.all([
-        publicClient.readContract({
-          address: resolvedPair,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [address]
-        }),
-        publicClient.readContract({
-          address: resolvedPair,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, network.router]
-        })
-      ]);
+      const balance = (await publicClient.readContract({
+        address: resolvedPair,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address],
+      })) as bigint;
 
-      setLpBalance(balance as bigint);
-      setLpAllowance(allowance as bigint);
+      setLpBalance(balance);
     } catch {
       toast.error("Failed to fetch pair info");
       setPairAddress(undefined);
@@ -101,24 +94,27 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Liqui
       }
       try {
         const parsedLiquidity = parseUnits(lpAmount, 18);
+        const addrA = resolveAddress(tokenA);
+        const addrB = resolveAddress(tokenB);
+
         const [reserveAInPair, reserveBInPair, totalSupply] = await Promise.all([
           publicClient.readContract({
-            address: tokenA.address,
+            address: addrA,
             abi: erc20Abi,
             functionName: "balanceOf",
-            args: [pairAddress]
+            args: [pairAddress],
           }),
           publicClient.readContract({
-            address: tokenB.address,
+            address: addrB,
             abi: erc20Abi,
             functionName: "balanceOf",
-            args: [pairAddress]
+            args: [pairAddress],
           }),
           publicClient.readContract({
             address: pairAddress,
             abi: erc20Abi,
-            functionName: "totalSupply"
-          })
+            functionName: "totalSupply",
+          }),
         ]);
 
         const supply = totalSupply as bigint;
@@ -141,13 +137,13 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Liqui
     if (!walletClient || !publicClient || !address || !pairAddress) {
       return false;
     }
-    // Read fresh allowance from chain — React state may be stale in this closure
-    const currentAllowance = await publicClient.readContract({
+    // Read fresh allowance from chain
+    const currentAllowance = (await publicClient.readContract({
       address: pairAddress,
       abi: erc20Abi,
       functionName: "allowance",
-      args: [address, network.router]
-    }) as bigint;
+      args: [address, network.router],
+    })) as bigint;
     if (currentAllowance >= parsedLiquidity) {
       return true;
     }
@@ -159,7 +155,7 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Liqui
         functionName: "approve",
         args: [network.router, maxUint256],
         account: address,
-        chain: walletClient.chain
+        chain: walletClient.chain,
       });
       await publicClient.waitForTransactionReceipt({ hash });
       toast.success("LP approval done", { id: "approve-lp" });
@@ -201,14 +197,35 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Liqui
       const deadline = BigInt(Math.floor(Date.now() / 1000) + Number(deadlineMins) * 60);
 
       toast.loading("Sending remove liquidity tx...", { id: "remove-liq" });
-      const hash = await walletClient.writeContract({
-        address: network.router,
-        abi: routerAbi,
-        functionName: "removeLiquidity",
-        args: [tokenA.address, tokenB.address, parsedLiquidity, amountAMin, amountBMin, address, deadline],
-        account: address,
-        chain: walletClient.chain
-      });
+
+      const nativeToken = tokenA.isNative ? tokenA : tokenB.isNative ? tokenB : null;
+      const erc20Token = nativeToken === tokenA ? tokenB : nativeToken === tokenB ? tokenA : null;
+
+      let hash: `0x${string}`;
+      if (nativeToken && erc20Token) {
+        const isANative = tokenA.isNative;
+        const minToken = isANative ? amountBMin : amountAMin;
+        const minETH = isANative ? amountAMin : amountBMin;
+
+        hash = await walletClient.writeContract({
+          address: network.router,
+          abi: routerAbi,
+          functionName: "removeLiquidityETH",
+          args: [erc20Token.address, parsedLiquidity, minToken, minETH, address, deadline],
+          account: address,
+          chain: walletClient.chain,
+        });
+      } else {
+        hash = await walletClient.writeContract({
+          address: network.router,
+          abi: routerAbi,
+          functionName: "removeLiquidity",
+          args: [tokenA.address, tokenB.address, parsedLiquidity, amountAMin, amountBMin, address, deadline],
+          account: address,
+          chain: walletClient.chain,
+        });
+      }
+
       await publicClient.waitForTransactionReceipt({ hash });
       toast.success("Liquidity removed", { id: "remove-liq" });
       await fetchPairAndState();

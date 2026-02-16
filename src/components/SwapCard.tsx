@@ -39,6 +39,10 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
   const chainMismatch = isConnected && chainId !== network.id;
   const slippageBps = Math.floor(Number(slippage || "0") * 100);
 
+  /** Resolve token address for router path (native ETH → WETH). */
+  const pathAddress = (token: TokenInfo) =>
+    token.isNative ? network.weth : token.address;
+
   useEffect(() => {
     setTokenIn(tokens[0]);
     setTokenOut(tokens[1]);
@@ -49,32 +53,35 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
       return;
     }
     try {
-      const [balIn, balOut, allowanceIn] = await Promise.all([
-        publicClient.readContract({
-          address: tokenIn.address,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [address]
-        }),
-        publicClient.readContract({
-          address: tokenOut.address,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [address]
-        }),
-        publicClient.readContract({
-          address: tokenIn.address,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, network.router]
-        })
+      const fetchBal = async (t: TokenInfo) =>
+        t.isNative
+          ? publicClient.getBalance({ address })
+          : (publicClient.readContract({
+              address: t.address,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [address],
+            }) as Promise<bigint>);
+
+      const [balIn, balOut] = await Promise.all([
+        fetchBal(tokenIn),
+        fetchBal(tokenOut),
       ]);
+
+      const allowanceIn = tokenIn.isNative
+        ? maxUint256
+        : ((await publicClient.readContract({
+            address: tokenIn.address,
+            abi: erc20Abi,
+            functionName: "allowance",
+            args: [address, network.router],
+          })) as bigint);
 
       setBalances({
         [tokenIn.address]: balIn as bigint,
-        [tokenOut.address]: balOut as bigint
+        [tokenOut.address]: balOut as bigint,
       });
-      setAllowance(allowanceIn as bigint);
+      setAllowance(allowanceIn);
     } catch {
       toast.error("Failed to fetch balances/allowance");
     }
@@ -97,7 +104,7 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
           address: network.router,
           abi: routerAbi,
           functionName: "getAmountsOut",
-          args: [parsedIn, [tokenIn.address, tokenOut.address]]
+          args: [parsedIn, [pathAddress(tokenIn), pathAddress(tokenOut)]],
         });
         const out = (amounts as bigint[])[1];
         setAmountOut(formatUnits(out, tokenOut.decimals));
@@ -126,13 +133,16 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
     if (!walletClient || !publicClient || !address || !tokenIn) {
       return false;
     }
-    // Read fresh allowance from chain — React state may be stale in this closure
-    const currentAllowance = await publicClient.readContract({
+    // Native ETH never needs approval
+    if (tokenIn.isNative) return true;
+
+    // Read fresh allowance from chain
+    const currentAllowance = (await publicClient.readContract({
       address: tokenIn.address,
       abi: erc20Abi,
       functionName: "allowance",
-      args: [address, network.router]
-    }) as bigint;
+      args: [address, network.router],
+    })) as bigint;
     if (currentAllowance >= amountParsed) {
       return true;
     }
@@ -145,7 +155,7 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
         functionName: "approve",
         args: [network.router, maxUint256],
         account: address,
-        chain: walletClient.chain
+        chain: walletClient.chain,
       });
       await publicClient.waitForTransactionReceipt({ hash });
       toast.success("Approval confirmed", { id: "approve" });
@@ -184,14 +194,41 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
 
       const deadline = BigInt(Math.floor(Date.now() / 1000) + Number(deadlineMins) * 60);
       toast.loading("Sending swap transaction...", { id: "swap" });
-      const hash = await walletClient.writeContract({
-        address: network.router,
-        abi: routerAbi,
-        functionName: "swapExactTokensForTokens",
-        args: [parsedIn, minOut, [tokenIn.address, tokenOut.address], address, deadline],
-        account: address,
-        chain: walletClient.chain
-      });
+
+      let hash: `0x${string}`;
+      if (tokenIn.isNative) {
+        // ETH → Token
+        hash = await walletClient.writeContract({
+          address: network.router,
+          abi: routerAbi,
+          functionName: "swapExactETHForTokens",
+          args: [minOut, [network.weth, tokenOut.address], address, deadline],
+          value: parsedIn,
+          account: address,
+          chain: walletClient.chain,
+        });
+      } else if (tokenOut.isNative) {
+        // Token → ETH
+        hash = await walletClient.writeContract({
+          address: network.router,
+          abi: routerAbi,
+          functionName: "swapExactTokensForETH",
+          args: [parsedIn, minOut, [tokenIn.address, network.weth], address, deadline],
+          account: address,
+          chain: walletClient.chain,
+        });
+      } else {
+        // Token → Token
+        hash = await walletClient.writeContract({
+          address: network.router,
+          abi: routerAbi,
+          functionName: "swapExactTokensForTokens",
+          args: [parsedIn, minOut, [tokenIn.address, tokenOut.address], address, deadline],
+          account: address,
+          chain: walletClient.chain,
+        });
+      }
+
       await publicClient.waitForTransactionReceipt({ hash });
       toast.success("Swap successful", { id: "swap" });
       await fetchBalancesAndAllowance();
