@@ -133,9 +133,11 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         tokenOut &&
         tokenIn.address !== tokenOut.address &&
         amountIn &&
+        quotedOut &&
+        Number(quotedOut) > 0 &&
         commandsHex.startsWith("0x")
     );
-  }, [isConnected, chainMismatch, needsApproval, tokenIn, tokenOut, amountIn, commandsHex]);
+  }, [isConnected, chainMismatch, needsApproval, tokenIn, tokenOut, amountIn, quotedOut, commandsHex]);
 
   const executeSwap = async () => {
     if (!walletClient || !publicClient || !address || !canSwap) {
@@ -184,6 +186,33 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
     }
   };
 
+  // Auto-build payload whenever inputs change
+  useEffect(() => {
+    if (!address || !tokenIn || !tokenOut || !amountIn || !quotedOut || Number(quotedOut) <= 0) {
+      setCommandsHex("");
+      setInputsJson("[]");
+      return;
+    }
+    try {
+      const built = buildSwapTemplatePayload({
+        tokenIn: tokenIn.isNative ? network.weth : tokenIn.address,
+        tokenOut: tokenOut.isNative ? network.weth : tokenOut.address,
+        fee: Number(feeTier),
+        recipient: address,
+        amountIn,
+        amountOutQuoted: quotedOut,
+        slippagePercent: slippage,
+        decimalsIn: tokenIn.decimals,
+        decimalsOut: tokenOut.decimals
+      });
+      setCommandsHex(built.commands);
+      setInputsJson(JSON.stringify(built.inputs, null, 2));
+    } catch {
+      setCommandsHex("");
+      setInputsJson("[]");
+    }
+  }, [address, tokenIn, tokenOut, amountIn, quotedOut, feeTier, slippage, network.weth]);
+
   const autoBuildPayload = () => {
     if (!address || !tokenIn || !tokenOut || !amountIn) {
       toast.error("Fill token + amount fields first");
@@ -191,8 +220,8 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
     }
     try {
       const built = buildSwapTemplatePayload({
-        tokenIn: tokenIn.address,
-        tokenOut: tokenOut.address,
+        tokenIn: tokenIn.isNative ? network.weth : tokenIn.address,
+        tokenOut: tokenOut.isNative ? network.weth : tokenOut.address,
         fee: Number(feeTier),
         recipient: address,
         amountIn,
@@ -453,8 +482,8 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
                     ? "Enter Amount"
                     : needsApproval
                       ? "Approve First"
-                      : !commandsHex.startsWith("0x")
-                        ? "Build Payload First"
+                      : !quotedOut || Number(quotedOut) <= 0
+                        ? "No Quote"
                         : "Swap"}
         </button>
       </div>
