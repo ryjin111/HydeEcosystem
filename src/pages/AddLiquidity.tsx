@@ -12,7 +12,7 @@ export function AddLiquidityPage({ network, tokens, onAddCustomToken }: Props) {
   const [mode, setMode] = useState<"add" | "remove">("add");
 
   return (
-    <div>
+    <div className="max-w-[440px] mx-auto">
       {/* Add / Remove toggle */}
       <div
         className="mb-4 flex items-center rounded-2xl p-1 mx-auto"

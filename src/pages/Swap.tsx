@@ -8,5 +8,9 @@ type Props = {
 };
 
 export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
-  return <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} />;
+  return (
+    <div className="max-w-[440px] mx-auto">
+      <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} />
+    </div>
+  );
 }
