@@ -191,7 +191,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: Pro
         functionName: "positions",
         args:         [BigInt(tokenId)],
       });
-      setPositionLiquidity(result.liquidity);
+      setPositionLiquidity(result[7]); // index 7 = liquidity field
       toast.success("Position loaded");
     } catch {
       toast.error("Could not fetch position — check the token ID");
