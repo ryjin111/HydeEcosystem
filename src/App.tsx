@@ -3,6 +3,8 @@ import { useMemo, useState } from "react";
 import { Header } from "./components/Header";
 import { AddLiquidityPage } from "./pages/AddLiquidity";
 import { SwapPage } from "./pages/Swap";
+import { FarmsPage } from "./pages/Farms";
+import { PoolsPage } from "./pages/Pools";
 import { NETWORKS } from "./utils/constants";
 import { useTokenList } from "./hooks/useTokenList";
 
@@ -29,8 +31,8 @@ function App() {
     {
       title: "Earn",
       items: [
-        { to: "#", label: "Farms (Soon)", icon: FarmIcon, disabled: true },
-        { to: "#", label: "Pools (Soon)", icon: PoolIcon, disabled: true },
+        { to: "/farms", label: "Farms", icon: FarmIcon },
+        { to: "/pools", label: "Pools", icon: PoolIcon },
       ],
     },
     {
@@ -136,6 +138,8 @@ function App() {
                 path="/add-liquidity"
                 element={<AddLiquidityPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />}
               />
+              <Route path="/farms" element={<FarmsPage network={selectedNetwork} />} />
+              <Route path="/pools" element={<PoolsPage network={selectedNetwork} />} />
               <Route path="/remove-liquidity" element={<Navigate to="/add-liquidity" replace />} />
               <Route path="*" element={<Navigate to="/swap" replace />} />
             </Routes>

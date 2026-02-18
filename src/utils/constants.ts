@@ -459,3 +459,60 @@ export const V4_ACTIONS = {
 } as const;
 
 export const SWEEP_ETH_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
+
+// ─── MasterChef (yield farming) ───────────────────────────────────────────
+export const PLACEHOLDER_MASTERCHEF = "0x000000000000000000000000000000000000cHeF" as Address;
+
+export const masterChefAbi = [
+  {
+    type: "function", name: "pendingReward", stateMutability: "view",
+    inputs: [{ name: "_pid", type: "uint256" }, { name: "_user", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }]
+  },
+  {
+    type: "function", name: "userInfo", stateMutability: "view",
+    inputs: [{ name: "_pid", type: "uint256" }, { name: "_user", type: "address" }],
+    outputs: [{ name: "amount", type: "uint256" }, { name: "rewardDebt", type: "uint256" }]
+  },
+  {
+    type: "function", name: "deposit", stateMutability: "nonpayable",
+    inputs: [{ name: "_pid", type: "uint256" }, { name: "_amount", type: "uint256" }],
+    outputs: []
+  },
+  {
+    type: "function", name: "withdraw", stateMutability: "nonpayable",
+    inputs: [{ name: "_pid", type: "uint256" }, { name: "_amount", type: "uint256" }],
+    outputs: []
+  }
+] as const;
+
+// ─── StakingPool (single-token staking) ──────────────────────────────────
+export const PLACEHOLDER_STAKING_POOL = "0x000000000000000000000000000000000000P00L" as Address;
+
+export const stakingPoolAbi = [
+  {
+    type: "function", name: "pendingReward", stateMutability: "view",
+    inputs: [{ name: "_user", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }]
+  },
+  {
+    type: "function", name: "userInfo", stateMutability: "view",
+    inputs: [{ name: "_user", type: "address" }],
+    outputs: [{ name: "amount", type: "uint256" }, { name: "rewardDebt", type: "uint256" }]
+  },
+  {
+    type: "function", name: "deposit", stateMutability: "nonpayable",
+    inputs: [{ name: "_amount", type: "uint256" }],
+    outputs: []
+  },
+  {
+    type: "function", name: "withdraw", stateMutability: "nonpayable",
+    inputs: [{ name: "_amount", type: "uint256" }],
+    outputs: []
+  },
+  {
+    type: "function", name: "harvest", stateMutability: "nonpayable",
+    inputs: [],
+    outputs: []
+  }
+] as const;
