@@ -179,7 +179,6 @@ export function buildRemoveLiquidityTemplatePayload(params: RemoveLiquidityTempl
   if (liquidity === 0n) throw new Error("liquidity must be greater than 0");
   const amount0Min = parseUnits(params.amount0Min || "0", params.decimals0);
   const amount1Min = parseUnits(params.amount1Min || "0", params.decimals1);
-  if (amount0Min === 0n && amount1Min === 0n) throw new Error("at least one of amount0Min or amount1Min must be non-zero to prevent full slippage");
   const encoded = encodeAbiParameters(
     parseAbiParameters("uint256,uint128,uint256,uint256,address"),
     [
