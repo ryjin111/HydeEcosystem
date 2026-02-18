@@ -87,38 +87,38 @@ function PoolCard({ pool, network }: { pool: PoolConfig; network: NetworkConfig 
   const hasPending = pendingAmt > 0n;
 
   return (
-    <div className="rounded-2xl overflow-hidden flex flex-col" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(0,212,255,0.08)" }}>
+    <div className="rounded-2xl flex flex-col" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(0,212,255,0.08)" }}>
       {/* card body */}
       <div className="p-4 flex-1">
         {/* header */}
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-start justify-between mb-4 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="relative shrink-0">
-              <img src={pool.stakedLogo} alt={pool.stakedSymbol} className="h-10 w-10 rounded-full ring-2 ring-pcs-bg object-contain" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              <img src={pool.rewardLogo} alt={pool.rewardSymbol} className="h-5 w-5 rounded-full ring-2 ring-pcs-bg absolute -bottom-0.5 -right-0.5 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              <img src={pool.stakedLogo} alt={pool.stakedSymbol} className="h-9 w-9 rounded-full ring-2 ring-pcs-bg object-contain" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              <img src={pool.rewardLogo} alt={pool.rewardSymbol} className="h-4 w-4 rounded-full ring-2 ring-pcs-bg absolute -bottom-0.5 -right-0.5 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
             </div>
-            <div>
-              <p className="text-base font-bold text-pcs-text leading-tight">Stake {pool.stakedSymbol}</p>
-              <p className="text-[11px] text-pcs-textDim">Earn {pool.rewardSymbol}</p>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-pcs-text leading-tight truncate">Stake {pool.stakedSymbol}</p>
+              <p className="text-[10px] text-pcs-textDim">Earn {pool.rewardSymbol}</p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             {fetching && <span className="text-[10px] text-pcs-textDim">…</span>}
             {pool.isAutoCompound && (
-              <span className="rounded-lg px-2 py-0.5 text-[11px] font-bold text-pcs-primary" style={{ background: "rgba(0,212,255,0.12)" }}>Auto</span>
+              <span className="rounded-lg px-2 py-0.5 text-[10px] font-bold text-pcs-primary whitespace-nowrap" style={{ background: "rgba(0,212,255,0.12)" }}>Auto</span>
             )}
           </div>
         </div>
 
         {/* APR + Total Staked */}
         <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="rounded-xl p-3" style={{ background: "rgba(0,212,255,0.04)" }}>
+          <div className="rounded-xl p-2.5" style={{ background: "rgba(0,212,255,0.04)" }}>
             <p className="text-[10px] text-pcs-textDim mb-0.5 uppercase tracking-wide">APR</p>
-            <p className="text-lg font-bold text-green-400">{pool.apr.toFixed(1)}%</p>
+            <p className="text-sm font-bold text-green-400">{pool.apr.toFixed(1)}%</p>
           </div>
-          <div className="rounded-xl p-3" style={{ background: "rgba(0,212,255,0.04)" }}>
+          <div className="rounded-xl p-2.5" style={{ background: "rgba(0,212,255,0.04)" }}>
             <p className="text-[10px] text-pcs-textDim mb-0.5 uppercase tracking-wide">Total Staked</p>
-            <p className="text-lg font-bold text-pcs-text">{pool.totalStaked}</p>
+            <p className="text-sm font-bold text-pcs-text truncate">{pool.totalStaked}</p>
           </div>
         </div>
 

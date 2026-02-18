@@ -81,36 +81,36 @@ function FarmCard({ farm, network }: { farm: FarmConfig; network: NetworkConfig 
   const hasPending = pendingAmt > 0n;
 
   return (
-    <div className="rounded-2xl overflow-hidden flex flex-col" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(0,212,255,0.08)" }}>
+    <div className="rounded-2xl flex flex-col" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(0,212,255,0.08)" }}>
       {/* card body */}
       <div className="p-4 flex-1">
         {/* header row */}
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="relative flex">
-              <img src={farm.tokenALogo} alt={farm.tokenASymbol} className="h-9 w-9 rounded-full ring-2 ring-pcs-bg" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              <img src={farm.tokenBLogo} alt={farm.tokenBSymbol} className="h-9 w-9 rounded-full ring-2 ring-pcs-bg -ml-2.5" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        <div className="flex items-start justify-between mb-4 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="relative flex shrink-0">
+              <img src={farm.tokenALogo} alt={farm.tokenASymbol} className="h-8 w-8 rounded-full ring-2 ring-pcs-bg" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              <img src={farm.tokenBLogo} alt={farm.tokenBSymbol} className="h-8 w-8 rounded-full ring-2 ring-pcs-bg -ml-2" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
             </div>
-            <div>
-              <p className="text-base font-bold text-pcs-text leading-tight">{farm.tokenASymbol}/{farm.tokenBSymbol}</p>
-              <p className="text-[11px] text-pcs-textDim">{farm.feeTier} fee</p>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-pcs-text leading-tight truncate">{farm.tokenASymbol}/{farm.tokenBSymbol}</p>
+              <p className="text-[10px] text-pcs-textDim">{farm.feeTier} fee</p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             {fetching && <span className="text-[10px] text-pcs-textDim">…</span>}
-            <span className="rounded-lg px-2 py-0.5 text-[11px] font-bold text-pcs-primary" style={{ background: "rgba(0,212,255,0.12)" }}>{farm.multiplier}</span>
+            <span className="rounded-lg px-2 py-0.5 text-[10px] font-bold text-pcs-primary whitespace-nowrap" style={{ background: "rgba(0,212,255,0.12)" }}>{farm.multiplier}</span>
           </div>
         </div>
 
         {/* APR + TVL */}
         <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="rounded-xl p-3" style={{ background: "rgba(0,212,255,0.04)" }}>
+          <div className="rounded-xl p-2.5" style={{ background: "rgba(0,212,255,0.04)" }}>
             <p className="text-[10px] text-pcs-textDim mb-0.5 uppercase tracking-wide">APR</p>
-            <p className="text-lg font-bold text-green-400">{farm.apr.toFixed(1)}%</p>
+            <p className="text-sm font-bold text-green-400">{farm.apr.toFixed(1)}%</p>
           </div>
-          <div className="rounded-xl p-3" style={{ background: "rgba(0,212,255,0.04)" }}>
+          <div className="rounded-xl p-2.5" style={{ background: "rgba(0,212,255,0.04)" }}>
             <p className="text-[10px] text-pcs-textDim mb-0.5 uppercase tracking-wide">TVL</p>
-            <p className="text-lg font-bold text-pcs-text">{farm.tvl}</p>
+            <p className="text-sm font-bold text-pcs-text truncate">{farm.tvl}</p>
           </div>
         </div>
 

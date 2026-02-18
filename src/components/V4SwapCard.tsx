@@ -213,31 +213,6 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
     }
   }, [address, tokenIn, tokenOut, amountIn, quotedOut, feeTier, slippage, network.weth]);
 
-  const autoBuildPayload = () => {
-    if (!address || !tokenIn || !tokenOut || !amountIn) {
-      toast.error("Fill token + amount fields first");
-      return;
-    }
-    try {
-      const built = buildSwapTemplatePayload({
-        tokenIn: tokenIn.isNative ? network.weth : tokenIn.address,
-        tokenOut: tokenOut.isNative ? network.weth : tokenOut.address,
-        fee: Number(feeTier),
-        recipient: address,
-        amountIn,
-        amountOutQuoted: quotedOut || "0",
-        slippagePercent: slippage,
-        decimalsIn: tokenIn.decimals,
-        decimalsOut: tokenOut.decimals
-      });
-      setCommandsHex(built.commands);
-      setInputsJson(JSON.stringify(built.inputs, null, 2));
-      toast.success("Payload auto-built");
-    } catch {
-      toast.error("Failed to auto-build payload");
-    }
-  };
-
   const swapTokenDirection = () => {
     setTokenIn(tokenOut);
     setTokenOut(tokenIn);
@@ -425,35 +400,6 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
           </div>
         </div>
       )}
-
-      <details className="mt-4 rounded-2xl" style={{ background: 'rgba(0, 212, 255, 0.02)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
-        <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-pcs-textDim hover:text-pcs-primary transition">
-          Advanced Router Payload
-        </summary>
-        <div className="px-4 pb-4 pt-1 space-y-3" style={{ borderTop: '1px solid rgba(0, 212, 255, 0.04)' }}>
-          <button type="button" className="btn-secondary w-full py-2 text-xs" onClick={autoBuildPayload}>
-            Auto Build Payload
-          </button>
-          <div>
-            <label className="mb-1 block text-[11px] font-medium text-pcs-textDim">Commands (hex)</label>
-            <input
-              className="input font-mono text-xs"
-              value={commandsHex}
-              onChange={(e) => setCommandsHex(e.target.value.trim())}
-              placeholder="0x..."
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-medium text-pcs-textDim">Inputs (JSON bytes[])</label>
-            <textarea
-              className="input font-mono min-h-16 resize-y text-xs"
-              value={inputsJson}
-              onChange={(e) => setInputsJson(e.target.value)}
-              placeholder='["0x...", "0x..."]'
-            />
-          </div>
-        </div>
-      </details>
 
       <div className="mt-5 space-y-2">
         {needsApproval && tokenIn && amountIn && (
