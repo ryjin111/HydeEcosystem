@@ -9,9 +9,9 @@ import type { NetworkConfig } from "../utils/constants";
 type Props = { network: NetworkConfig };
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Single pool row (PancakeSwap v1 table style)
+   Single pool card
    ═══════════════════════════════════════════════════════════════════════════ */
-function PoolRow({ pool, network }: { pool: PoolConfig; network: NetworkConfig }) {
+function PoolCard({ pool, network }: { pool: PoolConfig; network: NetworkConfig }) {
   const { address, chainId, isConnected } = useAccount();
   const publicClient  = usePublicClient({ chainId: network.id });
   const { data: walletClient } = useWalletClient({ chainId: network.id });
@@ -94,148 +94,115 @@ function PoolRow({ pool, network }: { pool: PoolConfig; network: NetworkConfig }
     } finally { setLoading(false); }
   };
 
-  const fmtAmt     = (n: bigint, dec = 18) => Number(formatUnits(n, dec)).toLocaleString(undefined, { maximumFractionDigits: 4 });
+  const fmtAmt  = (n: bigint, dec = 18) => Number(formatUnits(n, dec)).toLocaleString(undefined, { maximumFractionDigits: 4 });
+  const box     = { background: "rgba(0, 212, 255, 0.03)", border: "1px solid rgba(0, 212, 255, 0.06)" };
   const hasPending = pendingAmt > 0n;
-  const rowBg      = { borderBottom: "1px solid rgba(0, 212, 255, 0.07)" };
-  const panelBg    = { background: "rgba(0, 212, 255, 0.025)", borderBottom: "1px solid rgba(0, 212, 255, 0.07)" };
 
   return (
-    <>
-      {/* ── main row ──────────────────────────────────────────────────── */}
-      <tr
-        className="hover:bg-white/[0.02] transition cursor-pointer select-none"
-        style={rowBg}
-        onClick={() => setExpanded(e => !e)}
-      >
-        {/* Pool */}
-        <td className="py-3.5 pl-5 pr-3">
+    <div className="rounded-2xl overflow-hidden" style={box}>
+      {/* ── card header ─────────────────────────────────────────────── */}
+      <div className="p-4">
+        {/* token + tags */}
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2.5">
-            <div className="relative shrink-0">
-              <img src={pool.stakedLogo} alt={pool.stakedSymbol} className="h-9 w-9 rounded-full ring-2 ring-pcs-bg object-contain" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            <div className="relative">
+              <img src={pool.stakedLogo} alt={pool.stakedSymbol} className="h-10 w-10 rounded-full ring-2 ring-pcs-bg object-contain" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
               <img src={pool.rewardLogo} alt={pool.rewardSymbol} className="h-5 w-5 rounded-full ring-2 ring-pcs-bg absolute -bottom-0.5 -right-0.5 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
             </div>
             <div>
-              <p className="text-sm font-bold text-pcs-text leading-tight">Stake {pool.stakedSymbol}</p>
+              <p className="text-sm font-bold text-pcs-text">Stake {pool.stakedSymbol}</p>
               <p className="text-[10px] text-pcs-textDim">Earn {pool.rewardSymbol}</p>
             </div>
+          </div>
+          <div className="flex items-center gap-1.5">
             {pool.isAutoCompound && (
-              <span className="ml-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-pcs-primary" style={{ background: "rgba(0, 212, 255, 0.1)" }}>Auto</span>
+              <span className="rounded-lg px-2 py-0.5 text-[10px] font-semibold text-pcs-primary" style={{ background: "rgba(0, 212, 255, 0.1)" }}>Auto</span>
             )}
+            {fetching && <span className="text-[10px] text-pcs-textDim">Loading…</span>}
           </div>
-        </td>
+        </div>
 
-        {/* APR */}
-        <td className="py-3.5 px-3">
-          <p className="text-sm font-bold text-green-400">{pool.apr.toFixed(1)}%</p>
-          <p className="text-[10px] text-pcs-textDim">APR</p>
-        </td>
-
-        {/* Total Staked */}
-        <td className="py-3.5 px-3">
-          <p className="text-sm font-semibold text-pcs-text">{pool.totalStaked}</p>
-          <p className="text-[10px] text-pcs-textDim">Total Staked</p>
-        </td>
-
-        {/* Earned */}
-        <td className="py-3.5 px-3">
-          <p className={`text-sm font-semibold ${hasPending ? "text-yellow-400" : "text-pcs-textDim"}`}>
-            {fetching ? "…" : fmtAmt(pendingAmt)}
-          </p>
-          <p className="text-[10px] text-pcs-textDim">{pool.rewardSymbol} Earned</p>
-        </td>
-
-        {/* My Stake */}
-        <td className="py-3.5 px-3">
-          <p className="text-sm font-semibold text-pcs-text">{fetching ? "…" : fmtAmt(stakedAmt, pool.stakedDecimals)}</p>
-          <p className="text-[10px] text-pcs-textDim">{pool.stakedSymbol} Staked</p>
-        </td>
-
-        {/* Actions */}
-        <td className="py-3.5 pl-3 pr-5">
-          <div className="flex items-center justify-end gap-2" onClick={e => e.stopPropagation()}>
-            {hasPending && (
-              <button
-                type="button"
-                className="btn-secondary px-3 py-1.5 text-xs whitespace-nowrap"
-                disabled={loading || !isConnected || chainMismatch}
-                onClick={() => action("harvest")}
-              >
-                {loading ? "…" : "Harvest"}
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn-neon px-4 py-1.5 text-xs whitespace-nowrap"
-              onClick={() => setExpanded(e => !e)}
-            >
-              {expanded ? "Hide" : "Details"}
-              <span className={`ml-1.5 inline-block transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>▾</span>
-            </button>
+        {/* stats */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="rounded-xl p-2.5" style={{ background: "rgba(0, 212, 255, 0.04)" }}>
+            <p className="text-[10px] text-pcs-textDim mb-0.5">APR</p>
+            <p className="text-sm font-bold text-green-400">{pool.apr.toFixed(1)}%</p>
           </div>
-        </td>
-      </tr>
+          <div className="rounded-xl p-2.5" style={{ background: "rgba(0, 212, 255, 0.04)" }}>
+            <p className="text-[10px] text-pcs-textDim mb-0.5">Total Staked</p>
+            <p className="text-sm font-bold text-pcs-text">{pool.totalStaked}</p>
+          </div>
+        </div>
 
-      {/* ── expanded panel ────────────────────────────────────────────── */}
+        {/* user stats */}
+        <div className="flex items-center justify-between text-xs">
+          <div>
+            <span className="text-pcs-textDim">Staked: </span>
+            <span className="text-pcs-text font-medium">{fmtAmt(stakedAmt, pool.stakedDecimals)} {pool.stakedSymbol}</span>
+          </div>
+          <div>
+            <span className="text-pcs-textDim">Earned: </span>
+            <span className={`font-medium ${hasPending ? "text-yellow-400" : "text-pcs-text"}`}>{fmtAmt(pendingAmt)} {pool.rewardSymbol}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── action bar ──────────────────────────────────────────────── */}
+      <div className="flex gap-2 px-4 pb-4">
+        <button
+          type="button"
+          className="btn-neon flex-1 py-2 text-sm"
+          onClick={() => setExpanded(e => !e)}
+        >
+          {expanded ? "Hide" : "Stake"}
+        </button>
+        {hasPending && (
+          <button
+            type="button"
+            className="btn-secondary px-4 py-2 text-sm"
+            disabled={loading || !isConnected || chainMismatch}
+            onClick={() => action("harvest")}
+          >
+            {loading ? "…" : "Harvest"}
+          </button>
+        )}
+      </div>
+
+      {/* ── expanded form ────────────────────────────────────────────── */}
       {expanded && (
-        <tr>
-          <td colSpan={6} style={panelBg}>
-            <div className="px-5 py-4 flex gap-6">
-              {/* left: stats */}
-              <div className="flex flex-col gap-3 min-w-[160px]">
-                <div>
-                  <p className="text-[10px] text-pcs-textDim mb-0.5">{pool.stakedSymbol} Balance</p>
-                  <p className="text-sm font-semibold text-pcs-text">{fmtAmt(balance, pool.stakedDecimals)} {pool.stakedSymbol}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-pcs-textDim mb-0.5">Currently Staked</p>
-                  <p className="text-sm font-semibold text-pcs-text">{fmtAmt(stakedAmt, pool.stakedDecimals)} {pool.stakedSymbol}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-pcs-textDim mb-0.5">Pending Rewards</p>
-                  <p className={`text-sm font-semibold ${hasPending ? "text-yellow-400" : "text-pcs-textDim"}`}>{fmtAmt(pendingAmt)} {pool.rewardSymbol}</p>
-                </div>
+        <div className="border-t px-4 pb-4 pt-3" style={{ borderColor: "rgba(0, 212, 255, 0.06)" }}>
+          <div className="mb-3 flex rounded-xl overflow-hidden" style={{ background: "rgba(0,0,0,0.2)" }}>
+            {(["stake", "unstake"] as const).map(t => (
+              <button key={t} type="button" className={`flex-1 py-1.5 text-xs font-semibold capitalize transition ${tab === t ? "bg-pcs-secondary text-white" : "text-pcs-textSub"}`} onClick={() => setTab(t)}>{t}</button>
+            ))}
+          </div>
+
+          {tab === "stake" ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-pcs-textDim">
+                <span>{pool.stakedSymbol} Balance</span>
+                <button type="button" className="text-pcs-primary" onClick={() => setStakeInput(formatUnits(balance, pool.stakedDecimals))}>MAX: {fmtAmt(balance, pool.stakedDecimals)}</button>
               </div>
-
-              {/* divider */}
-              <div className="w-px" style={{ background: "rgba(0,212,255,0.08)" }} />
-
-              {/* right: stake/unstake form */}
-              <div className="flex-1 max-w-xs">
-                <div className="mb-3 flex rounded-xl overflow-hidden" style={{ background: "rgba(0,0,0,0.2)" }}>
-                  {(["stake", "unstake"] as const).map(t => (
-                    <button key={t} type="button" className={`flex-1 py-1.5 text-xs font-semibold capitalize transition ${tab === t ? "bg-pcs-secondary text-white" : "text-pcs-textSub"}`} onClick={() => setTab(t)}>{t}</button>
-                  ))}
-                </div>
-
-                {tab === "stake" ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-pcs-textDim">
-                      <span>{pool.stakedSymbol} Balance</span>
-                      <button type="button" className="text-pcs-primary" onClick={() => setStakeInput(formatUnits(balance, pool.stakedDecimals))}>MAX: {fmtAmt(balance, pool.stakedDecimals)}</button>
-                    </div>
-                    <input className="input text-sm" placeholder="0.0" value={stakeInput} onChange={e => setStakeInput(e.target.value)} />
-                    <button type="button" className="btn-neon w-full py-2 text-sm" disabled={loading || !isConnected || chainMismatch || !stakeInput} onClick={() => action("stake")}>
-                      {!isConnected ? "Connect Wallet" : chainMismatch ? "Wrong Network" : loading ? "Processing…" : `Stake ${pool.stakedSymbol}`}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-pcs-textDim">
-                      <span>Staked {pool.stakedSymbol}</span>
-                      <button type="button" className="text-pcs-primary" onClick={() => setUnstakeInput(formatUnits(stakedAmt, pool.stakedDecimals))}>MAX: {fmtAmt(stakedAmt, pool.stakedDecimals)}</button>
-                    </div>
-                    <input className="input text-sm" placeholder="0.0" value={unstakeInput} onChange={e => setUnstakeInput(e.target.value)} />
-                    <button type="button" className="btn-secondary w-full py-2 text-sm" disabled={loading || !isConnected || chainMismatch || !unstakeInput || stakedAmt === 0n} onClick={() => action("unstake")}>
-                      {!isConnected ? "Connect Wallet" : chainMismatch ? "Wrong Network" : loading ? "Processing…" : `Unstake ${pool.stakedSymbol}`}
-                    </button>
-                  </div>
-                )}
-              </div>
+              <input className="input text-sm" placeholder="0.0" value={stakeInput} onChange={e => setStakeInput(e.target.value)} />
+              <button type="button" className="btn-neon w-full py-2.5 text-sm" disabled={loading || !isConnected || chainMismatch || !stakeInput} onClick={() => action("stake")}>
+                {!isConnected ? "Connect Wallet" : chainMismatch ? "Wrong Network" : loading ? "Processing…" : `Stake ${pool.stakedSymbol}`}
+              </button>
             </div>
-          </td>
-        </tr>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-pcs-textDim">
+                <span>Staked {pool.stakedSymbol}</span>
+                <button type="button" className="text-pcs-primary" onClick={() => setUnstakeInput(formatUnits(stakedAmt, pool.stakedDecimals))}>MAX: {fmtAmt(stakedAmt, pool.stakedDecimals)}</button>
+              </div>
+              <input className="input text-sm" placeholder="0.0" value={unstakeInput} onChange={e => setUnstakeInput(e.target.value)} />
+              <button type="button" className="btn-secondary w-full py-2.5 text-sm" disabled={loading || !isConnected || chainMismatch || !unstakeInput || stakedAmt === 0n} onClick={() => action("unstake")}>
+                {!isConnected ? "Connect Wallet" : chainMismatch ? "Wrong Network" : loading ? "Processing…" : `Unstake ${pool.stakedSymbol}`}
+              </button>
+            </div>
+          )}
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -243,34 +210,16 @@ function PoolRow({ pool, network }: { pool: PoolConfig; network: NetworkConfig }
    Pools page
    ═══════════════════════════════════════════════════════════════════════════ */
 export function PoolsPage({ network }: Props) {
-  const tableBg = { background: "rgba(0, 212, 255, 0.02)", border: "1px solid rgba(0, 212, 255, 0.07)" };
-  const thStyle = "py-2.5 px-3 text-[11px] font-semibold text-pcs-textDim uppercase tracking-wide text-left";
-
   return (
-    <div className="w-full max-w-5xl mx-auto px-4">
+    <div className="w-full max-w-[480px] mx-auto">
       <div className="mb-5">
         <h1 className="text-xl font-bold text-pcs-text">Pools</h1>
         <p className="mt-0.5 text-xs text-pcs-textDim">Stake tokens to earn rewards</p>
       </div>
-
-      <div className="rounded-2xl overflow-hidden" style={tableBg}>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr style={{ borderBottom: "1px solid rgba(0, 212, 255, 0.07)" }}>
-              <th className={`${thStyle} pl-5`}>Pool</th>
-              <th className={thStyle}>APR</th>
-              <th className={thStyle}>Total Staked</th>
-              <th className={thStyle}>Earned</th>
-              <th className={thStyle}>My Stake</th>
-              <th className={`${thStyle} pr-5 text-right`}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {POOL_CONFIGS.map(pool => (
-              <PoolRow key={pool.id} pool={pool} network={network} />
-            ))}
-          </tbody>
-        </table>
+      <div className="space-y-3">
+        {POOL_CONFIGS.map(pool => (
+          <PoolCard key={pool.id} pool={pool} network={network} />
+        ))}
       </div>
     </div>
   );
