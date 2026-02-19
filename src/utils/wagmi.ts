@@ -7,6 +7,8 @@ if (NETWORKS.length === 0) {
   throw new Error("NETWORKS array is empty — at least one network must be configured");
 }
 
+const MAINNET_CHAIN_IDS = new Set([57073]); // Ink is a production chain
+
 const chains = NETWORKS.map((net) =>
   defineChain({
     id: net.id,
@@ -14,7 +16,7 @@ const chains = NETWORKS.map((net) =>
     nativeCurrency: { name: net.currencySymbol, symbol: net.currencySymbol, decimals: 18 },
     rpcUrls: { default: { http: [net.rpcUrl] } },
     blockExplorers: { default: { name: "Explorer", url: net.explorerUrl } },
-    testnet: true,
+    testnet: !MAINNET_CHAIN_IDS.has(net.id),
   })
 );
 

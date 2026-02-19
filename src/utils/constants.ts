@@ -1,5 +1,5 @@
 import type { Address, Hex } from "viem";
-import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, PHAROS_ATLANTIC_TOKENS } from "../tokens";
+import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS } from "../tokens";
 
 export type TokenInfo = {
   symbol: string;
@@ -87,9 +87,22 @@ export const PHAROS_ATLANTIC_TESTNET: NetworkConfig = {
   tokens: PHAROS_ATLANTIC_TOKENS,
 };
 
-// Focus: only Robinhood Testnet is active. Uncomment others when ready.
+export const INK_MAINNET: NetworkConfig = {
+  id: 57073,
+  name: "Ink",
+  rpcUrl: "https://rpc-gel.inkonchain.com",
+  explorerUrl: "https://explorer.inkonchain.com",
+  currencySymbol: "ETH",
+  factory: PLACEHOLDER_FACTORY,
+  router: PLACEHOLDER_ROUTER,
+  weth: "0x4200000000000000000000000000000000000006",
+  tokens: INK_TOKENS,
+};
+
+// Focus: Ink mainnet is active (Doppler token launchpad).
 export const NETWORKS: NetworkConfig[] = [
-  ROBINHOOD_TESTNET,
+  INK_MAINNET,
+  // ROBINHOOD_TESTNET,
   // TEMPO_MODERATO,
   // PHAROS_ATLANTIC_TESTNET,
 ];
@@ -124,6 +137,15 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     quoter: PLACEHOLDER_V4_QUOTER,
     positionManager: PLACEHOLDER_V4_POSITION_MANAGER,
     permit2: PLACEHOLDER_V4_PERMIT2,
+    gateway: PLACEHOLDER_V4_GATEWAY
+  },
+  // Ink Mainnet — real Uniswap V4 deployments
+  [INK_MAINNET.id]: {
+    poolManager: "0x360e68faccca8ca495c1b759fd9eee466db9fb32" as Address,
+    universalRouter: "0x112908dac86e20e7241b0927479ea3bf935d1fa0" as Address,
+    quoter: "0x3972c00f7ed4885e145823eb7c655375d275a1c5" as Address,
+    positionManager: "0x1b35d13a2e2528f192637f14b05f0dc0e7deb566" as Address,
+    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway: PLACEHOLDER_V4_GATEWAY
   }
 };

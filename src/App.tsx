@@ -6,8 +6,10 @@ import { SwapPage } from "./pages/Swap";
 import { FarmsPage } from "./pages/Farms";
 import { PoolsPage } from "./pages/Pools";
 import { StatsPage } from "./pages/Stats";
+import { LaunchpadPage } from "./pages/Launchpad";
 import { NETWORKS } from "./utils/constants";
 import { useTokenList } from "./hooks/useTokenList";
+import { useDopplerTokens } from "./hooks/useDopplerTokens";
 
 function App() {
   const [selectedNetworkId, setSelectedNetworkId] = useState(NETWORKS[0].id);
@@ -16,7 +18,17 @@ function App() {
     [selectedNetworkId]
   );
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const { tokens, addCustomToken } = useTokenList(selectedNetwork);
+  const { tokens: baseTokens, addCustomToken } = useTokenList(selectedNetwork);
+  const { tokens: dopplerTokens } = useDopplerTokens(selectedNetwork.id);
+
+  // Merge Doppler-launched tokens into the token list (auto-discovery)
+  const tokens = useMemo(() => {
+    const map = new Map(baseTokens.map((t) => [t.address.toLowerCase(), t]));
+    for (const t of dopplerTokens) {
+      if (!map.has(t.address.toLowerCase())) map.set(t.address.toLowerCase(), t);
+    }
+    return Array.from(map.values());
+  }, [baseTokens, dopplerTokens]);
 
   type SidebarItem = { to: string; label: string; icon: () => React.JSX.Element; disabled?: boolean };
   type SidebarSection = { title: string; items: SidebarItem[] };
@@ -40,7 +52,7 @@ function App() {
     {
       title: "More",
       items: [
-        { to: "#", label: "Launchpad (Soon)", icon: LaunchIcon, disabled: true },
+        { to: "/launchpad", label: "Launchpad", icon: LaunchIcon },
         { to: "#", label: "Info (Soon)", icon: InfoIcon, disabled: true },
       ],
     },
@@ -143,6 +155,7 @@ function App() {
               <Route path="/farms" element={<FarmsPage network={selectedNetwork} />} />
               <Route path="/pools" element={<PoolsPage network={selectedNetwork} />} />
               <Route path="/stats" element={<StatsPage />} />
+              <Route path="/launchpad" element={<LaunchpadPage />} />
               <Route path="/remove-liquidity" element={<Navigate to="/add-liquidity" replace />} />
               <Route path="*" element={<Navigate to="/swap" replace />} />
             </Routes>
