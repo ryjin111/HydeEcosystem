@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Outer ring representing "wrapped" -->
+  <circle cx="32" cy="32" r="32" fill="#393939"/>
+  <circle cx="32" cy="32" r="29" fill="none" stroke="#627EEA" stroke-width="2" stroke-dasharray="6 3"/>
+  <!-- Inner background -->
+  <circle cx="32" cy="32" r="27" fill="#627EEA"/>
+  <!-- ETH diamond shape -->
+  <path d="M32 10v16.2l13.2 5.9L32 10z" fill="#fff" fill-opacity=".6"/>
+  <path d="M32 10L18.8 32.1 32 26.2V10z" fill="#fff"/>
+  <path d="M32 41.4v11.1l13.2-18.3L32 41.4z" fill="#fff" fill-opacity=".6"/>
+  <path d="M32 52.5V41.4l-13.2-7.2L32 52.5z" fill="#fff"/>
+  <path d="M32 38.7l13.2-7.3L32 26.2v12.5z" fill="#fff" fill-opacity=".2"/>
+  <path d="M18.8 31.4L32 38.7V26.2l-13.2 5.2z" fill="#fff" fill-opacity=".5"/>
+</svg>
