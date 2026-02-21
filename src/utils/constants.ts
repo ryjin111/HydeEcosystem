@@ -10,6 +10,13 @@ export type TokenInfo = {
   logoURI?: string;
   /** True for the chain's native currency (ETH). No approval needed; sent as msg.value. */
   isNative?: boolean;
+  /** Set for tokens launched via Doppler. Drives swap routing. */
+  dopplerPool?: {
+    /** 'v4' = in-auction (V4 hook pool), 'v2' = graduated (Uniswap V2 pair) */
+    type: "v4" | "v2";
+    /** For V4 pools: hook address used in the PoolKey (Doppler V4Initializer). */
+    hookAddress?: Address;
+  };
 };
 
 export type NetworkConfig = {
@@ -21,6 +28,8 @@ export type NetworkConfig = {
   currencySymbol: string;
   factory: Address;
   router: Address;
+  /** Router for Doppler-graduated (V2) tokens — uses Doppler's factory (standard Uni V2 hash). */
+  dopplerRouter?: Address;
   /** WETH address used by the router for native ETH pairs. */
   weth: Address;
   /** Official token list for this chain. Users can add extra tokens via the custom token flow. */
@@ -93,8 +102,9 @@ export const INK_MAINNET: NetworkConfig = {
   rpcUrl: "https://rpc-gel.inkonchain.com",
   explorerUrl: "https://explorer.inkonchain.com",
   currencySymbol: "ETH",
-  factory: PLACEHOLDER_FACTORY,
-  router: PLACEHOLDER_ROUTER,
+  factory: "0xA0E8D06bD1D1B25de55D3fDc6a2F7B1A030ca25B" as Address,
+  router: "0xd3B8A589897990d554911a22eCBd748ed088D002" as Address,
+  dopplerRouter: "0x936cc31Ce3D0e0abcD76ED29851Ab8bC5f8bEFf9" as Address,
   weth: "0x4200000000000000000000000000000000000006",
   tokens: INK_TOKENS,
 };
@@ -146,7 +156,7 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     quoter: "0x3972c00f7ed4885e145823eb7c655375d275a1c5" as Address,
     positionManager: "0x1b35d13a2e2528f192637f14b05f0dc0e7deb566" as Address,
     permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
-    gateway: PLACEHOLDER_V4_GATEWAY
+    gateway: "0x21d6Ce25aa1AB3F59eE51b7693A596C6d39A03C9" as Address
   }
 };
 
