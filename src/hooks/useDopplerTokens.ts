@@ -61,6 +61,11 @@ async function fetchFromIndexer(chainId: number): Promise<TokenInfo[]> {
         name: bt.name ?? bt.symbol,
         symbol: bt.symbol,
         decimals: bt.decimals ?? 18,
+        dopplerPool: {
+          type: (pool.type === "v2" ? "v2" : "v4") as "v4" | "v2",
+          // pool.address is the Doppler hook/airlock address used in the V4 PoolKey
+          hookAddress: pool.type !== "v2" ? (pool.address as `0x${string}`) : undefined,
+        },
       });
     }
   }

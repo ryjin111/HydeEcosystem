@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { formatUnits, parseUnits, zeroAddress } from "viem";
 import { useAccount, useBalance, usePublicClient, useWalletClient } from "wagmi";
+import { useSearchParams } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
-import { V4_CONTRACTS_BY_CHAIN, hydeGatewayAbi, v4QuoterAbi } from "../utils/constants";
+import { V4_CONTRACTS_BY_CHAIN, hydeGatewayAbi, v4QuoterAbi, routerAbi } from "../utils/constants";
 import { buildSwapTemplatePayload, feeToTickSpacing } from "../utils/v4Encoding";
 import { useApproval } from "../hooks/useApproval";
 import { TokenSelector } from "./TokenSelector";
+
+type RoutingMode = "v4" | "v4-hook" | "v2";
 
 type V4SwapCardProps = {
   network: NetworkConfig;
@@ -25,8 +28,13 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
   const { data: walletClient } = useWalletClient({ chainId: network.id });
   const contracts = V4_CONTRACTS_BY_CHAIN[network.id];
 
+  const [searchParams] = useSearchParams();
+  const outParam = searchParams.get("out")?.toLowerCase();
+
   const [tokenIn, setTokenIn] = useState<TokenInfo | undefined>(tokens[0]);
-  const [tokenOut, setTokenOut] = useState<TokenInfo | undefined>(tokens[1]);
+  const [tokenOut, setTokenOut] = useState<TokenInfo | undefined>(
+    outParam ? tokens.find((t) => t.address.toLowerCase() === outParam) ?? tokens[1] : tokens[1]
+  );
   const [amountIn, setAmountIn] = useState("");
   const [quotedOut, setQuotedOut] = useState("");
   const [feeTier, setFeeTier] = useState("3000");
@@ -39,6 +47,16 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
 
   const chainMismatch = isConnected && chainId !== network.id;
 
+  // Derive routing mode from selected tokens
+  const dopplerToken = tokenOut?.dopplerPool ? tokenOut : tokenIn?.dopplerPool ? tokenIn : undefined;
+  const routingMode = useMemo((): RoutingMode => {
+    if (!dopplerToken) return "v4";
+    return dopplerToken.dopplerPool!.type === "v2" ? "v2" : "v4-hook";
+  }, [dopplerToken]);
+  const hookAddress = routingMode === "v4-hook"
+    ? (dopplerToken?.dopplerPool?.hookAddress ?? zeroAddress)
+    : zeroAddress;
+
   const amountInParsed = useMemo(() => {
     try {
       if (!amountIn || !tokenIn) return 0n;
@@ -46,9 +64,17 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
     } catch { return 0n; }
   }, [amountIn, tokenIn]);
 
+  // For Doppler graduated (V2) tokens, use the Doppler-specific router (standard hash, Doppler factory).
+  // For other V2 pairs (our own liquidity), use the Hyde router.
+  const v2Router = (routingMode === "v2" && dopplerToken && network.dopplerRouter)
+    ? network.dopplerRouter
+    : network.router;
+
+  // V2 routes approve to the correct router; V4 routes approve to Permit2
+  const approvalSpender = routingMode === "v2" ? v2Router : contracts.permit2;
   const { needsApproval, approve: approveToken } = useApproval({
     token: tokenIn?.address,
-    spender: contracts.permit2,
+    spender: approvalSpender,
     amount: amountInParsed,
     chainId: network.id,
     isNative: tokenIn?.isNative,
@@ -78,9 +104,17 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
   });
 
   useEffect(() => {
-    setTokenIn(tokens[0]);
-    setTokenOut(tokens[1]);
-  }, [tokens]);
+    setTokenIn((prev) => prev ?? tokens[0]);
+    setTokenOut((prev) => {
+      if (prev) {
+        // Keep existing selection if the token is still in the list; refresh its metadata
+        const refreshed = tokens.find((t) => t.address.toLowerCase() === prev.address.toLowerCase());
+        return refreshed ?? prev;
+      }
+      if (outParam) return tokens.find((t) => t.address.toLowerCase() === outParam) ?? tokens[1];
+      return tokens[1];
+    });
+  }, [tokens, outParam]);
 
   const quoteIdRef = useRef(0);
 
@@ -93,6 +127,25 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
       }
       try {
         const amountParsed = parseUnits(amountIn, tokenIn.decimals);
+
+        if (routingMode === "v2") {
+          // V2 quote via router.getAmountsOut (use dopplerRouter for Doppler graduated tokens)
+          const path: `0x${string}`[] = [
+            tokenIn.isNative ? network.weth : tokenIn.address,
+            tokenOut.isNative ? network.weth : tokenOut.address,
+          ];
+          const amounts = await publicClient.readContract({
+            address: v2Router,
+            abi: routerAbi,
+            functionName: "getAmountsOut",
+            args: [amountParsed, path],
+          }) as bigint[];
+          if (id !== quoteIdRef.current) return;
+          setQuotedOut(formatUnits(amounts[amounts.length - 1], tokenOut.decimals));
+          return;
+        }
+
+        // V4 quote (normal or hook)
         const zeroForOne = tokenIn.address.toLowerCase() < tokenOut.address.toLowerCase();
         const currency0 = zeroForOne ? tokenIn.address : tokenOut.address;
         const currency1 = zeroForOne ? tokenOut.address : tokenIn.address;
@@ -106,7 +159,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
               currency1,
               fee: Number(feeTier),
               tickSpacing: feeToTickSpacing(Number(feeTier)),
-              hooks: zeroAddress
+              hooks: hookAddress,
             },
             zeroForOne,
             exactAmount: BigInt(amountParsed),
@@ -122,10 +175,10 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
       }
     };
     void quote();
-  }, [publicClient, contracts.quoter, tokenIn, tokenOut, amountIn, feeTier]);
+  }, [publicClient, contracts.quoter, v2Router, network.weth, tokenIn, tokenOut, amountIn, feeTier, routingMode, hookAddress]);
 
   const canSwap = useMemo(() => {
-    return Boolean(
+    const base = Boolean(
       isConnected &&
         !chainMismatch &&
         !needsApproval &&
@@ -134,10 +187,11 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         tokenIn.address !== tokenOut.address &&
         amountIn &&
         quotedOut &&
-        Number(quotedOut) > 0 &&
-        commandsHex.startsWith("0x")
+        Number(quotedOut) > 0
     );
-  }, [isConnected, chainMismatch, needsApproval, tokenIn, tokenOut, amountIn, quotedOut, commandsHex]);
+    if (routingMode === "v2") return base;
+    return base && commandsHex.startsWith("0x");
+  }, [isConnected, chainMismatch, needsApproval, tokenIn, tokenOut, amountIn, quotedOut, commandsHex, routingMode]);
 
   const executeSwap = async () => {
     if (!walletClient || !publicClient || !address || !canSwap) {
@@ -156,38 +210,93 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
       toast.error("Slippage must be between 0% and 50%");
       return;
     }
+    const toastId = routingMode === "v2" ? "v2-swap" : "v4-swap";
     try {
       setSubmitting(true);
-      const decodedInputs = JSON.parse(inputsJson) as `0x${string}`[];
       const deadline = BigInt(Math.floor(Date.now() / 1000) + deadlineMinsNum * 60);
 
-      toast.loading("Sending V4 swap...", { id: "v4-swap" });
+      if (routingMode === "v2") {
+        const slippageBps = BigInt(Math.min(Math.floor(slippageNum * 100), 5000));
+        const amountInParsed = parseUnits(amountIn, tokenIn!.decimals);
+        const quotedOutParsed = parseUnits(quotedOut, tokenOut!.decimals);
+        const amountOutMin = (quotedOutParsed * (10000n - slippageBps)) / 10000n;
+        const path: `0x${string}`[] = [
+          tokenIn!.isNative ? network.weth : tokenIn!.address,
+          tokenOut!.isNative ? network.weth : tokenOut!.address,
+        ];
+
+        toast.loading("Sending swap...", { id: toastId });
+        let hash: `0x${string}`;
+        if (tokenIn!.isNative) {
+          hash = await walletClient.writeContract({
+            address: v2Router,
+            abi: routerAbi,
+            functionName: "swapExactETHForTokens",
+            args: [amountOutMin, path, address, deadline],
+            value: amountInParsed,
+            account: address,
+            chain: walletClient.chain,
+          });
+        } else if (tokenOut!.isNative) {
+          hash = await walletClient.writeContract({
+            address: v2Router,
+            abi: routerAbi,
+            functionName: "swapExactTokensForETH",
+            args: [amountInParsed, amountOutMin, path, address, deadline],
+            account: address,
+            chain: walletClient.chain,
+          });
+        } else {
+          hash = await walletClient.writeContract({
+            address: v2Router,
+            abi: routerAbi,
+            functionName: "swapExactTokensForTokens",
+            args: [amountInParsed, amountOutMin, path, address, deadline],
+            account: address,
+            chain: walletClient.chain,
+          });
+        }
+        await publicClient.waitForTransactionReceipt({ hash });
+        toast.success("Swap executed", { id: toastId });
+        return;
+      }
+
+      // V4 swap via Hyde Gateway
+      const decodedInputs = JSON.parse(inputsJson) as `0x${string}`[];
+      toast.loading("Sending swap...", { id: toastId });
       const hash = await walletClient.writeContract({
         address: contracts.gateway,
         abi: hydeGatewayAbi,
         functionName: "executeSwap",
         args: [commandsHex as `0x${string}`, decodedInputs, deadline],
+        // Forward ETH when swapping native currency (gateway passes msg.value to UniversalRouter)
+        value: tokenIn!.isNative ? amountInParsed : 0n,
         account: address,
         chain: walletClient.chain
       });
       await publicClient.waitForTransactionReceipt({ hash });
-      toast.success("V4 swap executed", { id: "v4-swap" });
+      toast.success("Swap executed", { id: toastId });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       if (msg.includes("User rejected") || msg.includes("denied")) {
-        toast.error("Transaction rejected", { id: "v4-swap" });
+        toast.error("Transaction rejected", { id: toastId });
       } else if (msg.includes("insufficient")) {
-        toast.error("Insufficient balance or allowance", { id: "v4-swap" });
+        toast.error("Insufficient balance or allowance", { id: toastId });
       } else {
-        toast.error(`Swap failed: ${msg.slice(0, 80)}`, { id: "v4-swap" });
+        toast.error(`Swap failed: ${msg.slice(0, 80)}`, { id: toastId });
       }
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Auto-build payload whenever inputs change
+  // Auto-build payload whenever inputs change (V4 only — V2 uses router directly)
   useEffect(() => {
+    if (routingMode === "v2") {
+      setCommandsHex("");
+      setInputsJson("[]");
+      return;
+    }
     if (!address || !tokenIn || !tokenOut || !amountIn || !quotedOut || Number(quotedOut) <= 0) {
       setCommandsHex("");
       setInputsJson("[]");
@@ -203,7 +312,8 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
         amountOutQuoted: quotedOut,
         slippagePercent: slippage,
         decimalsIn: tokenIn.decimals,
-        decimalsOut: tokenOut.decimals
+        decimalsOut: tokenOut.decimals,
+        hooks: hookAddress,
       });
       setCommandsHex(built.commands);
       setInputsJson(JSON.stringify(built.inputs, null, 2));
@@ -211,7 +321,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken }: V4SwapCardProp
       setCommandsHex("");
       setInputsJson("[]");
     }
-  }, [address, tokenIn, tokenOut, amountIn, quotedOut, feeTier, slippage, network.weth]);
+  }, [address, tokenIn, tokenOut, amountIn, quotedOut, feeTier, slippage, network.weth, routingMode, hookAddress]);
 
   const swapTokenDirection = () => {
     setTokenIn(tokenOut);

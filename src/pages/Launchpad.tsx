@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { parseEther, zeroAddress } from "viem";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import toast from "react-hot-toast";
-import { DopplerSDK, DAY_SECONDS } from "@whetstone-research/doppler-sdk";
+import { DopplerSDK, DAY_SECONDS, type DopplerSDKConfig } from "@whetstone-research/doppler-sdk";
 import { useDopplerPools } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
@@ -105,11 +105,11 @@ type LaunchForm = {
 const DEFAULTS: LaunchForm = {
   name: "",
   symbol: "",
-  totalSupply: "1000000000",
+  totalSupply: "100000000000",  // 100B — matches bankr-style micro-price launches
   sellPercent: "70",
   durationDays: "7",
-  marketCapStart: "500000",
-  marketCapMin: "50000",
+  marketCapStart: "20000",      // $20K starting mcap (confirmed from live Doppler launches)
+  marketCapMin: "3000",         // $3K floor (~15% of start)
   ethPriceUsd: "2500",
 };
 
@@ -153,10 +153,14 @@ function LaunchForm() {
     setSubmitting(true);
     try {
       const sdk = new DopplerSDK({
-        publicClient: publicClient as Parameters<typeof DopplerSDK>[0]["publicClient"],
-        walletClient: walletClient as Parameters<typeof DopplerSDK>[0]["walletClient"],
+        publicClient: publicClient as DopplerSDKConfig["publicClient"],
+        walletClient: walletClient as DopplerSDKConfig["walletClient"],
         chainId: INK_CHAIN_ID,
       });
+
+      // Convert USD market caps → ETH proceeds (sell% of FDV at each cap / ETH price)
+      const maxProceeds = parseEther(String((marketCapStart * sellPercent) / 100 / ethPriceUsd));
+      const minProceeds = parseEther(String((marketCapMin * sellPercent) / 100 / ethPriceUsd));
 
       const params = sdk
         .buildDynamicAuction()
@@ -165,6 +169,8 @@ function LaunchForm() {
         .withMarketCapRange({
           marketCap: { start: marketCapStart, min: marketCapMin },
           numerairePrice: ethPriceUsd,
+          minProceeds,
+          maxProceeds,
           duration: durationSecs,
         })
         .withMigration({ type: "uniswapV2" })
@@ -215,7 +221,7 @@ function LaunchForm() {
       <div className="grid grid-cols-2 gap-3">
         <LabeledInput
           label="Total Supply"
-          placeholder="1000000000"
+          placeholder="100000000000"
           value={form.totalSupply}
           onChange={set("totalSupply")}
           hint="Token units (no decimals)"
@@ -244,17 +250,17 @@ function LaunchForm() {
         <div className="grid grid-cols-2 gap-3">
           <LabeledInput
             label="Starting Market Cap (USD)"
-            placeholder="500000"
+            placeholder="20000"
             value={form.marketCapStart}
             onChange={set("marketCapStart")}
             hint="Initial FDV target"
           />
           <LabeledInput
             label="Min Market Cap (USD)"
-            placeholder="50000"
+            placeholder="3000"
             value={form.marketCapMin}
             onChange={set("marketCapMin")}
-            hint="Price floor"
+            hint="Price floor (~15% of start)"
           />
         </div>
 
