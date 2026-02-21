@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { parseEther, zeroAddress } from "viem";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import toast from "react-hot-toast";
-import { DopplerSDK, type DopplerSDKConfig } from "@whetstone-research/doppler-sdk";
+import { DopplerSDK, DAY_SECONDS, type DopplerSDKConfig } from "@whetstone-research/doppler-sdk";
 import { useDopplerPools } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
