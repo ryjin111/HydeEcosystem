@@ -43,18 +43,18 @@ function App() {
       ],
     },
     {
+      title: "Launcher",
+      items: [
+        { to: "/launchpad", label: "Launchpad", icon: LaunchIcon },
+        { to: "/launches", label: "Launches", icon: GridIcon },
+      ],
+    },
+       {
       title: "Earn",
       items: [
         { to: "/farms", label: "Farms", icon: FarmIcon },
         { to: "/pools", label: "Pools", icon: PoolIcon },
         { to: "/stats", label: "Stats", icon: StatsIcon },
-      ],
-    },
-    {
-      title: "More",
-      items: [
-        { to: "/launchpad", label: "Launchpad", icon: LaunchIcon },
-        { to: "/launches", label: "Launches", icon: GridIcon },
       ],
     },
   ];
