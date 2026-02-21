@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { parseEther, zeroAddress } from "viem";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import toast from "react-hot-toast";
-import { DopplerSDK, DAY_SECONDS } from "@whetstone-research/doppler-sdk";
+import { DopplerSDK, DAY_SECONDS, type DopplerSDKConfig } from "@whetstone-research/doppler-sdk";
 import { useDopplerPools } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
@@ -105,21 +105,48 @@ type LaunchForm = {
 const DEFAULTS: LaunchForm = {
   name: "",
   symbol: "",
-  totalSupply: "1000000000",
+  totalSupply: "100000000000",  // 100B — matches bankr-style micro-price launches
   sellPercent: "70",
   durationDays: "7",
-  marketCapStart: "500000",
-  marketCapMin: "50000",
-  ethPriceUsd: "2500",
+  marketCapStart: "20000",      // $20K starting mcap (confirmed from live Doppler launches)
+  marketCapMin: "3000",         // $3K floor (~15% of start)
+  ethPriceUsd: "",
 };
+
+function useEthPrice() {
+  const [price, setPrice] = useState<string | null>(null);
+  const [fetching, setFetching] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFetching(true);
+    fetch("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd")
+      .then((r) => r.json())
+      .then((d) => {
+        const p = d?.ethereum?.usd;
+        if (!cancelled && p) setPrice(String(Math.round(p)));
+      })
+      .catch(() => {/* silent — user can enter manually */})
+      .finally(() => { if (!cancelled) setFetching(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  return { price, fetching };
+}
 
 function LaunchForm() {
   const { address, chainId, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId: INK_CHAIN_ID });
   const { data: walletClient } = useWalletClient({ chainId: INK_CHAIN_ID });
 
+  const { price: liveEthPrice, fetching: ethPriceFetching } = useEthPrice();
   const [form, setForm] = useState<LaunchForm>(DEFAULTS);
   const [submitting, setSubmitting] = useState(false);
+
+  // Populate ETH price once the live fetch returns
+  useEffect(() => {
+    if (liveEthPrice) setForm((f) => ({ ...f, ethPriceUsd: liveEthPrice }));
+  }, [liveEthPrice]);
 
   const chainMismatch = isConnected && chainId !== INK_CHAIN_ID;
 
@@ -153,10 +180,14 @@ function LaunchForm() {
     setSubmitting(true);
     try {
       const sdk = new DopplerSDK({
-        publicClient: publicClient as Parameters<typeof DopplerSDK>[0]["publicClient"],
-        walletClient: walletClient as Parameters<typeof DopplerSDK>[0]["walletClient"],
+        publicClient: publicClient as DopplerSDKConfig["publicClient"],
+        walletClient: walletClient as DopplerSDKConfig["walletClient"],
         chainId: INK_CHAIN_ID,
       });
+
+      // Convert USD market caps → ETH proceeds (sell% of FDV at each cap / ETH price)
+      const maxProceeds = parseEther(String((marketCapStart * sellPercent) / 100 / ethPriceUsd));
+      const minProceeds = parseEther(String((marketCapMin * sellPercent) / 100 / ethPriceUsd));
 
       const params = sdk
         .buildDynamicAuction()
@@ -165,6 +196,8 @@ function LaunchForm() {
         .withMarketCapRange({
           marketCap: { start: marketCapStart, min: marketCapMin },
           numerairePrice: ethPriceUsd,
+          minProceeds,
+          maxProceeds,
           duration: durationSecs,
         })
         .withMigration({ type: "uniswapV2" })
@@ -215,7 +248,7 @@ function LaunchForm() {
       <div className="grid grid-cols-2 gap-3">
         <LabeledInput
           label="Total Supply"
-          placeholder="1000000000"
+          placeholder="100000000000"
           value={form.totalSupply}
           onChange={set("totalSupply")}
           hint="Token units (no decimals)"
@@ -244,26 +277,26 @@ function LaunchForm() {
         <div className="grid grid-cols-2 gap-3">
           <LabeledInput
             label="Starting Market Cap (USD)"
-            placeholder="500000"
+            placeholder="20000"
             value={form.marketCapStart}
             onChange={set("marketCapStart")}
             hint="Initial FDV target"
           />
           <LabeledInput
             label="Min Market Cap (USD)"
-            placeholder="50000"
+            placeholder="3000"
             value={form.marketCapMin}
             onChange={set("marketCapMin")}
-            hint="Price floor"
+            hint="Price floor (~15% of start)"
           />
         </div>
 
         <LabeledInput
           label="ETH Price (USD)"
-          placeholder="2500"
+          placeholder={ethPriceFetching ? "Fetching…" : "e.g. 3000"}
           value={form.ethPriceUsd}
           onChange={set("ethPriceUsd")}
-          hint="Used to compute tick range"
+          hint={ethPriceFetching ? "Fetching live price…" : "Auto-fetched · editable"}
         />
       </div>
 
