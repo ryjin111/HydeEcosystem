@@ -109,9 +109,21 @@ export const INK_MAINNET: NetworkConfig = {
   tokens: INK_TOKENS,
 };
 
-// Focus: Ink mainnet is active (Doppler token launchpad).
+export const UNICHAIN_MAINNET: NetworkConfig = {
+  id: 130,
+  name: "Unichain",
+  rpcUrl: "https://mainnet.unichain.org",
+  explorerUrl: "https://unichain.blockscout.com",
+  currencySymbol: "ETH",
+  factory: PLACEHOLDER_FACTORY,   // no V2 factory needed — Doppler tokens use V4
+  router: PLACEHOLDER_ROUTER,
+  weth: "0x4200000000000000000000000000000000000006" as Address,
+  tokens: [],
+};
+
 export const NETWORKS: NetworkConfig[] = [
   INK_MAINNET,
+  UNICHAIN_MAINNET,
   // ROBINHOOD_TESTNET,
   // TEMPO_MODERATO,
   // PHAROS_ATLANTIC_TESTNET,
@@ -157,6 +169,15 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     positionManager: "0x1b35d13a2e2528f192637f14b05f0dc0e7deb566" as Address,
     permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway: "0x21d6Ce25aa1AB3F59eE51b7693A596C6d39A03C9" as Address
+  },
+  // Unichain Mainnet — real Uniswap V4 deployments
+  [UNICHAIN_MAINNET.id]: {
+    poolManager: "0x1f98400000000000000000000000000000000004" as Address,
+    universalRouter: "0xef740bf23acae26f6492b10de645d6b98dc8eaf3" as Address,
+    quoter: "0x333e3c607b141b18ff6de9f258db6e77fe7491e0" as Address,
+    positionManager: "0x4529a01c7a0410167c5740c487a8de60232617bf" as Address,
+    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
+    gateway: "0xA0E8D06bD1D1B25de55D3fDc6a2F7B1A030ca25B" as Address
   }
 };
 

@@ -7,7 +7,7 @@ import { DopplerSDK, DAY_SECONDS, type DopplerSDKConfig } from "@whetstone-resea
 import { useDopplerPools } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
-const INK_CHAIN_ID = 57073;
+const UNICHAIN_CHAIN_ID = 130;
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 
@@ -30,8 +30,14 @@ function timeAgo(iso: string): string {
 
 /* ─── Pool card (Explore tab) ─────────────────────────────────────────────── */
 
-function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string) => void }) {
+const CHAIN_LABELS: Record<number, string> = {
+  57073: "Ink",
+  130: "Unichain",
+};
+
+function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void }) {
   const bt = pool.baseToken;
+  const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
   return (
     <div
       className="rounded-2xl p-4 flex flex-col gap-3 border transition hover:border-pcs-primary/40"
@@ -49,15 +55,23 @@ function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string
           <p className="font-semibold text-pcs-text truncate">{bt.name}</p>
           <p className="text-xs text-pcs-textDim">{bt.symbol}</p>
         </div>
-        <span
-          className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide flex-shrink-0"
-          style={{
-            background: pool.type === "v4" ? "rgba(168,85,247,0.15)" : "rgba(0,212,255,0.10)",
-            color: pool.type === "v4" ? "#a855f7" : "#00d4ff",
-          }}
-        >
-          {pool.type}
-        </span>
+        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+          <span
+            className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
+            style={{ background: "rgba(255,255,255,0.06)", color: "#9ca3af" }}
+          >
+            {chainLabel}
+          </span>
+          <span
+            className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
+            style={{
+              background: pool.type === "v4" ? "rgba(168,85,247,0.15)" : "rgba(0,212,255,0.10)",
+              color: pool.type === "v4" ? "#a855f7" : "#00d4ff",
+            }}
+          >
+            {pool.type}
+          </span>
+        </div>
       </div>
 
       {/* Stats */}
@@ -76,7 +90,7 @@ function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string
       <div className="flex items-center justify-between">
         <span className="text-xs text-pcs-textDim">{timeAgo(pool.createdAt)}</span>
         <button
-          onClick={() => onTrade(bt.address)}
+          onClick={() => onTrade(bt.address, pool.chainId)}
           className="text-xs font-semibold px-3 py-1.5 rounded-xl transition"
           style={{ background: "rgba(0,212,255,0.10)", color: "#00d4ff" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,212,255,0.18)")}
@@ -117,8 +131,8 @@ function useEthPrice() {
 
 function LaunchForm() {
   const { address, chainId, isConnected } = useAccount();
-  const publicClient = usePublicClient({ chainId: INK_CHAIN_ID });
-  const { data: walletClient } = useWalletClient({ chainId: INK_CHAIN_ID });
+  const publicClient = usePublicClient({ chainId: UNICHAIN_CHAIN_ID });
+  const { data: walletClient } = useWalletClient({ chainId: UNICHAIN_CHAIN_ID });
 
   const ethPrice = useEthPrice();
   const [name, setName] = useState("");
@@ -126,7 +140,7 @@ function LaunchForm() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const chainMismatch = isConnected && chainId !== INK_CHAIN_ID;
+  const chainMismatch = isConnected && chainId !== UNICHAIN_CHAIN_ID;
 
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -156,7 +170,7 @@ function LaunchForm() {
       const sdk = new DopplerSDK({
         publicClient: publicClient as DopplerSDKConfig["publicClient"],
         walletClient: walletClient as DopplerSDKConfig["walletClient"],
-        chainId: INK_CHAIN_ID,
+        chainId: UNICHAIN_CHAIN_ID,
       });
 
       // Build tokenURI from image (base64 JSON metadata)
@@ -184,8 +198,8 @@ function LaunchForm() {
           streamableFees: {
             lockDuration: 0,
             beneficiaries: [
-              { beneficiary: address!, shares: 621000000000000000n },                                    // Creator  62.1%
-              { beneficiary: "0x9C076a736D727F33c005145E0DB189Fd58D20110", shares: 360000000000000000n }, // HydeTeam 36.0%
+              { beneficiary: address!, shares: 581000000000000000n },                                    // Creator  58.1%
+              { beneficiary: "0x9C076a736D727F33c005145E0DB189Fd58D20110", shares: 400000000000000000n }, // HydeTeam 40.0%
               { beneficiary: "0xeb17B8c29717036161936A2179A88fe981B9CB80", shares:  19000000000000000n }, // Ecosystem 1.9%
             ],
           },
@@ -274,7 +288,7 @@ function LaunchForm() {
       {/* Submit */}
       {chainMismatch ? (
         <div className="text-center text-sm text-yellow-400 py-2">
-          Switch your wallet to Ink (chain 57073) to launch.
+          Switch your wallet to Unichain (chain 130) to launch.
         </div>
       ) : (
         <button
@@ -296,15 +310,30 @@ function LaunchForm() {
 
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 
+const INK_CHAIN_ID = 57073;
+
 export function LaunchpadPage() {
   const [tab, setTab] = useState<"explore" | "launch">("explore");
-  const { pools, loading, refetch } = useDopplerPools(INK_CHAIN_ID);
+  const { pools: unichainPools, loading: unichainLoading, refetch: refetchUnichain } = useDopplerPools(UNICHAIN_CHAIN_ID);
+  const { pools: inkPools, loading: inkLoading, refetch: refetchInk } = useDopplerPools(INK_CHAIN_ID);
   const navigate = useNavigate();
 
-  const handleTrade = (tokenAddress: string) => {
-    // Navigate to swap page — the token will be available in the token selector
-    // since useDopplerTokens populates the global list
-    navigate(`/swap?out=${tokenAddress}`);
+  const pools = [...unichainPools, ...inkPools];
+  const loading = unichainLoading || inkLoading;
+  const refetch = () => { refetchUnichain(); refetchInk(); };
+
+  const handleTrade = (tokenAddress: string, chainId: number) => {
+    if (chainId === INK_CHAIN_ID) {
+      // Hyde swap handles Ink tokens natively
+      navigate(`/swap?out=${tokenAddress}`);
+    } else {
+      // Unichain tokens → Uniswap
+      window.open(
+        `https://app.uniswap.org/swap?outputCurrency=${tokenAddress}&chain=unichain`,
+        "_blank",
+        "noreferrer"
+      );
+    }
   };
 
   return (
@@ -313,8 +342,8 @@ export function LaunchpadPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-pcs-text">Launchpad</h1>
         <p className="text-sm text-pcs-textDim mt-1">
-          Fair token launches powered by Doppler Dutch auctions on Ink.
-          Every launched token is auto-discoverable in HydeSwap.
+          Fair token launches powered by Doppler Dutch auctions.
+          Launching on Unichain — Ink support coming soon.
         </p>
       </div>
 
@@ -341,7 +370,7 @@ export function LaunchpadPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-pcs-textDim">
-              {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Ink`}
+              {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Unichain + Ink`}
             </p>
             <button
               onClick={refetch}
@@ -374,7 +403,7 @@ export function LaunchpadPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {pools.map((pool) => (
               <PoolCard
-                key={`${pool.address}-${pool.baseToken.address}`}
+                key={`${pool.chainId}-${pool.address}-${pool.baseToken.address}`}
                 pool={pool}
                 onTrade={handleTrade}
               />

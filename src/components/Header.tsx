@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import toast from "react-hot-toast";
 import { useAccount, useBalance, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { ConnectorAlreadyConnectedError } from "wagmi";
 import type { NetworkConfig } from "../utils/constants";
 import { shortenAddress } from "../utils/format";
 
@@ -40,7 +41,8 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
     }
     try {
       await connectAsync({ connector: injectedConnector });
-    } catch {
+    } catch (err) {
+      if (err instanceof ConnectorAlreadyConnectedError) return;
       toast.error("Wallet connection failed");
     }
   };

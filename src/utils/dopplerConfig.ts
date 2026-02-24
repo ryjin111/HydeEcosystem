@@ -6,6 +6,7 @@
 // Doppler Indexer GraphQL endpoints
 export const DOPPLER_INDEXER_URLS: Record<number, string> = {
   57073: "https://indexer.doppler.lol/graphql",
+  130:   "https://indexer.doppler.lol/graphql",
   84532: "https://testnet-indexer.doppler.lol/graphql",
 };
 

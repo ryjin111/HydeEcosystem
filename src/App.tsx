@@ -35,7 +35,7 @@ function App() {
   type SidebarSection = { title: string; items: SidebarItem[] };
 
   const sidebarSections: SidebarSection[] = [
-    {
+  {
       title: "HydeSwap",
       items: [
         { to: "/swap", label: "Exchange", icon: SwapIcon },
