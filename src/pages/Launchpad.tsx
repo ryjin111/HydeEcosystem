@@ -191,19 +191,9 @@ function LaunchForm() {
           maxProceeds,
           duration: durationSecs,
         })
-        .withMigration({
-          type: "uniswapV4",
-          fee: 3000,
-          tickSpacing: 60,
-          streamableFees: {
-            lockDuration: 0,
-            beneficiaries: [
-              { beneficiary: address!, shares: 581000000000000000n },                                    // Creator  58.1%
-              { beneficiary: "0x9C076a736D727F33c005145E0DB189Fd58D20110", shares: 400000000000000000n }, // HydeTeam 40.0%
-              { beneficiary: "0xeb17B8c29717036161936A2179A88fe981B9CB80", shares:  19000000000000000n }, // Ecosystem 1.9%
-            ],
-          },
-        })
+        // Unichain Airlock: only UniswapV2Migrator is currently whitelisted (state=LiquidityMigrator).
+        // UniswapV4Migrator is not yet registered. Dutch auction runs on V4; liquidity migrates to V2.
+        .withMigration({ type: "uniswapV2" })
         .withGovernance({ type: "default" })
         .withUserAddress(address)
         .build();
@@ -216,7 +206,13 @@ function LaunchForm() {
       setImagePreview(null);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      toast.error(msg.length > 100 ? msg.slice(0, 100) + "…" : msg, { id: "launch" });
+      if (msg.includes("WrongModuleState")) {
+        toast.error("Launch failed: a Doppler protocol module is not yet registered on this chain. Please try again later.", { id: "launch" });
+      } else if (msg.includes("User rejected") || msg.includes("user rejected")) {
+        toast.error("Transaction cancelled.", { id: "launch" });
+      } else {
+        toast.error(msg.length > 100 ? msg.slice(0, 100) + "…" : msg, { id: "launch" });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -234,7 +230,7 @@ function LaunchForm() {
           <a href="https://docs.doppler.lol" target="_blank" rel="noreferrer" className="text-pcs-primary hover:underline">
             Doppler Protocol
           </a>{" "}
-          — fair Dutch auction on Ink.
+          — fair Dutch auction on Unichain.
         </p>
       </div>
 
