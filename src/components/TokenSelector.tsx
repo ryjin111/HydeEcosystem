@@ -165,11 +165,15 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
       return;
     }
     const decimals = Number(customDecimals);
+    if (!Number.isFinite(decimals) || !Number.isInteger(decimals) || decimals < 0 || decimals > 18) {
+      setCustomAddressError("Decimals must be a whole number between 0 and 18");
+      return;
+    }
     onAddCustom({
       address: checksummed,
       symbol: customSymbol || "CUSTOM",
       name: customName || customSymbol || "Custom Token",
-      decimals: Number.isFinite(decimals) && decimals >= 0 && decimals <= 18 ? decimals : 18,
+      decimals,
     });
     setShowCustom(false);
     setCustomAddress("");

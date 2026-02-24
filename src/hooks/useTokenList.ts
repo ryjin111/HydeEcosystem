@@ -41,9 +41,11 @@ function loadCustomTokens(): CustomTokenRecord {
     if (!raw) return {};
     const parsed = JSON.parse(raw) as CustomTokenRecord;
     const validated: CustomTokenRecord = {};
-    for (const [chainId, tokens] of Object.entries(parsed)) {
+    for (const [chainIdStr, tokens] of Object.entries(parsed)) {
+      const chainId = Number(chainIdStr);
+      if (!Number.isInteger(chainId) || chainId <= 0) continue;
       if (Array.isArray(tokens)) {
-        validated[Number(chainId)] = tokens.filter(isValidToken).slice(0, 50);
+        validated[chainId] = tokens.filter(isValidToken).slice(0, 50);
       }
     }
     return validated;

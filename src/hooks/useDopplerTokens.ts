@@ -11,13 +11,20 @@ const CACHE_TTL_MS = 60_000; // 1 minute
 
 type CacheEntry = { tokens: TokenInfo[]; ts: number };
 
+function isValidCacheEntry(obj: unknown): obj is CacheEntry {
+  if (!obj || typeof obj !== "object") return false;
+  const e = obj as Record<string, unknown>;
+  return typeof e.ts === "number" && Number.isFinite(e.ts) && Array.isArray(e.tokens);
+}
+
 function loadCached(chainId: number): TokenInfo[] {
   try {
     const raw = localStorage.getItem(`${CACHE_KEY}-${chainId}`);
     if (!raw) return [];
-    const entry: CacheEntry = JSON.parse(raw);
-    if (Date.now() - entry.ts > CACHE_TTL_MS) return [];
-    return entry.tokens;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isValidCacheEntry(parsed)) return [];
+    if (Date.now() - parsed.ts > CACHE_TTL_MS) return [];
+    return parsed.tokens;
   } catch {
     return [];
   }
@@ -34,7 +41,7 @@ function saveCache(chainId: number, tokens: TokenInfo[]) {
 
 async function fetchFromIndexer(chainId: number): Promise<TokenInfo[]> {
   const url = DOPPLER_INDEXER_URLS[chainId];
-  if (!url) return [];
+  if (!url || !url.startsWith("https://")) return [];
 
   const resp = await fetch(url, {
     method: "POST",
@@ -47,6 +54,7 @@ async function fetchFromIndexer(chainId: number): Promise<TokenInfo[]> {
 
   if (!resp.ok) return [];
   const data = await resp.json();
+  if (data?.errors) return [];
   const items: DopplerPool[] = data?.data?.pools?.items ?? [];
 
   const seen = new Set<string>();
@@ -94,8 +102,8 @@ export function useDopplerTokens(chainId: number): {
           saveCache(chainId, result);
         }
       })
-      .catch((err) => {
-        console.warn("[useDopplerTokens] indexer fetch failed:", err);
+      .catch(() => {
+        // Indexer unavailable — silently use cached tokens
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -123,7 +131,7 @@ export function useDopplerPools(chainId: number): {
 
   useEffect(() => {
     const url = DOPPLER_INDEXER_URLS[chainId];
-    if (!url) return;
+    if (!url || !url.startsWith("https://")) return;
 
     let cancelled = false;
     setLoading(true);
@@ -139,11 +147,12 @@ export function useDopplerPools(chainId: number): {
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled) {
+          if (data?.errors) return;
           setPools(data?.data?.pools?.items ?? []);
         }
       })
-      .catch((err) => {
-        console.warn("[useDopplerPools] indexer fetch failed:", err);
+      .catch(() => {
+        // Indexer unavailable — leave pools empty
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

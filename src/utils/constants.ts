@@ -122,8 +122,8 @@ export const UNICHAIN_MAINNET: NetworkConfig = {
 };
 
 export const NETWORKS: NetworkConfig[] = [
-  INK_MAINNET,
   UNICHAIN_MAINNET,
+  INK_MAINNET,
   // ROBINHOOD_TESTNET,
   // TEMPO_MODERATO,
   // PHAROS_ATLANTIC_TESTNET,

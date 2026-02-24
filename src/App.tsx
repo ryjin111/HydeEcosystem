@@ -136,7 +136,7 @@ function App() {
         <Header
           selectedNetwork={selectedNetwork}
           onNetworkChange={setSelectedNetworkId}
-          networks={NETWORKS}
+          networks={NETWORKS.filter((n) => n.id !== 57073)}
           onToggleSidebar={() => setSidebarOpen((s) => !s)}
           sidebarOpen={sidebarOpen}
         />

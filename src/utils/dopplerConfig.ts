@@ -4,9 +4,9 @@
  */
 
 // Doppler Indexer GraphQL endpoints
+// No public mainnet indexer exists for Unichain (130) or Ink (57073) yet.
+// Omitting those entries prevents failed fetch attempts in production.
 export const DOPPLER_INDEXER_URLS: Record<number, string> = {
-  57073: "https://indexer.doppler.lol/graphql",
-  130:   "https://indexer.doppler.lol/graphql",
   84532: "https://testnet-indexer.doppler.lol/graphql",
 };
 

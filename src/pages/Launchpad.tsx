@@ -327,11 +327,12 @@ export function LaunchpadPage() {
       // Hyde swap handles Ink tokens natively
       navigate(`/swap?out=${tokenAddress}`);
     } else {
-      // Unichain tokens → Uniswap
+      // Unichain tokens → Uniswap (validate address before embedding in URL)
+      if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
       window.open(
         `https://app.uniswap.org/swap?outputCurrency=${tokenAddress}&chain=unichain`,
         "_blank",
-        "noreferrer"
+        "noopener,noreferrer"
       );
     }
   };

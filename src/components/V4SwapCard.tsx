@@ -270,7 +270,14 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut }:
       }
 
       // V4 swap via Hyde Gateway
-      const decodedInputs = JSON.parse(inputsJson) as `0x${string}`[];
+      let decodedInputs: `0x${string}`[];
+      try {
+        decodedInputs = JSON.parse(inputsJson) as `0x${string}`[];
+      } catch {
+        toast.error("Invalid swap payload — please try again", { id: toastId });
+        setSubmitting(false);
+        return;
+      }
       toast.loading("Sending swap...", { id: toastId });
       const hash = await walletClient.writeContract({
         address: contracts.gateway,
@@ -427,7 +434,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut }:
               className="w-20 rounded-lg border-0 bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none"
               style={{ border: '1px solid rgba(0, 212, 255, 0.1)' }}
               value={feeTier}
-              onChange={(e) => setFeeTier(e.target.value)}
+              onChange={(e) => { if (/^\d*$/.test(e.target.value)) setFeeTier(e.target.value); }}
               placeholder="3000"
             />
           </div>
