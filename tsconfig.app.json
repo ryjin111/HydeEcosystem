@@ -13,7 +13,10 @@
     "jsx": "react-jsx",
     "strict": true,
     "paths": {
-      "clanker-sdk/v4": ["../node_modules/clanker-sdk/dist/v4/index.d.ts"]
+      "clanker-sdk/v4": [
+        "./node_modules/clanker-sdk/dist/v4/index.d.ts",
+        "../node_modules/clanker-sdk/dist/v4/index.d.ts"
+      ]
     }
   },
   "include": ["src"]
