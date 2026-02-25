@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { TrendingCarousel } from "../components/TrendingCarousel";
 import type { DopplerPool } from "../components/TrendingCarousel";
-import { useDopplerPools } from "../hooks/useDopplerTokens";
 
 /* ─── DexScreener chart embed ─────────────────────────────────────────────── */
 function TokenChart({ pool }: { pool: DopplerPool | null }) {
@@ -57,6 +56,45 @@ function fmtUsd(raw: string | null): string {
   return `$${n.toFixed(0)}`;
 }
 
+// ─── Clanker token feed (replaces Doppler indexer) ───────────────────────────
+
+interface ClankerToken {
+  contract_address: string;
+  pool_address?: string;
+  name: string;
+  symbol: string;
+  deployed_at: string;
+  social_context?: { interface?: string };
+}
+
+function useClankerTokens(chainId: number) {
+  const [tokens, setTokens] = useState<ClankerToken[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`https://www.clanker.world/api/tokens?chainId=${chainId}&sort=desc&limit=50`)
+      .then((r) => r.json())
+      .then((d) => { setTokens(d.data ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [chainId]);
+
+  return { tokens, loading };
+}
+
+function clankerToPool(token: ClankerToken, chainId: number): DopplerPool {
+  return {
+    address: token.pool_address ?? token.contract_address,
+    chainId,
+    baseToken: { address: token.contract_address, name: token.name, symbol: token.symbol, decimals: 18 },
+    quoteToken: { address: "0x4200000000000000000000000000000000000006", name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    type: "clanker",
+    dollarLiquidity: null,
+    volumeUsd: null,
+    createdAt: token.deployed_at,
+  };
+}
+
 function RecentlyLaunched({
   chainId,
   onSelect,
@@ -64,12 +102,12 @@ function RecentlyLaunched({
   chainId: number;
   onSelect: (pool: DopplerPool) => void;
 }) {
-  const { pools, loading } = useDopplerPools(chainId);
+  const { tokens, loading } = useClankerTokens(chainId);
   const navigate = useNavigate();
 
-  const recent = [...pools]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 8);
+  // Prefer Hyde-tagged tokens; fall back to all Unichain tokens
+  const hydeTokens = tokens.filter((t) => t.social_context?.interface === "Hyde");
+  const recent = (hydeTokens.length > 0 ? hydeTokens : tokens).slice(0, 8);
 
   return (
     <div
@@ -107,9 +145,11 @@ function RecentlyLaunched({
         <p className="p-4 text-xs text-pcs-textDim text-center">No launches yet</p>
       ) : (
         <div className="divide-y" style={{ borderColor: "rgba(0,212,255,0.04)" }}>
-          {recent.map((pool) => (
+          {recent.map((token) => {
+            const pool = clankerToPool(token, chainId);
+            return (
             <div
-              key={pool.address}
+              key={token.contract_address}
               className="flex items-center gap-2.5 px-4 py-2 hover:bg-white/[0.02] cursor-pointer transition"
               onClick={() => onSelect(pool)}
             >
@@ -118,34 +158,30 @@ function RecentlyLaunched({
                 className="h-7 w-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
                 style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff" }}
               >
-                {pool.baseToken.symbol.slice(0, 2).toUpperCase()}
+                {token.symbol.slice(0, 2).toUpperCase()}
               </div>
 
               {/* Name + time */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-pcs-text truncate">{pool.baseToken.symbol}</span>
+                  <span className="text-xs font-bold text-pcs-text truncate">{token.symbol}</span>
                   <span
                     className="text-[8px] font-bold px-1 py-0.5 rounded flex-shrink-0"
-                    style={
-                      pool.type === "v2"
-                        ? { background: "rgba(0,212,255,0.10)", color: "#00d4ff" }
-                        : { background: "rgba(168,85,247,0.12)", color: "#a855f7" }
-                    }
+                    style={{ background: "rgba(0,212,255,0.10)", color: "#00d4ff" }}
                   >
-                    {pool.type === "v2" ? "V2" : "Auction"}
+                    Clanker
                   </span>
                 </div>
-                <span className="text-[10px] text-pcs-textDim">{pool.baseToken.name}</span>
+                <span className="text-[10px] text-pcs-textDim">{token.name}</span>
               </div>
 
-              {/* Stats */}
+              {/* Time */}
               <div className="text-right flex-shrink-0">
-                <p className="text-[10px] font-semibold text-pcs-text">{fmtUsd(pool.dollarLiquidity)}</p>
-                <p className="text-[9px] text-pcs-textDim">{timeAgo(pool.createdAt)} ago</p>
+                <p className="text-[9px] text-pcs-textDim">{timeAgo(token.deployed_at)} ago</p>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
