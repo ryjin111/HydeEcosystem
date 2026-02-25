@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { DopplerSDK, DAY_SECONDS, type DopplerSDKConfig } from "@whetstone-research/doppler-sdk";
 import { useDopplerPools } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
+import { ClankerLaunchForm } from "../components/ClankerLaunchForm";
 
 const UNICHAIN_CHAIN_ID = 130;
 
@@ -339,8 +340,7 @@ export function LaunchpadPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-pcs-text">Launchpad</h1>
         <p className="text-sm text-pcs-textDim mt-1">
-          Fair token launches powered by Doppler Dutch auctions.
-          Launching on Unichain — Ink support coming soon.
+          Instant token launches on Unichain — earn trading fees from day one.
         </p>
       </div>
 
@@ -385,7 +385,7 @@ export function LaunchpadPage() {
             >
               <p className="text-pcs-textDim text-sm">No launches found yet.</p>
               <p className="text-pcs-textDim text-xs mt-1">
-                Be the first to launch a token on Ink!
+                Be the first to launch a token on Unichain!
               </p>
               <button
                 onClick={() => setTab("launch")}
@@ -410,7 +410,7 @@ export function LaunchpadPage() {
       )}
 
       {/* Launch tab */}
-      {tab === "launch" && <LaunchForm />}
+      {tab === "launch" && <ClankerLaunchForm />}
     </div>
   );
 }
