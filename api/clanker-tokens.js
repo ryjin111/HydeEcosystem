@@ -1,5 +1,5 @@
 // Vercel serverless function — proxies Clanker API to avoid CORS issues
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   const chainId = req.query.chainId ?? '130';
   try {
     const r = await fetch(
