@@ -67,25 +67,25 @@ interface ClankerToken {
   social_context?: { interface?: string };
 }
 
-function useClankerTokens(chainId: number) {
+function useClankerTokens() {
   const [tokens, setTokens] = useState<ClankerToken[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    fetch(`https://www.clanker.world/api/tokens?chainId=${chainId}&sort=desc&limit=50`)
+    // Always Unichain (130) — that's where the bot deploys
+    fetch(`/api/clanker-tokens?chainId=130`)
       .then((r) => r.json())
       .then((d) => { setTokens(d.data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [chainId]);
+  }, []);
 
   return { tokens, loading };
 }
 
-function clankerToPool(token: ClankerToken, chainId: number): DopplerPool {
+function clankerToPool(token: ClankerToken): DopplerPool {
   return {
     address: token.pool_address ?? token.contract_address,
-    chainId,
+    chainId: 130,
     baseToken: { address: token.contract_address, name: token.name, symbol: token.symbol, decimals: 18 },
     quoteToken: { address: "0x4200000000000000000000000000000000000006", name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
     type: "clanker",
@@ -102,7 +102,7 @@ function RecentlyLaunched({
   chainId: number;
   onSelect: (pool: DopplerPool) => void;
 }) {
-  const { tokens, loading } = useClankerTokens(chainId);
+  const { tokens, loading } = useClankerTokens();
   const navigate = useNavigate();
 
   // Prefer Hyde-tagged tokens; fall back to all Unichain tokens
@@ -146,7 +146,7 @@ function RecentlyLaunched({
       ) : (
         <div className="divide-y" style={{ borderColor: "rgba(0,212,255,0.04)" }}>
           {recent.map((token) => {
-            const pool = clankerToPool(token, chainId);
+            const pool = clankerToPool(token);
             return (
             <div
               key={token.contract_address}
