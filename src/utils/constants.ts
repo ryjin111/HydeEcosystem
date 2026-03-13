@@ -43,6 +43,8 @@ export type V4Contracts = {
   positionManager: Address;
   permit2: Address;
   gateway: Address;
+  /** HydeTokenFactory address — present only on chains where it's deployed */
+  hydeTokenFactory?: Address;
 };
 
 export type V4EncodingTemplates = {
@@ -121,9 +123,22 @@ export const UNICHAIN_MAINNET: NetworkConfig = {
   tokens: [],
 };
 
+export const OPTIMISM_MAINNET: NetworkConfig = {
+  id: 10,
+  name: "Optimism",
+  rpcUrl: "https://mainnet.optimism.io",
+  explorerUrl: "https://optimistic.etherscan.io",
+  currencySymbol: "ETH",
+  factory: PLACEHOLDER_FACTORY,
+  router: PLACEHOLDER_ROUTER,
+  weth: "0x4200000000000000000000000000000000000006" as Address,
+  tokens: [],
+};
+
 export const NETWORKS: NetworkConfig[] = [
   UNICHAIN_MAINNET,
   INK_MAINNET,
+  OPTIMISM_MAINNET,
   // ROBINHOOD_TESTNET,
   // TEMPO_MODERATO,
   // PHAROS_ATLANTIC_TESTNET,
@@ -169,6 +184,16 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     positionManager: "0x1b35d13a2e2528f192637f14b05f0dc0e7deb566" as Address,
     permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway: "0x21d6Ce25aa1AB3F59eE51b7693A596C6d39A03C9" as Address
+  },
+  // Optimism Mainnet — Uniswap V4 + Hyde factory
+  [10]: {
+    poolManager:      "0x9a13F98Cb987694C9F086b1F5eB990EeA8264Ec3" as Address,
+    universalRouter:  "0x851116D9223fabED8E56C0E6b8Ad0c31d98B3507" as Address,
+    quoter:           "0x1f3131a13296fb91c90870043742c3cdbff1a8d7" as Address,
+    positionManager:  "0x3C3Ea4B57a46241e54610e5f022E5c45859A1017" as Address,
+    permit2:          "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
+    gateway:          "0xA0E8D06bD1D1B25de55D3fDc6a2F7B1A030ca25B" as Address,
+    hydeTokenFactory: "0xd3B8A589897990d554911a22eCBd748ed088D002" as Address,
   },
   // Unichain Mainnet — real Uniswap V4 deployments
   [UNICHAIN_MAINNET.id]: {
@@ -479,6 +504,29 @@ export const permit2Abi = [
       { name: "nonce", type: "uint48" }
     ]
   }
+] as const;
+
+export const hydeTokenFactoryAbi = [
+  {
+    type: "function",
+    name: "launches",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [
+      { name: "token",      type: "address" },
+      { name: "creator",    type: "address" },
+      { name: "positionId", type: "uint256" },
+      { name: "currency0",  type: "address" },
+      { name: "currency1",  type: "address" },
+    ],
+  },
+  {
+    type: "function",
+    name: "POOL_FEE",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint24" }],
+  },
 ] as const;
 
 export const hydeGatewayAbi = [

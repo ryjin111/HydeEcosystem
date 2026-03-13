@@ -4,7 +4,7 @@ import { formatUnits, parseUnits, zeroAddress } from "viem";
 import { useAccount, useBalance, usePublicClient, useWalletClient } from "wagmi";
 import { useSearchParams } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
-import { V4_CONTRACTS_BY_CHAIN, hydeGatewayAbi, v4QuoterAbi, routerAbi } from "../utils/constants";
+import { V4_CONTRACTS_BY_CHAIN, hydeGatewayAbi, hydeTokenFactoryAbi, v4QuoterAbi, routerAbi } from "../utils/constants";
 import { buildSwapTemplatePayload, feeToTickSpacing } from "../utils/v4Encoding";
 import { useApproval } from "../hooks/useApproval";
 import { TokenSelector } from "./TokenSelector";
@@ -54,6 +54,35 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut }:
     const match = tokens.find((t) => t.address.toLowerCase() === forceTokenOut.toLowerCase());
     if (match) setTokenOut(match);
   }, [forceTokenOut, tokens]);
+
+  // Auto-detect Hyde factory tokens and lock fee tier to 10000 (1%)
+  useEffect(() => {
+    const factory = contracts?.hydeTokenFactory;
+    if (!factory || !publicClient) return;
+
+    const tokenToCheck = tokenIn?.address ?? tokenOut?.address;
+    if (!tokenToCheck) return;
+
+    // Skip if it's ETH/WETH
+    if (tokenToCheck.toLowerCase() === network.weth.toLowerCase()) return;
+
+    (async () => {
+      try {
+        const result = await publicClient.readContract({
+          address: factory,
+          abi: hydeTokenFactoryAbi,
+          functionName: "launches",
+          args: [tokenToCheck as `0x${string}`],
+        });
+        // result[0] is the stored token address — non-zero means it was launched by Hyde factory
+        if (result[0] !== "0x0000000000000000000000000000000000000000") {
+          setFeeTier("10000");
+        }
+      } catch {
+        // factory not deployed or token not found — leave feeTier as-is
+      }
+    })();
+  }, [tokenIn?.address, tokenOut?.address, contracts?.hydeTokenFactory, publicClient, network.weth]);
 
   // Derive routing mode from selected tokens
   const dopplerToken = tokenOut?.dopplerPool ? tokenOut : tokenIn?.dopplerPool ? tokenIn : undefined;
