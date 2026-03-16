@@ -193,7 +193,7 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     positionManager:  "0x3C3Ea4B57a46241e54610e5f022E5c45859A1017" as Address,
     permit2:          "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway:          "0x21d6Ce25aa1AB3F59eE51b7693A596C6d39A03C9" as Address,
-    hydeTokenFactory: "0x83f5945b257aA3adBa2F572e0BC23d42DA9f4273" as Address,
+    hydeTokenFactory: "0xdbf44Db45BF61171822268107357bB018Afa05C3" as Address,
   },
 };
 
