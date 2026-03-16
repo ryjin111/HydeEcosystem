@@ -136,9 +136,9 @@ export const OPTIMISM_MAINNET: NetworkConfig = {
 };
 
 export const NETWORKS: NetworkConfig[] = [
-  UNICHAIN_MAINNET,
-  INK_MAINNET,
   OPTIMISM_MAINNET,
+  // INK_MAINNET,       // hidden — multichain later
+  // UNICHAIN_MAINNET,  // dropped
   // ROBINHOOD_TESTNET,
   // TEMPO_MODERATO,
   // PHAROS_ATLANTIC_TESTNET,
@@ -185,25 +185,16 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway: "0x21d6Ce25aa1AB3F59eE51b7693A596C6d39A03C9" as Address
   },
-  // Optimism Mainnet — Uniswap V4 + Hyde factory
+  // Optimism Mainnet — Uniswap V4
   [10]: {
     poolManager:      "0x9a13F98Cb987694C9F086b1F5eB990EeA8264Ec3" as Address,
     universalRouter:  "0x851116D9223fabED8E56C0E6b8Ad0c31d98B3507" as Address,
     quoter:           "0x1f3131a13296fb91c90870043742c3cdbff1a8d7" as Address,
     positionManager:  "0x3C3Ea4B57a46241e54610e5f022E5c45859A1017" as Address,
     permit2:          "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
-    gateway:          "0xA0E8D06bD1D1B25de55D3fDc6a2F7B1A030ca25B" as Address,
-    hydeTokenFactory: "0xd3B8A589897990d554911a22eCBd748ed088D002" as Address,
+    gateway:          "0x21d6Ce25aa1AB3F59eE51b7693A596C6d39A03C9" as Address,
+    hydeTokenFactory: "0x83f5945b257aA3adBa2F572e0BC23d42DA9f4273" as Address,
   },
-  // Unichain Mainnet — real Uniswap V4 deployments
-  [UNICHAIN_MAINNET.id]: {
-    poolManager: "0x1f98400000000000000000000000000000000004" as Address,
-    universalRouter: "0xef740bf23acae26f6492b10de645d6b98dc8eaf3" as Address,
-    quoter: "0x333e3c607b141b18ff6de9f258db6e77fe7491e0" as Address,
-    positionManager: "0x4529a01c7a0410167c5740c487a8de60232617bf" as Address,
-    permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
-    gateway: "0xA0E8D06bD1D1B25de55D3fDc6a2F7B1A030ca25B" as Address
-  }
 };
 
 // Template encoding config for auto payload generation.
@@ -509,6 +500,34 @@ export const permit2Abi = [
 export const hydeTokenFactoryAbi = [
   {
     type: "function",
+    name: "launchToken",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "name",         type: "string" },
+      { name: "symbol",       type: "string" },
+      { name: "sqrtPriceX96", type: "uint160" },
+      { name: "tickLower",    type: "int24" },
+      { name: "tickUpper",    type: "int24" },
+      { name: "creator",      type: "address" },
+    ],
+    outputs: [
+      { name: "token",      type: "address" },
+      { name: "positionId", type: "uint256" },
+    ],
+  },
+  {
+    type: "function",
+    name: "computeDefaultParams",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [
+      { name: "sqrtPriceX96", type: "uint160" },
+      { name: "tickLower",    type: "int24" },
+      { name: "tickUpper",    type: "int24" },
+    ],
+  },
+  {
+    type: "function",
     name: "launches",
     stateMutability: "view",
     inputs: [{ name: "token", type: "address" }],
@@ -526,6 +545,18 @@ export const hydeTokenFactoryAbi = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint24" }],
+  },
+  {
+    type: "event",
+    name: "TokenLaunched",
+    inputs: [
+      { name: "token",      type: "address", indexed: true },
+      { name: "creator",    type: "address", indexed: true },
+      { name: "positionId", type: "uint256", indexed: false },
+      { name: "sqrtPriceX96", type: "uint160", indexed: false },
+      { name: "tickLower",  type: "int24",   indexed: false },
+      { name: "tickUpper",  type: "int24",   indexed: false },
+    ],
   },
 ] as const;
 

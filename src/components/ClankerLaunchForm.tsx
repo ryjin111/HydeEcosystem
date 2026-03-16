@@ -1,15 +1,10 @@
 import { useState } from "react";
-import { useAccount, usePublicClient, useWalletClient, useSwitchChain, useWriteContract } from "wagmi";
-import { unichain } from "viem/chains";
-import type { WalletClient } from "viem";
-import type { Transport, Chain, Account, PublicClient } from "viem";
+import { getContractAddress, decodeEventLog } from "viem";
+import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
 import toast from "react-hot-toast";
-import { Clanker } from "clanker-sdk/v4";
+import { hydeTokenFactoryAbi, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 
-const UNICHAIN_ID        = 130;
-const CLANKER_FACTORY    = "0xE85A59c628F7d27878ACeB4bf3b35733630083a9" as const;
-const HYDE_TEAM          = "0x9C076a736D727F33c005145E0DB189Fd58D20110" as const;
-const HYDE_ECOSYSTEM     = "0xeb17B8c29717036161936A2179A88fe981B9CB80" as const;
+const OPTIMISM_ID = 10;
 
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
 
@@ -26,8 +21,7 @@ function toBase64DataUrl(file: File): Promise<string> {
 
 export function ClankerLaunchForm() {
   const { address, chainId, isConnected } = useAccount();
-  const publicClient  = usePublicClient({ chainId: UNICHAIN_ID });
-  const { data: walletClient } = useWalletClient({ chainId: UNICHAIN_ID });
+  const publicClient  = usePublicClient({ chainId: OPTIMISM_ID });
   const { switchChain } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
 
@@ -37,7 +31,8 @@ export function ClankerLaunchForm() {
   const [submitting,   setSubmitting]   = useState(false);
   const [launched,     setLaunched]     = useState<{ token: string; tx: string } | null>(null);
 
-  const chainMismatch = isConnected && chainId !== UNICHAIN_ID;
+  const chainMismatch = isConnected && chainId !== OPTIMISM_ID;
+  const factoryAddress = V4_CONTRACTS_BY_CHAIN[OPTIMISM_ID]?.hydeTokenFactory;
 
   const handleImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -47,84 +42,77 @@ export function ClankerLaunchForm() {
   };
 
   const handleLaunch = async () => {
-    if (!address || !publicClient || !walletClient) return;
+    if (!address || !publicClient || !factoryAddress) return;
     if (!name.trim() || !symbol.trim()) {
       toast.error("Token name and symbol are required");
       return;
     }
 
     setSubmitting(true);
-    const toastId = "clanker-launch";
-    try {
-      const clanker = new Clanker({
-        publicClient: publicClient as PublicClient,
-        wallet: walletClient as WalletClient<Transport, Chain, Account>,
-      });
+    const toastId = "hyde-launch";
+    const MAX_ATTEMPTS = 3;
 
-      const txConfig = await clanker.getDeployTransaction({
-        chainId:    UNICHAIN_ID,
-        tokenAdmin: address,
-        name:       name.trim(),
-        symbol:     symbol.trim().toUpperCase(),
-        image:      imagePreview ?? "",
-        context: { interface: "Hyde" },
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        // 1. Predict the token address (factory CREATE nonce) — fetch fresh each attempt
+        const nonce = await publicClient.getTransactionCount({ address: factoryAddress });
+        const predictedToken = getContractAddress({ from: factoryAddress, nonce: BigInt(nonce) });
 
-        // Static 1% buy / 1% sell fee
-        fees: { type: "static", clankerFee: 100, pairedFee: 100 },
+        // 2. Get pool tick params for that predicted address
+        const [sqrtPriceX96, tickLower, tickUpper] = await publicClient.readContract({
+          address: factoryAddress,
+          abi: hydeTokenFactoryAbi,
+          functionName: "computeDefaultParams",
+          args: [predictedToken],
+        });
 
-        // Standard single position: ~$27K → $1.5B mcap
-        pool: {
-          pairedToken:           "WETH",
-          tickIfToken0IsClanker: -230400,
-          tickSpacing:           200,
-          positions: [{ tickLower: -230400, tickUpper: -120000, positionBps: 10000 }],
-        },
+        // 3. Launch the token
+        toast.loading(attempt > 0 ? `Retrying… (attempt ${attempt + 1})` : "Confirm in wallet…", { id: toastId });
+        const hash = await writeContractAsync({
+          address: factoryAddress,
+          abi: hydeTokenFactoryAbi,
+          functionName: "launchToken",
+          args: [name.trim(), symbol.trim().toUpperCase(), sqrtPriceX96, tickLower, tickUpper, address],
+          chainId: OPTIMISM_ID,
+        });
 
-        // Fee split: 60% creator, 30% Hyde team, 10% Hyde ecosystem
-        rewards: {
-          recipients: [
-            { admin: address,        recipient: address,        bps: 6000, token: "Both" },
-            { admin: HYDE_TEAM,      recipient: HYDE_TEAM,      bps: 3000, token: "Both" },
-            { admin: HYDE_ECOSYSTEM, recipient: HYDE_ECOSYSTEM, bps: 1000, token: "Both" },
-          ],
-        },
-      });
+        toast.loading("Transaction submitted…", { id: toastId });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
-      toast.loading("Confirm in wallet…", { id: toastId });
-      const hash = await writeContractAsync({
-        ...txConfig,
-        chain: unichain,
-        account: address,
-      } as Parameters<typeof writeContractAsync>[0]);
+        // 4. Parse token address from TokenLaunched event
+        let tokenAddress = predictedToken as string;
+        for (const log of receipt.logs) {
+          try {
+            const decoded = decodeEventLog({
+              abi: hydeTokenFactoryAbi,
+              data: log.data,
+              topics: log.topics,
+            });
+            if (decoded.eventName === "TokenLaunched") {
+              tokenAddress = (decoded.args as { token: string }).token;
+              break;
+            }
+          } catch { /* skip non-matching logs */ }
+        }
 
-      toast.loading("Waiting for confirmation…", { id: toastId });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-      // Extract token address from the factory's TokenCreated event.
-      // TokenCreated(address msgSender, address indexed tokenAddress, address indexed tokenAdmin, ...)
-      // topic[0] = event sig hash, topic[1] = tokenAddress, topic[2] = tokenAdmin
-      const factoryLog = receipt.logs.find(
-        (log) => log.address.toLowerCase() === CLANKER_FACTORY.toLowerCase() && log.topics.length >= 2,
-      );
-      const tokenAddr = (factoryLog?.topics[1]
-        ? ("0x" + factoryLog.topics[1].slice(26))
-        : null) as `0x${string}` | null;
-
-      toast.success("Token launched!", { id: toastId, duration: 8000 });
-      setLaunched({ token: tokenAddr ?? "", tx: hash });
-      setName("");
-      setSymbol("");
-      setImagePreview(null);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("User rejected") || msg.includes("user rejected")) {
-        toast.error("Transaction cancelled.", { id: toastId });
-      } else {
+        toast.success("Token launched!", { id: toastId, duration: 8000 });
+        setLaunched({ token: tokenAddress, tx: hash });
+        setName("");
+        setSymbol("");
+        setImagePreview(null);
+        break; // success — exit retry loop
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("User rejected") || msg.includes("user rejected")) {
+          toast.error("Transaction cancelled.", { id: toastId });
+          break;
+        }
+        if (attempt < MAX_ATTEMPTS - 1) continue; // retry with fresh nonce
         toast.error(msg.length > 120 ? msg.slice(0, 120) + "…" : msg, { id: toastId });
       }
-    } finally {
-      setSubmitting(false);
     }
+
+    setSubmitting(false);
   };
 
   return (
@@ -136,11 +124,7 @@ export function ClankerLaunchForm() {
       <div>
         <h2 className="text-lg font-bold text-pcs-text">Launch a Token</h2>
         <p className="text-xs text-pcs-textDim mt-1">
-          Powered by{" "}
-          <a href="https://clanker.world" target="_blank" rel="noopener noreferrer" className="text-pcs-primary hover:underline">
-            Clanker
-          </a>{" "}
-          — instant launch on Unichain with creator fees.
+          Instant launch on Optimism — earn trading fees from day one.
         </p>
       </div>
 
@@ -150,16 +134,20 @@ export function ClankerLaunchForm() {
         style={{ background: "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.12)" }}
       >
         <div className="flex justify-between text-pcs-textDim">
-          <span>Buy / Sell fee</span>
-          <span className="text-pcs-text font-medium">1% / 1%</span>
+          <span>Pool fee</span>
+          <span className="text-pcs-text font-medium">1%</span>
         </div>
         <div className="flex justify-between text-pcs-textDim">
           <span>Creator share</span>
           <span className="text-pcs-text font-medium">60% of fees</span>
         </div>
         <div className="flex justify-between text-pcs-textDim">
-          <span>Anti-sniper</span>
-          <span className="text-pcs-text font-medium">2-block delay</span>
+          <span>Anti-snipe tax</span>
+          <span className="text-pcs-text font-medium">99% → 1% over 10 blocks</span>
+        </div>
+        <div className="flex justify-between text-pcs-textDim">
+          <span>Total supply</span>
+          <span className="text-pcs-text font-medium">1,000,000,000</span>
         </div>
         <div className="flex justify-between text-pcs-textDim">
           <span>Initial cost</span>
@@ -219,9 +207,9 @@ export function ClankerLaunchForm() {
         <button
           className="w-full rounded-xl py-3 text-sm font-semibold transition"
           style={{ background: "rgba(0,212,255,0.15)", color: "#00d4ff" }}
-          onClick={() => switchChain({ chainId: UNICHAIN_ID })}
+          onClick={() => switchChain({ chainId: OPTIMISM_ID })}
         >
-          Switch to Unichain
+          Switch to Optimism
         </button>
       ) : (
         <button
@@ -245,7 +233,7 @@ export function ClankerLaunchForm() {
             <p className="text-pcs-textDim break-all">
               Address:{" "}
               <a
-                href={`https://uniscan.xyz/token/${launched.token}`}
+                href={`https://optimistic.etherscan.io/token/${launched.token}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-pcs-primary hover:underline"
@@ -255,12 +243,12 @@ export function ClankerLaunchForm() {
             </p>
           )}
           <a
-            href={`https://uniscan.xyz/tx/${launched.tx}`}
+            href={`https://optimistic.etherscan.io/tx/${launched.tx}`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-pcs-primary hover:underline"
           >
-            View transaction
+            View transaction →
           </a>
         </div>
       )}

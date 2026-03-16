@@ -7,7 +7,7 @@ if (NETWORKS.length === 0) {
   throw new Error("NETWORKS array is empty — at least one network must be configured");
 }
 
-const MAINNET_CHAIN_IDS = new Set([57073, 130]); // Ink + Unichain are production chains
+const MAINNET_CHAIN_IDS = new Set([10]); // Optimism — add others when going multichain
 
 const chains = NETWORKS.map((net) =>
   defineChain({

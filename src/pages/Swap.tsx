@@ -72,8 +72,7 @@ function useClankerTokens() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Always Unichain (130) — that's where the bot deploys
-    fetch(`/api/clanker-tokens?chainId=130`)
+    fetch(`/api/clanker-tokens?chainId=10`)
       .then((r) => r.json())
       .then((d) => { setTokens(d.data ?? []); setLoading(false); })
       .catch(() => setLoading(false));
@@ -85,7 +84,7 @@ function useClankerTokens() {
 function clankerToPool(token: ClankerToken): DopplerPool {
   return {
     address: token.pool_address ?? token.contract_address,
-    chainId: 130,
+    chainId: 10,
     baseToken: { address: token.contract_address, name: token.name, symbol: token.symbol, decimals: 18 },
     quoteToken: { address: "0x4200000000000000000000000000000000000006", name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
     type: "clanker",
@@ -105,7 +104,7 @@ function RecentlyLaunched({
   const { tokens, loading } = useClankerTokens();
   const navigate = useNavigate();
 
-  // Prefer Hyde-tagged tokens; fall back to all Unichain tokens
+  // Prefer Hyde-tagged tokens; fall back to all Optimism tokens
   const hydeTokens = tokens.filter((t) => t.social_context?.interface === "Hyde");
   const recent = (hydeTokens.length > 0 ? hydeTokens : tokens).slice(0, 8);
 

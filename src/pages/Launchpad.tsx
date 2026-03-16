@@ -8,7 +8,7 @@ import { useDopplerPools } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { ClankerLaunchForm } from "../components/ClankerLaunchForm";
 
-const UNICHAIN_CHAIN_ID = 130;
+const OPTIMISM_CHAIN_ID = 10;
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 
@@ -33,7 +33,7 @@ function timeAgo(iso: string): string {
 
 const CHAIN_LABELS: Record<number, string> = {
   57073: "Ink",
-  130: "Unichain",
+  10: "Optimism",
 };
 
 function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void }) {
@@ -132,8 +132,8 @@ function useEthPrice() {
 
 function LaunchForm() {
   const { address, chainId, isConnected } = useAccount();
-  const publicClient = usePublicClient({ chainId: UNICHAIN_CHAIN_ID });
-  const { data: walletClient } = useWalletClient({ chainId: UNICHAIN_CHAIN_ID });
+  const publicClient = usePublicClient({ chainId: OPTIMISM_CHAIN_ID });
+  const { data: walletClient } = useWalletClient({ chainId: OPTIMISM_CHAIN_ID });
 
   const ethPrice = useEthPrice();
   const [name, setName] = useState("");
@@ -141,7 +141,7 @@ function LaunchForm() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const chainMismatch = isConnected && chainId !== UNICHAIN_CHAIN_ID;
+  const chainMismatch = isConnected && chainId !== OPTIMISM_CHAIN_ID;
 
   const handleImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -171,7 +171,7 @@ function LaunchForm() {
       const sdk = new DopplerSDK({
         publicClient: publicClient as DopplerSDKConfig["publicClient"],
         walletClient: walletClient as DopplerSDKConfig["walletClient"],
-        chainId: UNICHAIN_CHAIN_ID,
+        chainId: OPTIMISM_CHAIN_ID,
       });
 
       // Build tokenURI from image (base64 JSON metadata)
@@ -231,7 +231,7 @@ function LaunchForm() {
           <a href="https://docs.doppler.lol" target="_blank" rel="noreferrer" className="text-pcs-primary hover:underline">
             Doppler Protocol
           </a>{" "}
-          — fair Dutch auction on Unichain.
+          — fair Dutch auction on Optimism.
         </p>
       </div>
 
@@ -285,7 +285,7 @@ function LaunchForm() {
       {/* Submit */}
       {chainMismatch ? (
         <div className="text-center text-sm text-yellow-400 py-2">
-          Switch your wallet to Unichain (chain 130) to launch.
+          Switch your wallet to Optimism to launch.
         </div>
       ) : (
         <button
@@ -307,31 +307,14 @@ function LaunchForm() {
 
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 
-const INK_CHAIN_ID = 57073;
-
 export function LaunchpadPage() {
   const [tab, setTab] = useState<"explore" | "launch">("explore");
-  const { pools: unichainPools, loading: unichainLoading, refetch: refetchUnichain } = useDopplerPools(UNICHAIN_CHAIN_ID);
-  const { pools: inkPools, loading: inkLoading, refetch: refetchInk } = useDopplerPools(INK_CHAIN_ID);
+  const { pools, loading, refetch } = useDopplerPools(OPTIMISM_CHAIN_ID);
   const navigate = useNavigate();
 
-  const pools = [...unichainPools, ...inkPools];
-  const loading = unichainLoading || inkLoading;
-  const refetch = () => { refetchUnichain(); refetchInk(); };
-
-  const handleTrade = (tokenAddress: string, chainId: number) => {
-    if (chainId === INK_CHAIN_ID) {
-      // Hyde swap handles Ink tokens natively
-      navigate(`/swap?out=${tokenAddress}`);
-    } else {
-      // Unichain tokens → Uniswap (validate address before embedding in URL)
-      if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
-      window.open(
-        `https://app.uniswap.org/swap?outputCurrency=${tokenAddress}&chain=unichain`,
-        "_blank",
-        "noopener,noreferrer"
-      );
-    }
+  const handleTrade = (tokenAddress: string, _chainId: number) => {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
+    navigate(`/swap?out=${tokenAddress}`);
   };
 
   return (
@@ -340,7 +323,7 @@ export function LaunchpadPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-pcs-text">Launchpad</h1>
         <p className="text-sm text-pcs-textDim mt-1">
-          Instant token launches on Unichain — earn trading fees from day one.
+          Instant token launches on Optimism — earn trading fees from day one.
         </p>
       </div>
 
@@ -367,7 +350,7 @@ export function LaunchpadPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-pcs-textDim">
-              {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Unichain + Ink`}
+              {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Optimism`}
             </p>
             <button
               onClick={refetch}
@@ -385,7 +368,7 @@ export function LaunchpadPage() {
             >
               <p className="text-pcs-textDim text-sm">No launches found yet.</p>
               <p className="text-pcs-textDim text-xs mt-1">
-                Be the first to launch a token on Unichain!
+                Be the first to launch a token on Optimism!
               </p>
               <button
                 onClick={() => setTab("launch")}
