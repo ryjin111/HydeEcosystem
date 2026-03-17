@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { getContractAddress, decodeEventLog } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
 import toast from "react-hot-toast";
@@ -20,6 +20,7 @@ export function ClankerLaunchForm() {
   const [symbol,       setSymbol]       = useState("");
   const [submitting,   setSubmitting]   = useState(false);
   const [launched,     setLaunched]     = useState<{ token: string; tx: string } | null>(null);
+  const cancelledRef = useRef(false);
 
   const chainMismatch = isConnected && chainId !== OPTIMISM_ID;
   const factoryAddress = V4_CONTRACTS_BY_CHAIN[OPTIMISM_ID]?.hydeTokenFactory;
@@ -35,23 +36,33 @@ export function ClankerLaunchForm() {
       return;
     }
 
+    cancelledRef.current = false;
+    setLaunched(null);
     setSubmitting(true);
     const toastId = "hyde-launch";
     const MAX_ATTEMPTS = 3;
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      if (cancelledRef.current) break;
       try {
         // 1. Predict the token address (factory CREATE nonce) — fetch fresh each attempt
-        const nonce = await publicClient.getTransactionCount({ address: factoryAddress });
+        // NOTE: blockTag 'pending' accounts for in-flight factory txs; doesn't solve
+        // concurrent user launches (requires contract-level CREATE2 to fix fully).
+        const nonce = await publicClient.getTransactionCount({ address: factoryAddress, blockTag: 'pending' });
         const predictedToken = getContractAddress({ from: factoryAddress, nonce: BigInt(nonce) });
 
         // 2. Get pool tick params for that predicted address
+        // WARNING: if nonce prediction is wrong (concurrent launch), sqrtPriceX96 is
+        // computed for the wrong address — pool could be seeded with inverted price.
+        // Full fix requires CREATE2 + factory view function; deferred to contract level.
         const [sqrtPriceX96, tickLower, tickUpper] = await publicClient.readContract({
           address: factoryAddress,
           abi: hydeTokenFactoryAbi,
           functionName: "computeDefaultParams",
           args: [predictedToken],
-        });
+        }) as [bigint, number, number];
+
+        if (cancelledRef.current) break;
 
         // 3. Launch the token
         toast.loading(attempt > 0 ? `Retrying… (attempt ${attempt + 1})` : "Confirm in wallet…", { id: toastId });
@@ -59,7 +70,7 @@ export function ClankerLaunchForm() {
           address: factoryAddress,
           abi: hydeTokenFactoryAbi,
           functionName: "launchToken",
-          args: [name.trim(), symbol.trim().toUpperCase(), sqrtPriceX96, tickLower, tickUpper, address],
+          args: [name.trim(), symbol.trim(), sqrtPriceX96, tickLower, tickUpper, address],
           chainId: OPTIMISM_ID,
         });
 
@@ -67,11 +78,14 @@ export function ClankerLaunchForm() {
         const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
 
         if (receipt.status === 'reverted') {
-          throw new Error('Transaction reverted on-chain — check contract state and try again');
+          // Contract revert — don't retry, it'll fail the same way
+          toast.error("Transaction reverted on-chain — check contract state and try again", { id: toastId });
+          break;
         }
 
         // 4. Parse token address from TokenLaunched event
         let tokenAddress = predictedToken as string;
+        let eventFound = false;
         for (const log of receipt.logs) {
           try {
             const decoded = decodeEventLog({
@@ -81,9 +95,13 @@ export function ClankerLaunchForm() {
             });
             if (decoded.eventName === "TokenLaunched") {
               tokenAddress = (decoded.args as { token: string }).token;
+              eventFound = true;
               break;
             }
           } catch { /* skip non-matching logs */ }
+        }
+        if (!eventFound) {
+          console.warn('[HydeSwap] TokenLaunched event not found in receipt — falling back to predicted address');
         }
 
         toast.success("Token launched!", { id: toastId, duration: 8000 });
@@ -102,12 +120,24 @@ export function ClankerLaunchForm() {
           toast.error("Transaction cancelled.", { id: toastId });
           break;
         }
+        // Timeout — don't retry, the original tx may still be pending
+        const isTimeout = msg.includes("Timed out") || msg.includes("timeout") || msg.includes("TimeoutError");
+        if (isTimeout) {
+          toast.error("Transaction timed out — check Etherscan for status before retrying.", { id: toastId });
+          break;
+        }
         if (attempt < MAX_ATTEMPTS - 1) continue; // retry with fresh nonce
         toast.error(msg.length > 120 ? msg.slice(0, 120) + "…" : msg, { id: toastId });
       }
     }
 
     setSubmitting(false);
+  };
+
+  const handleCancel = () => {
+    cancelledRef.current = true;
+    setSubmitting(false);
+    toast.dismiss("hyde-launch");
   };
 
   return (
@@ -171,7 +201,7 @@ export function ClankerLaunchForm() {
           style={{ border: "1px solid rgba(0,212,255,0.15)" }}
           placeholder="e.g. HYDE"
           value={symbol}
-          onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+          onChange={(e) => setSymbol(e.target.value.toUpperCase().replace(/\s/g, ''))}
           maxLength={10}
         />
       </div>
@@ -187,14 +217,30 @@ export function ClankerLaunchForm() {
         >
           Switch to Optimism
         </button>
+      ) : submitting ? (
+        <div className="flex flex-col gap-2">
+          <button
+            className="w-full rounded-xl py-3 text-sm font-semibold transition disabled:opacity-50"
+            style={{ background: "rgba(0,212,255,0.15)", color: "#00d4ff" }}
+            disabled
+          >
+            Launching…
+          </button>
+          <button
+            className="w-full text-xs text-pcs-textDim hover:text-pcs-text transition"
+            onClick={handleCancel}
+          >
+            Cancel
+          </button>
+        </div>
       ) : (
         <button
           className="w-full rounded-xl py-3 text-sm font-semibold transition disabled:opacity-50"
-          style={{ background: submitting ? "rgba(0,212,255,0.15)" : "#00d4ff", color: submitting ? "#00d4ff" : "#0d1220" }}
+          style={{ background: "#00d4ff", color: "#0d1220" }}
           onClick={handleLaunch}
-          disabled={submitting || !name.trim() || !symbol.trim()}
+          disabled={!name.trim() || !symbol.trim()}
         >
-          {submitting ? "Launching…" : "Launch Token"}
+          Launch Token
         </button>
       )}
 

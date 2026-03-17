@@ -157,7 +157,7 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
         account: address,
         chain: walletClient.chain,
       });
-      await publicClient.waitForTransactionReceipt({ hash });
+      await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
       toast.success("Approval confirmed", { id: "approve" });
       await fetchBalancesAndAllowance();
       return true;
@@ -229,7 +229,7 @@ export function SwapCard({ network, tokens, onAddCustomToken }: SwapCardProps) {
         });
       }
 
-      await publicClient.waitForTransactionReceipt({ hash });
+      await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
       toast.success("Swap successful", { id: "swap" });
       await fetchBalancesAndAllowance();
       setAmountIn("");

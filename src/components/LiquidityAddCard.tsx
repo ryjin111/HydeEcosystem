@@ -106,7 +106,7 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Props) {
       address: token.address, abi: erc20Abi, functionName: "approve",
       args: [network.router, maxUint256], account: address, chain: walletClient.chain,
     });
-    await publicClient.waitForTransactionReceipt({ hash });
+    await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
     toast.success(`${token.symbol} approved`, { id: `approve-${token.address}` });
     return true;
   };
@@ -142,7 +142,7 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Props) {
           account: address, chain: walletClient.chain,
         });
       }
-      await publicClient.waitForTransactionReceipt({ hash });
+      await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
       toast.success("Liquidity added!", { id: "add-liq" });
       setAmountA(""); setAmountB("");
     } catch {

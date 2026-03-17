@@ -98,7 +98,7 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Props
           address: pairAddress, abi: erc20Abi, functionName: "approve",
           args: [network.router, maxUint256], account: address, chain: walletClient.chain,
         });
-        await publicClient.waitForTransactionReceipt({ hash: h });
+        await publicClient.waitForTransactionReceipt({ hash: h, timeout: 60_000 });
         toast.success("LP approved", { id: "approve-lp" });
       }
 
@@ -125,7 +125,7 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Props
           account: address, chain: walletClient.chain,
         });
       }
-      await publicClient.waitForTransactionReceipt({ hash });
+      await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
       toast.success("Liquidity removed!", { id: "remove-liq" });
       // Refresh
       setLpBalance(prev => prev - lpToRemove);
