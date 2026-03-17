@@ -8,15 +8,6 @@ const OPTIMISM_ID = 10;
 
 /* ─── helpers ──────────────────────────────────────────────────────────────── */
 
-function toBase64DataUrl(file: File): Promise<string> {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result as string);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
-}
-
 /* ─── component ────────────────────────────────────────────────────────────── */
 
 export function ClankerLaunchForm() {
@@ -27,22 +18,18 @@ export function ClankerLaunchForm() {
 
   const [name,         setName]         = useState("");
   const [symbol,       setSymbol]       = useState("");
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting,   setSubmitting]   = useState(false);
   const [launched,     setLaunched]     = useState<{ token: string; tx: string } | null>(null);
 
   const chainMismatch = isConnected && chainId !== OPTIMISM_ID;
   const factoryAddress = V4_CONTRACTS_BY_CHAIN[OPTIMISM_ID]?.hydeTokenFactory;
 
-  const handleImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const dataUrl = await toBase64DataUrl(file);
-    setImagePreview(dataUrl);
-  };
-
   const handleLaunch = async () => {
-    if (!address || !publicClient || !factoryAddress) return;
+    if (!address || !publicClient) return;
+    if (!factoryAddress) {
+      toast.error("Factory not configured for this network");
+      return;
+    }
     if (!name.trim() || !symbol.trim()) {
       toast.error("Token name and symbol are required");
       return;
@@ -77,7 +64,11 @@ export function ClankerLaunchForm() {
         });
 
         toast.loading("Transaction submitted…", { id: toastId });
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+        const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
+
+        if (receipt.status === 'reverted') {
+          throw new Error('Transaction reverted on-chain — check contract state and try again');
+        }
 
         // 4. Parse token address from TokenLaunched event
         let tokenAddress = predictedToken as string;
@@ -99,11 +90,15 @@ export function ClankerLaunchForm() {
         setLaunched({ token: tokenAddress, tx: hash });
         setName("");
         setSymbol("");
-        setImagePreview(null);
         break; // success — exit retry loop
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes("User rejected") || msg.includes("user rejected")) {
+        const code = (err as { code?: number; cause?: { code?: number } })?.code
+          ?? (err as { cause?: { code?: number } })?.cause?.code;
+        const userCancelled = code === 4001
+          || msg.includes("User rejected") || msg.includes("user rejected")
+          || msg.includes("User denied")   || msg.includes("Request rejected");
+        if (userCancelled) {
           toast.error("Transaction cancelled.", { id: toastId });
           break;
         }
@@ -135,7 +130,7 @@ export function ClankerLaunchForm() {
       >
         <div className="flex justify-between text-pcs-textDim">
           <span>Pool fee</span>
-          <span className="text-pcs-text font-medium">1%</span>
+          <span className="text-pcs-text font-medium">5% (+ anti-snipe on launch)</span>
         </div>
         <div className="flex justify-between text-pcs-textDim">
           <span>Creator share</span>
@@ -143,7 +138,7 @@ export function ClankerLaunchForm() {
         </div>
         <div className="flex justify-between text-pcs-textDim">
           <span>Anti-snipe tax</span>
-          <span className="text-pcs-text font-medium">99% → 1% over 10 blocks</span>
+          <span className="text-pcs-text font-medium">85% → 5% over 10 blocks</span>
         </div>
         <div className="flex justify-between text-pcs-textDim">
           <span>Total supply</span>
@@ -179,25 +174,6 @@ export function ClankerLaunchForm() {
           onChange={(e) => setSymbol(e.target.value.toUpperCase())}
           maxLength={10}
         />
-      </div>
-
-      {/* Image */}
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-pcs-textDim">Token Image <span className="opacity-50">(optional)</span></label>
-        <label
-          className="rounded-xl px-4 py-3 text-sm text-pcs-textDim cursor-pointer flex items-center gap-3 hover:border-pcs-primary/40 transition"
-          style={{ border: "1px solid rgba(0,212,255,0.15)" }}
-        >
-          {imagePreview ? (
-            <>
-              <img src={imagePreview} alt="preview" className="h-8 w-8 rounded-full object-cover" />
-              <span className="text-pcs-text text-xs">Image selected — click to change</span>
-            </>
-          ) : (
-            <span>Click to upload image</span>
-          )}
-          <input type="file" accept="image/*" className="hidden" onChange={handleImage} />
-        </label>
       </div>
 
       {/* Launch button */}
