@@ -21,9 +21,10 @@ type V4SwapCardProps = {
     decimals: number;
   }) => void;
   forceTokenOut?: string; // lowercase address — set by carousel / external selection
+  onTokenOutChange?: (address: string) => void;
 };
 
-export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut }: V4SwapCardProps) {
+export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, onTokenOutChange }: V4SwapCardProps) {
   const { address, chainId, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId: network.id });
   const { data: walletClient } = useWalletClient({ chainId: network.id });
@@ -54,6 +55,11 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut }:
     const match = tokens.find((t) => t.address.toLowerCase() === forceTokenOut.toLowerCase());
     if (match) setTokenOut(match);
   }, [forceTokenOut, tokens]);
+
+  // Notify parent when tokenOut changes (for chart auto-update)
+  useEffect(() => {
+    if (tokenOut?.address) onTokenOutChange?.(tokenOut.address);
+  }, [tokenOut?.address]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-detect Hyde factory tokens and lock fee tier to 10000 (1%)
   useEffect(() => {

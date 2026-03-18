@@ -23,7 +23,7 @@ export function FarmsPage({ network: _network }: Props) {
         <div>
           <p className="text-base font-bold text-pcs-text">Farms Coming Soon</p>
           <p className="text-xs text-pcs-textDim mt-1 max-w-xs">
-            HYDE farming rewards launch when MasterChef deploys to Ink Mainnet. LP staking will be available here.
+            HYDE farming rewards launch when MasterChef deploys to Optimism. LP staking will be available here.
           </p>
         </div>
       </div>

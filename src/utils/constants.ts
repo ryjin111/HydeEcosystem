@@ -1,5 +1,5 @@
 import type { Address, Hex } from "viem";
-import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS } from "../tokens";
+import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS, OPTIMISM_TOKENS } from "../tokens";
 
 export type TokenInfo = {
   symbol: string;
@@ -132,7 +132,7 @@ export const OPTIMISM_MAINNET: NetworkConfig = {
   factory: PLACEHOLDER_FACTORY,   // no V2 factory needed — Hyde tokens use V4 only
   router: PLACEHOLDER_ROUTER,     // no V2 router needed — swaps go via HydeV4Gateway
   weth: "0x4200000000000000000000000000000000000006" as Address,
-  tokens: [],
+  tokens: OPTIMISM_TOKENS,
 };
 
 export const NETWORKS: NetworkConfig[] = [

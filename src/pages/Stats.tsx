@@ -68,7 +68,7 @@ export function StatsPage() {
       <div>
         <h1 className="text-2xl font-bold text-pcs-text">Stats</h1>
         <p className="mt-1 text-xs text-pcs-textDim">
-          Live protocol data from the Doppler indexer · Ink Mainnet
+          Live protocol data from Hyde launches · Optimism
         </p>
       </div>
 
@@ -83,7 +83,7 @@ export function StatsPage() {
       {/* ── token table ─────────────────────────────────────────────────── */}
       <div>
         <h2 className="mb-3 text-sm font-bold text-pcs-text">
-          Doppler Launches · Ink Mainnet
+          Hyde Launches · Optimism
         </h2>
         <div className="rounded-2xl overflow-hidden" style={tableBg}>
           {loading ? (

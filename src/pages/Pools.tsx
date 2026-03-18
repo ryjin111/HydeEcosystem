@@ -23,7 +23,7 @@ export function PoolsPage({ network: _network }: Props) {
         <div>
           <p className="text-base font-bold text-pcs-text">Pools Coming Soon</p>
           <p className="text-xs text-pcs-textDim mt-1 max-w-xs">
-            HYDE staking pools deploy to Ink Mainnet alongside the HYDE token. Single-asset staking will be available here.
+            HYDE staking pools deploy to Optimism alongside the HYDE token. Single-asset staking will be available here.
           </p>
         </div>
       </div>

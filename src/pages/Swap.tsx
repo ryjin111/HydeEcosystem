@@ -5,9 +5,9 @@ import { V4SwapCard } from "../components/V4SwapCard";
 import { TrendingCarousel } from "../components/TrendingCarousel";
 import type { DopplerPool } from "../components/TrendingCarousel";
 
-/* ─── DexScreener chart embed ─────────────────────────────────────────────── */
-function TokenChart({ pool }: { pool: DopplerPool | null }) {
-  if (!pool) {
+/* ─── GeckoTerminal chart embed ───────────────────────────────────────────── */
+function TokenChart({ tokenAddress }: { tokenAddress: string | null }) {
+  if (!tokenAddress) {
     return (
       <div
         className="w-full h-[360px] rounded-2xl flex items-center justify-center"
@@ -18,8 +18,7 @@ function TokenChart({ pool }: { pool: DopplerPool | null }) {
     );
   }
 
-  // Use token address — DexScreener finds the best pair on Optimism automatically
-  const src = `https://dexscreener.com/optimism/${pool.baseToken.address}?embed=1&theme=dark&trades=0&info=0`;
+  const src = `https://www.geckoterminal.com/optimism/tokens/${tokenAddress}?embed=1&theme=dark&trades_table=0&info=0`;
 
   return (
     <div
@@ -32,7 +31,7 @@ function TokenChart({ pool }: { pool: DopplerPool | null }) {
         height="100%"
         frameBorder="0"
         allow="clipboard-write"
-        title={`${pool.baseToken.symbol} chart`}
+        title="Token chart"
       />
     </div>
   );
@@ -164,12 +163,6 @@ function RecentlyLaunched({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-bold text-pcs-text truncate">{token.symbol}</span>
-                  <span
-                    className="text-[8px] font-bold px-1 py-0.5 rounded flex-shrink-0"
-                    style={{ background: "rgba(0,212,255,0.10)", color: "#00d4ff" }}
-                  >
-                    Clanker
-                  </span>
                 </div>
                 <span className="text-[10px] text-pcs-textDim">{token.name}</span>
               </div>
@@ -197,8 +190,20 @@ type Props = {
 
 export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
   const [selectedPool, setSelectedPool] = useState<DopplerPool | null>(null);
+  const [chartTokenAddress, setChartTokenAddress] = useState<string | null>(null);
 
-  const handleSelect = (pool: DopplerPool) => setSelectedPool(pool);
+  const handleSelect = (pool: DopplerPool) => {
+    setSelectedPool(pool);
+    setChartTokenAddress(pool.baseToken.address);
+  };
+
+  const handleTokenOutChange = (address: string) => {
+    // Don't show chart for ETH/WETH — no meaningful price chart
+    const weth = network.weth.toLowerCase();
+    const addr = address.toLowerCase();
+    if (addr === weth || addr === "0x0000000000000000000000000000000000000000") return;
+    setChartTokenAddress(address);
+  };
 
   return (
     <div className="w-full max-w-6xl mx-auto">
@@ -217,12 +222,13 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
             tokens={tokens}
             onAddCustomToken={onAddCustomToken}
             forceTokenOut={selectedPool?.baseToken.address}
+            onTokenOutChange={handleTokenOutChange}
           />
         </div>
 
         {/* Right: Chart + Recently Launched */}
         <div className="flex-1 min-w-0 flex flex-col gap-4 w-full">
-          <TokenChart pool={selectedPool} />
+          <TokenChart tokenAddress={chartTokenAddress} />
           <RecentlyLaunched chainId={network.id} onSelect={handleSelect} />
         </div>
       </div>
