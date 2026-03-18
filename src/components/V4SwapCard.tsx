@@ -33,7 +33,9 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
   const [searchParams] = useSearchParams();
   const outParam = searchParams.get("out")?.toLowerCase();
 
-  const [tokenIn, setTokenIn] = useState<TokenInfo | undefined>(tokens[0]);
+  const [tokenIn, setTokenIn] = useState<TokenInfo | undefined>(
+    tokens.find((t) => t.address.toLowerCase() === network.weth.toLowerCase()) ?? tokens[0]
+  );
   const [tokenOut, setTokenOut] = useState<TokenInfo | undefined>(
     outParam ? tokens.find((t) => t.address.toLowerCase() === outParam) ?? tokens[1] : tokens[1]
   );
@@ -53,8 +55,12 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
   useEffect(() => {
     if (!forceTokenOut) return;
     const match = tokens.find((t) => t.address.toLowerCase() === forceTokenOut.toLowerCase());
-    if (match) setTokenOut(match);
-  }, [forceTokenOut, tokens]);
+    if (!match) return;
+    setTokenOut(match);
+    // Auto-switch tokenIn to WETH when selecting a Hyde token (all Hyde pools pair with WETH)
+    const weth = tokens.find((t) => t.address.toLowerCase() === network.weth.toLowerCase());
+    if (weth && tokenIn?.isNative) setTokenIn(weth);
+  }, [forceTokenOut, tokens]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Notify parent when tokenOut changes (for chart auto-update)
   useEffect(() => {

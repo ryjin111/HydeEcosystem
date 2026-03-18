@@ -10,7 +10,7 @@ function TokenChart({ tokenAddress }: { tokenAddress: string | null }) {
   if (!tokenAddress) {
     return (
       <div
-        className="w-full h-[360px] rounded-2xl flex items-center justify-center"
+        className="w-full h-[500px] rounded-2xl flex items-center justify-center"
         style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.08)" }}
       >
         <p className="text-xs text-pcs-textDim">Select a token to view chart</p>
@@ -23,7 +23,7 @@ function TokenChart({ tokenAddress }: { tokenAddress: string | null }) {
   return (
     <div
       className="w-full rounded-2xl overflow-hidden"
-      style={{ height: 360, border: "1px solid rgba(0,212,255,0.08)" }}
+      style={{ height: 500, border: "1px solid rgba(0,212,255,0.08)" }}
     >
       <iframe
         src={src}
