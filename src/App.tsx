@@ -20,12 +20,12 @@ function App() {
   );
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { tokens: baseTokens, addCustomToken } = useTokenList(selectedNetwork);
-  const { tokens: dopplerTokens } = useDopplerTokens(selectedNetwork.id);
+  const { tokens: hydeTokens } = useHydeTokens(selectedNetwork.id);
 
-  // Merge Doppler-launched tokens into the token list (auto-discovery)
+  // Merge Hyde-launched tokens into the token list (auto-discovery)
   const tokens = useMemo(() => {
     const map = new Map(baseTokens.map((t) => [t.address.toLowerCase(), t]));
-    for (const t of dopplerTokens) {
+    for (const t of hydeTokens) {
       if (!map.has(t.address.toLowerCase())) map.set(t.address.toLowerCase(), t);
     }
     return Array.from(map.values());

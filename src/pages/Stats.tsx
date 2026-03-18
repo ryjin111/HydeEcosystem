@@ -1,7 +1,5 @@
-import { useDopplerPools } from "../hooks/useDopplerTokens";
+import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
-
-const INK_CHAIN_ID = 57073;
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
 function fmtUsd(n: number): string {
@@ -51,7 +49,7 @@ function ComingSoon({ icon, label, detail }: { icon: string; label: string; deta
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 export function StatsPage() {
-  const { pools, loading } = useDopplerPools(INK_CHAIN_ID);
+  const { pools, loading } = useHydeLaunches();
 
   const totalLiquidity = sumField(pools, "dollarLiquidity");
   const totalVolume    = sumField(pools, "volumeUsd");

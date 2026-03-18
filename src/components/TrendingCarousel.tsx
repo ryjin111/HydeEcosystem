@@ -1,4 +1,4 @@
-import { useDopplerPools } from "../hooks/useDopplerTokens";
+import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
 export type { DopplerPool };
@@ -77,13 +77,12 @@ function TokenPill({
 }
 
 type Props = {
-  chainId: number;
   selected?: string; // active pool address
   onSelect: (pool: DopplerPool) => void;
 };
 
-export function TrendingCarousel({ chainId, selected, onSelect }: Props) {
-  const { pools, loading } = useDopplerPools(chainId);
+export function TrendingCarousel({ selected, onSelect }: Props) {
+  const { pools, loading } = useHydeLaunches();
 
   const sorted = [...pools].sort((a, b) => {
     const va = parseFloat(a.volumeUsd ?? "0");

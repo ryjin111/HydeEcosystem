@@ -1,9 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useDopplerPools } from "../hooks/useDopplerTokens";
+import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
-
-const INK_CHAIN_ID = 57073;
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 function fmtUsd(raw: string | null): string {
@@ -132,7 +130,7 @@ function sortPools(pools: DopplerPool[], mode: SortMode): DopplerPool[] {
 }
 
 export function LaunchesPage() {
-  const { pools, loading, refetch } = useDopplerPools(INK_CHAIN_ID);
+  const { pools, loading, refetch } = useHydeLaunches();
   const navigate = useNavigate();
   const [sort, setSort] = useState<SortMode>("trending");
   const [search, setSearch] = useState("");

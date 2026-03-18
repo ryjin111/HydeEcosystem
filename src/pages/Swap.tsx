@@ -204,7 +204,6 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
     <div className="w-full max-w-6xl mx-auto">
       {/* Trending carousel — full width */}
       <TrendingCarousel
-        chainId={network.id}
         selected={selectedPool?.address}
         onSelect={handleSelect}
       />
