@@ -29,7 +29,7 @@ function App() {
       if (!map.has(t.address.toLowerCase())) map.set(t.address.toLowerCase(), t);
     }
     return Array.from(map.values());
-  }, [baseTokens, dopplerTokens]);
+  }, [baseTokens, hydeTokens]);
 
   type SidebarItem = { to: string; label: string; icon: () => React.JSX.Element; disabled?: boolean };
   type SidebarSection = { title: string; items: SidebarItem[] };
