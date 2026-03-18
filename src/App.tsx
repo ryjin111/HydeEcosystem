@@ -10,7 +10,7 @@ import { LaunchpadPage } from "./pages/Launchpad";
 import { LaunchesPage } from "./pages/Launches";
 import { NETWORKS } from "./utils/constants";
 import { useTokenList } from "./hooks/useTokenList";
-import { useDopplerTokens } from "./hooks/useDopplerTokens";
+import { useHydeTokens } from "./hooks/useDopplerTokens";
 
 function App() {
   const [selectedNetworkId, setSelectedNetworkId] = useState(NETWORKS[0].id);

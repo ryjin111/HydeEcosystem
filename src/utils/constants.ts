@@ -129,8 +129,8 @@ export const OPTIMISM_MAINNET: NetworkConfig = {
   rpcUrl: "https://mainnet.optimism.io",
   explorerUrl: "https://optimistic.etherscan.io",
   currencySymbol: "ETH",
-  factory: PLACEHOLDER_FACTORY,
-  router: PLACEHOLDER_ROUTER,
+  factory: PLACEHOLDER_FACTORY,   // no V2 factory needed — Hyde tokens use V4 only
+  router: PLACEHOLDER_ROUTER,     // no V2 router needed — swaps go via HydeV4Gateway
   weth: "0x4200000000000000000000000000000000000006" as Address,
   tokens: [],
 };

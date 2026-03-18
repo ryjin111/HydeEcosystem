@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useDopplerPools } from "../hooks/useDopplerTokens";
+import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { ClankerLaunchForm } from "../components/ClankerLaunchForm";
 
@@ -104,11 +104,13 @@ function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string
 
 export function LaunchpadPage() {
   const [tab, setTab] = useState<"explore" | "launch">("explore");
-  const { pools, loading, refetch } = useDopplerPools(OPTIMISM_CHAIN_ID);
+  const { pools, loading, refetch } = useHydeLaunches();
   const navigate = useNavigate();
 
-  const handleTrade = (tokenAddress: string, _chainId: number) => {
+  const handleTrade = (tokenAddress: string, chainId: number) => {
     if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
+    // All Hyde launches are on Optimism (chainId 10) — gate non-Optimism tokens
+    if (chainId !== OPTIMISM_CHAIN_ID) return;
     navigate(`/swap?out=${tokenAddress}`);
   };
 

@@ -1,109 +1,75 @@
 import { useEffect, useState } from "react";
 import type { TokenInfo } from "../utils/constants";
-import {
-  DOPPLER_INDEXER_URLS,
-  DOPPLER_POOLS_QUERY,
-  type DopplerPool,
-} from "../utils/dopplerConfig";
+import type { DopplerPool } from "../utils/dopplerConfig";
 
-const CACHE_KEY = "hyde-doppler-tokens-v1";
-const CACHE_TTL_MS = 60_000; // 1 minute
+const OPTIMISM_CHAIN_ID = 10;
+// HydeAntiSnipeHook deployed on Optimism — all Hyde V4 pools use this hook
+const HYDE_HOOK_ADDRESS = "0x4B2336d2DF984891cB98D693E48D310154109080" as `0x${string}`;
 
-type CacheEntry = { tokens: TokenInfo[]; ts: number };
-
-function isValidCacheEntry(obj: unknown): obj is CacheEntry {
-  if (!obj || typeof obj !== "object") return false;
-  const e = obj as Record<string, unknown>;
-  return typeof e.ts === "number" && Number.isFinite(e.ts) && Array.isArray(e.tokens);
+async function fetchHydePools(): Promise<DopplerPool[]> {
+  const r = await fetch("/api/clanker-tokens?chainId=10");
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const d = await r.json();
+  return (d.data ?? []).map((t: {
+    contract_address: string;
+    name: string;
+    symbol: string;
+    deployed_at: string;
+  }): DopplerPool => ({
+    address: t.contract_address,
+    chainId: OPTIMISM_CHAIN_ID,
+    baseToken: {
+      address: t.contract_address,
+      name: t.name,
+      symbol: t.symbol,
+      decimals: 18,
+    },
+    quoteToken: {
+      address: "0x4200000000000000000000000000000000000006",
+      name: "Wrapped Ether",
+      symbol: "WETH",
+      decimals: 18,
+    },
+    type: "v4",
+    dollarLiquidity: null,
+    volumeUsd: null,
+    createdAt: t.deployed_at,
+  }));
 }
 
-function loadCached(chainId: number): TokenInfo[] {
-  try {
-    const raw = localStorage.getItem(`${CACHE_KEY}-${chainId}`);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!isValidCacheEntry(parsed)) return [];
-    if (Date.now() - parsed.ts > CACHE_TTL_MS) return [];
-    return parsed.tokens;
-  } catch {
-    return [];
-  }
-}
-
-function saveCache(chainId: number, tokens: TokenInfo[]) {
-  try {
-    const entry: CacheEntry = { tokens, ts: Date.now() };
-    localStorage.setItem(`${CACHE_KEY}-${chainId}`, JSON.stringify(entry));
-  } catch {
-    /* storage full — ignore */
-  }
-}
-
-async function fetchFromIndexer(chainId: number): Promise<TokenInfo[]> {
-  const url = DOPPLER_INDEXER_URLS[chainId];
-  if (!url || !url.startsWith("https://")) return [];
-
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      query: DOPPLER_POOLS_QUERY,
-      variables: { chainId, limit: 500 },
-    }),
-  });
-
-  if (!resp.ok) return [];
-  const data = await resp.json();
-  if (data?.errors) return [];
-  const items: DopplerPool[] = data?.data?.pools?.items ?? [];
-
-  const seen = new Set<string>();
-  const tokens: TokenInfo[] = [];
-
-  for (const pool of items) {
-    const bt = pool.baseToken;
-    if (bt?.address && !seen.has(bt.address.toLowerCase())) {
-      seen.add(bt.address.toLowerCase());
-      tokens.push({
-        address: bt.address as `0x${string}`,
-        name: bt.name ?? bt.symbol,
-        symbol: bt.symbol,
-        decimals: bt.decimals ?? 18,
-        dopplerPool: {
-          type: (pool.type === "v2" ? "v2" : "v4") as "v4" | "v2",
-          // pool.address is the Doppler hook/airlock address used in the V4 PoolKey
-          hookAddress: pool.type !== "v2" ? (pool.address as `0x${string}`) : undefined,
-        },
-      });
-    }
-  }
-
-  return tokens;
-}
-
-/** Fetches all tokens launched via Doppler on the given chain (from indexer). */
-export function useDopplerTokens(chainId: number): {
+/** Fetches tokens launched via HydeTokenFactory on Optimism as TokenInfo[].
+ *  Each token gets dopplerPool set so V4SwapCard routes through the anti-snipe hook. */
+export function useHydeTokens(chainId: number): {
   tokens: TokenInfo[];
   loading: boolean;
 } {
-  const [tokens, setTokens] = useState<TokenInfo[]>(() => loadCached(chainId));
+  const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!DOPPLER_INDEXER_URLS[chainId]) return;
+    if (chainId !== OPTIMISM_CHAIN_ID) return;
 
     let cancelled = false;
     setLoading(true);
 
-    fetchFromIndexer(chainId)
-      .then((result) => {
-        if (!cancelled) {
-          setTokens(result);
-          saveCache(chainId, result);
-        }
+    fetchHydePools()
+      .then((pools) => {
+        if (cancelled) return;
+        setTokens(
+          pools.map((p): TokenInfo => ({
+            address: p.baseToken.address as `0x${string}`,
+            name: p.baseToken.name,
+            symbol: p.baseToken.symbol,
+            decimals: p.baseToken.decimals,
+            dopplerPool: {
+              type: "v4",
+              hookAddress: HYDE_HOOK_ADDRESS,
+            },
+          }))
+        );
       })
       .catch(() => {
-        // Indexer unavailable — silently use cached tokens
+        // API unavailable — leave tokens empty
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -117,42 +83,27 @@ export function useDopplerTokens(chainId: number): {
   return { tokens, loading };
 }
 
-/** Fetches full pool objects (with liquidity + volume) for the Launchpad explore tab. */
-export function useDopplerPools(chainId: number): {
+/** Fetches full pool objects for the Launchpad explore tab and trending carousel. */
+export function useHydeLaunches(): {
   pools: DopplerPool[];
   loading: boolean;
   refetch: () => void;
 } {
   const [pools, setPools] = useState<DopplerPool[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
-
   const refetch = () => setTick((t) => t + 1);
 
   useEffect(() => {
-    const url = DOPPLER_INDEXER_URLS[chainId];
-    if (!url || !url.startsWith("https://")) return;
-
     let cancelled = false;
     setLoading(true);
 
-    fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: DOPPLER_POOLS_QUERY,
-        variables: { chainId, limit: 100 },
-      }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) {
-          if (data?.errors) return;
-          setPools(data?.data?.pools?.items ?? []);
-        }
+    fetchHydePools()
+      .then((items) => {
+        if (!cancelled) setPools(items);
       })
       .catch(() => {
-        // Indexer unavailable — leave pools empty
+        if (!cancelled) setPools([]);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -161,7 +112,7 @@ export function useDopplerPools(chainId: number): {
     return () => {
       cancelled = true;
     };
-  }, [chainId, tick]);
+  }, [tick]);
 
   return { pools, loading, refetch };
 }
