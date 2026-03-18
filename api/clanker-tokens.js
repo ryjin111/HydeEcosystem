@@ -1,9 +1,9 @@
 // HydeTokenFactory event reader — replaces old Clanker proxy
 // Returns the 50 most recent TokenLaunched events from the factory on Optimism.
 
-const FACTORY      = '0xdbf44Db45BF61171822268107357bB018Afa05C3';
+const FACTORY      = '0x29D66652c341824252F2C0a3a55E6188206b476b';
 const TOPIC        = '0xe6909668d179e62e5187846d18f40674b9798fa796e6303f68f49f8a0fca8735';
-const FROM_BLOCK   = '0x' + (149_035_209).toString(16); // factory deploy block
+const FROM_BLOCK   = '0x' + (149_109_960).toString(16); // factory v2 deploy block
 const RPC          = process.env.RPC_URL ?? 'https://mainnet.optimism.io';
 
 function decodeAbiString(hex) {
@@ -68,6 +68,7 @@ export default async function handler(req, res) {
       body:    JSON.stringify(calls),
     });
     const batchData = await batchRes.json();
+    if (!Array.isArray(batchData)) throw new Error('Batch RPC returned non-array');
     const byId = Object.fromEntries(batchData.map(r => [r.id, r.result]));
 
     // 3. Build response in the shape useClankerTokens() expects
@@ -87,6 +88,7 @@ export default async function handler(req, res) {
     res.json({ data });
   } catch (err) {
     console.error('[clanker-tokens] error:', err?.message ?? err);
-    res.status(500).json({ data: [] });
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json({ data: [] });
   }
 }

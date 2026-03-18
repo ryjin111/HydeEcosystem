@@ -18,8 +18,8 @@ function TokenChart({ pool }: { pool: DopplerPool | null }) {
     );
   }
 
-  // Use token address — DexScreener finds the best pair on Ink automatically
-  const src = `https://dexscreener.com/ink/${pool.baseToken.address}?embed=1&theme=dark&trades=0&info=0`;
+  // Use token address — DexScreener finds the best pair on Optimism automatically
+  const src = `https://dexscreener.com/optimism/${pool.baseToken.address}?embed=1&theme=dark&trades=0&info=0`;
 
   return (
     <div
@@ -87,7 +87,7 @@ function clankerToPool(token: ClankerToken): DopplerPool {
     chainId: 10,
     baseToken: { address: token.contract_address, name: token.name, symbol: token.symbol, decimals: 18 },
     quoteToken: { address: "0x4200000000000000000000000000000000000006", name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
-    type: "clanker",
+    type: "v4",
     dollarLiquidity: null,
     volumeUsd: null,
     createdAt: token.deployed_at,
