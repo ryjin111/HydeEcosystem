@@ -5,7 +5,7 @@ import { V4SwapCard } from "../components/V4SwapCard";
 import { TrendingCarousel } from "../components/TrendingCarousel";
 import type { DopplerPool } from "../components/TrendingCarousel";
 
-/* ─── GeckoTerminal chart embed ───────────────────────────────────────────── */
+/* ─── DexScreener chart embed ────────────────────────────────────────────── */
 function TokenChart({ tokenAddress }: { tokenAddress: string | null }) {
   if (!tokenAddress) {
     return (
@@ -18,7 +18,7 @@ function TokenChart({ tokenAddress }: { tokenAddress: string | null }) {
     );
   }
 
-  const src = `https://www.geckoterminal.com/optimism/tokens/${tokenAddress}?embed=1&theme=dark&trades_table=0&info=0`;
+  const src = `https://dexscreener.com/optimism/${tokenAddress}?embed=1&theme=dark&trades=0&info=0`;
 
   return (
     <div

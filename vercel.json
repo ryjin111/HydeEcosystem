@@ -1,5 +1,9 @@
 {
   "rewrites": [
+    {
+      "source": "/terminal/:path*",
+      "destination": "https://hydeterminal.vercel.app/:path*"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
