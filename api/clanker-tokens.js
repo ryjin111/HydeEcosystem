@@ -1,9 +1,9 @@
 // HydeTokenFactory event reader — replaces old Clanker proxy
 // Returns the 50 most recent TokenLaunched events from the factory on Optimism.
 
-const FACTORY      = '0x9532Dc6534122443a0C14F0Ec6407447f262fF42';
+const FACTORY      = '0x83f5945b257aA3adBa2F572e0BC23d42DA9f4273';
 const TOPIC        = '0xe6909668d179e62e5187846d18f40674b9798fa796e6303f68f49f8a0fca8735';
-const FROM_BLOCK   = '0x' + (149_111_000).toString(16); // ~1000 blocks before v3 factory deploy
+const FROM_BLOCK   = '0x' + (149_100_000).toString(16); // before factory deploy
 const RPC          = process.env.RPC_URL ?? 'https://mainnet.optimism.io';
 
 function decodeAbiString(hex) {
