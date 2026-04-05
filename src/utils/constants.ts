@@ -500,6 +500,13 @@ export const permit2Abi = [
 export const hydeTokenFactoryAbi = [
   {
     type: "function",
+    name: "collectFees",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "launchToken",
     stateMutability: "nonpayable",
     inputs: [
