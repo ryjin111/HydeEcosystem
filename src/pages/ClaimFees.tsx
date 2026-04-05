@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useAccount } from "wagmi";
-import { usePrivy } from "@privy-io/react-auth";
-import { useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useConnect, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import toast from "react-hot-toast";
 import { hydeTokenFactoryAbi } from "../utils/constants";
 
@@ -148,11 +146,17 @@ function CollectButton({ token }: { token: TokenRow }) {
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 
 export function ClaimFeesPage() {
-  const { authenticated, login, ready } = usePrivy();
-  const { address } = useAccount();
+  const { address, isConnected } = useAccount();
+  const { connectAsync, connectors, isPending: isConnecting } = useConnect();
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetched, setFetched] = useState(false);
+
+  const connectWallet = async () => {
+    const connector = connectors[0];
+    if (!connector) { toast.error("No wallet connector found"); return; }
+    try { await connectAsync({ connector }); } catch { /* user rejected */ }
+  };
 
   const load = useCallback(async (addr: string) => {
     setLoading(true);
@@ -168,13 +172,13 @@ export function ClaimFeesPage() {
   }, []);
 
   useEffect(() => {
-    if (authenticated && address) {
+    if (isConnected && address) {
       load(address);
     } else {
       setTokens([]);
       setFetched(false);
     }
-  }, [authenticated, address, load]);
+  }, [isConnected, address, load]);
 
   return (
     <div className="w-full max-w-2xl mx-auto px-4">
@@ -187,27 +191,27 @@ export function ClaimFeesPage() {
       </div>
 
       {/* Not connected */}
-      {!authenticated && (
+      {!isConnected && (
         <div
           className="rounded-2xl p-10 text-center"
           style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.08)" }}
         >
-          <p className="text-pcs-textDim text-sm mb-4">Connect your account to see your launched tokens.</p>
+          <p className="text-pcs-textDim text-sm mb-4">Connect your wallet to see your launched tokens.</p>
           <button
-            onClick={login}
-            disabled={!ready}
+            onClick={connectWallet}
+            disabled={isConnecting}
             className="px-5 py-2 rounded-xl text-sm font-semibold transition disabled:opacity-50"
             style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff", border: "1px solid rgba(0,212,255,0.20)" }}
             onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.22)")}
             onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.12)")}
           >
-            Login with X
+            {isConnecting ? "Connecting…" : "Connect Wallet"}
           </button>
         </div>
       )}
 
       {/* Loading */}
-      {authenticated && loading && (
+      {isConnected && loading && (
         <div className="space-y-3">
           {Array.from({ length: 2 }).map((_, i) => (
             <div
@@ -220,7 +224,7 @@ export function ClaimFeesPage() {
       )}
 
       {/* No tokens */}
-      {authenticated && !loading && fetched && tokens.length === 0 && (
+      {isConnected && !loading && fetched && tokens.length === 0 && (
         <div
           className="rounded-2xl p-10 text-center"
           style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.08)" }}
@@ -235,7 +239,7 @@ export function ClaimFeesPage() {
       )}
 
       {/* Token list */}
-      {authenticated && !loading && tokens.length > 0 && (
+      {isConnected && !loading && tokens.length > 0 && (
         <div className="space-y-3">
           {tokens.map((token) => (
             <div
