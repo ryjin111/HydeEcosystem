@@ -25,8 +25,6 @@ function timeAgo(iso: string): string {
 function TokenCard({ pool, onTrade }: { pool: DopplerPool; onTrade: () => void }) {
   const bt = pool.baseToken;
   const isGraduated = pool.type === "v2";
-  const liq = parseFloat(pool.dollarLiquidity ?? "0");
-  const vol = parseFloat(pool.volumeUsd ?? "0");
 
   return (
     <div
@@ -71,18 +69,19 @@ function TokenCard({ pool, onTrade }: { pool: DopplerPool; onTrade: () => void }
         </div>
       </div>
 
-      {/* Progress bar toward graduation (only for in-auction) */}
-      {!isGraduated && liq > 0 && (
+      {/* Progress toward graduation — real % of the curve inventory sold,
+          measured on-chain against the launch-block baseline */}
+      {!isGraduated && pool.progress !== null && (
         <div>
           <div className="flex justify-between text-[9px] text-pcs-textDim mb-1">
-            <span>Progress to graduation</span>
-            <span>{Math.min(100, Math.round((liq / 10000) * 100))}%</span>
+            <span>Curve sold</span>
+            <span>{pool.progress < 1 && pool.progress > 0 ? "<1" : Math.round(pool.progress)}%</span>
           </div>
           <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
             <div
               className="h-full rounded-full"
               style={{
-                width: `${Math.min(100, (liq / 10000) * 100)}%`,
+                width: `${Math.max(pool.progress, pool.progress > 0 ? 2 : 0)}%`,
                 background: "#2E9FE6",
               }}
             />
@@ -123,10 +122,10 @@ function sortPools(pools: DopplerPool[], mode: SortMode): DopplerPool[] {
   if (mode === "new") {
     return copy.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
-  // graduating: in-auction only, sorted by liquidity desc (closest to graduation first)
+  // graduating: in-auction only, closest to graduation first (real curve progress)
   return copy
     .filter((p) => p.type !== "v2")
-    .sort((a, b) => parseFloat(b.dollarLiquidity ?? "0") - parseFloat(a.dollarLiquidity ?? "0"));
+    .sort((a, b) => (b.progress ?? -1) - (a.progress ?? -1));
 }
 
 export function LaunchesPage() {

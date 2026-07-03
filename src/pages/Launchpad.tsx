@@ -82,6 +82,22 @@ function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string
         </div>
       </div>
 
+      {/* Curve progress — real % of the launch inventory sold, on-chain */}
+      {pool.type !== "v2" && pool.progress !== null && (
+        <div>
+          <div className="flex justify-between text-[9px] text-pcs-textDim mb-1">
+            <span>Curve sold</span>
+            <span>{pool.progress < 1 && pool.progress > 0 ? "<1" : Math.round(pool.progress)}%</span>
+          </div>
+          <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${Math.max(pool.progress, pool.progress > 0 ? 2 : 0)}%`, background: "#2E9FE6" }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-pcs-textDim">{timeAgo(pool.createdAt)}</span>
