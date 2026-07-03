@@ -76,3 +76,28 @@ check("block timestamps resolve", blocks.every((b) => b.timestamp > 0n));
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 process.exitCode = fail ? 1 : 0; // natural exit — process.exit() trips a libuv assert on Windows
+
+// ─── Drift guard ─────────────────────────────────────────────────────────────
+// This smoke necessarily re-declares the pipeline (node can't import the TS
+// hook), so verify the hook source still contains every constant validated
+// above. If someone edits the hook's ABI/events/addresses without updating
+// this smoke — or vice versa — this fails instead of green-lighting a
+// pipeline the app doesn't run. (Lesson: audit 16961, missing balanceOf.)
+import { readFileSync } from "node:fs";
+const hookSrc = readFileSync(new URL("../src/hooks/useDopplerTokens.ts", import.meta.url), "utf8");
+const mustContain = [
+  ['ABI: name',      '{ type: "function", name: "name",   stateMutability: "view", inputs: [], outputs: [{ type: "string" }] }'],
+  ['ABI: symbol',    '{ type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] }'],
+  ['ABI: balanceOf', '{ type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] }'],
+  ['event Create',   'event Create(address asset, address indexed numeraire, address initializer, address poolOrHook)'],
+  ['event Migrate',  'event Migrate(address indexed asset, address indexed pool)'],
+  ['event Transfer', 'event Transfer(address indexed from, address indexed to, uint256 value)'],
+  ['PoolManager',    POOL_MANAGER],
+  ['Multicall3',     '0xcA11bde05977b3631167028862bE2a173976CA11'],
+];
+for (const [label, needle] of mustContain) {
+  check(`drift guard: hook contains ${label}`, hookSrc.includes(needle));
+}
+
+console.log(`\nFINAL ${pass}/${pass + fail} checks passed`);
+process.exitCode = fail ? 1 : 0;
