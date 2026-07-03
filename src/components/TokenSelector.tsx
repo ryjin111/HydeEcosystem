@@ -59,7 +59,7 @@ type TokenSelectorProps = {
 // Deterministic color per token symbol
 function getTokenColor(symbol: string): string {
   const palette = [
-    "#00d4ff", "#7c3aed", "#ff4081", "#00ff9f",
+    "#54B4F0", "#8B7CF0", "#D9739F", "#34C77B",
     "#ffb237", "#f97316", "#a78bfa", "#34d399",
     "#60a5fa", "#fb7185",
   ];
@@ -193,7 +193,7 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
     return () => window.removeEventListener("keydown", handler);
   }, [open]);
 
-  const selectedColor = selected ? getTokenColor(selected.symbol) : "#00d4ff";
+  const selectedColor = selected ? getTokenColor(selected.symbol) : "#54B4F0";
 
   return (
     <>
@@ -209,7 +209,7 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
                 border: `1px solid ${selectedColor}30`,
                 color: "#e0f7ff",
               }
-            : { background: "#00d4ff", color: "#0a0f1e" }
+            : { background: "#54B4F0", color: "#0B0C0F" }
         }
       >
         {selected ? (
@@ -234,14 +234,14 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
             className="relative w-full max-w-[400px] rounded-3xl shadow-card flex flex-col"
             style={{
               background: "#111827",
-              border: "1px solid rgba(0, 212, 255, 0.12)",
+              border: "1px solid #22252D",
               maxHeight: "min(85vh, 600px)",
             }}
           >
             {/* Header */}
             <div
               className="flex items-center justify-between px-5 py-4"
-              style={{ borderBottom: "1px solid rgba(0, 212, 255, 0.07)" }}
+              style={{ borderBottom: "1px solid #1C1F26" }}
             >
               <h3 className="text-base font-semibold text-pcs-text">Select a Token</h3>
               <button
@@ -315,13 +315,13 @@ export function TokenSelector({ label, selected, tokens, onSelect, onAddCustom, 
             </div>
 
             {/* Add custom token */}
-            <div className="px-4 py-3" style={{ borderTop: "1px solid rgba(0, 212, 255, 0.07)" }}>
+            <div className="px-4 py-3" style={{ borderTop: "1px solid #1C1F26" }}>
               {!showCustom ? (
                 <button
                   type="button"
                   onClick={() => setShowCustom(true)}
                   className="w-full rounded-xl py-2 text-sm font-medium text-pcs-textSub hover:text-pcs-primary transition"
-                  style={{ border: "1px dashed rgba(0, 212, 255, 0.2)" }}
+                  style={{ border: "1px dashed #3A3F4B" }}
                 >
                   + Add Custom Token
                 </button>

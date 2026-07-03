@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getContractAddress, decodeEventLog } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
 import toast from "react-hot-toast";
@@ -20,7 +20,11 @@ export function ClankerLaunchForm() {
   const [symbol,       setSymbol]       = useState("");
   const [submitting,   setSubmitting]   = useState(false);
   const [launched,     setLaunched]     = useState<{ token: string; tx: string } | null>(null);
+  const [recipientConfirmed, setRecipientConfirmed] = useState(false);
   const cancelledRef = useRef(false);
+
+  // Creator address is immutable on-chain — a stale confirmation must not survive a wallet switch
+  useEffect(() => { setRecipientConfirmed(false); }, [address]);
 
   const chainMismatch = isConnected && chainId !== OPTIMISM_ID;
   const factoryAddress = V4_CONTRACTS_BY_CHAIN[OPTIMISM_ID]?.hydeTokenFactory;
@@ -142,21 +146,21 @@ export function ClankerLaunchForm() {
 
   return (
     <div
-      className="w-full max-w-md mx-auto rounded-2xl p-6 flex flex-col gap-5"
-      style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.10)" }}
+      className="w-full max-w-md mx-auto rounded-2xl p-6 flex flex-col gap-5 shadow-card"
+      style={{ background: "#121419", border: "1px solid #22252D" }}
     >
       {/* Header */}
       <div>
-        <h2 className="text-lg font-bold text-pcs-text">Launch a Token</h2>
-        <p className="text-xs text-pcs-textDim mt-1">
+        <h2 className="font-display text-lg font-semibold text-pcs-text">Launch a Token</h2>
+        <p className="text-xs text-pcs-textSub mt-1">
           Instant launch on Optimism — earn trading fees from day one.
         </p>
       </div>
 
       {/* Fee info banner */}
       <div
-        className="rounded-xl px-4 py-3 text-xs flex flex-col gap-1"
-        style={{ background: "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.12)" }}
+        className="rounded-xl px-4 py-3 text-xs flex flex-col gap-1.5"
+        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid #22252D" }}
       >
         <div className="flex justify-between text-pcs-textDim">
           <span>Pool fee</span>
@@ -181,11 +185,10 @@ export function ClankerLaunchForm() {
       </div>
 
       {/* Name */}
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-pcs-textDim">Token Name</label>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium text-pcs-textSub">Token Name</label>
         <input
-          className="rounded-xl px-4 py-3 text-sm text-pcs-text bg-transparent outline-none"
-          style={{ border: "1px solid rgba(0,212,255,0.15)" }}
+          className="input"
           placeholder="e.g. HydeToken"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -194,11 +197,10 @@ export function ClankerLaunchForm() {
       </div>
 
       {/* Symbol */}
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-pcs-textDim">Token Symbol</label>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium text-pcs-textSub">Token Symbol</label>
         <input
-          className="rounded-xl px-4 py-3 text-sm text-pcs-text bg-transparent outline-none"
-          style={{ border: "1px solid rgba(0,212,255,0.15)" }}
+          className="input font-code"
           placeholder="e.g. HYDE"
           value={symbol}
           onChange={(e) => setSymbol(e.target.value.toUpperCase().replace(/\s/g, ''))}
@@ -206,13 +208,38 @@ export function ClankerLaunchForm() {
         />
       </div>
 
+      {/* Creator & fee recipient — immutable on-chain, so the full address is
+          shown and explicitly confirmed before launch (Reviewer-required step) */}
+      {isConnected && address && (
+        <div
+          className="rounded-xl px-4 py-3 flex flex-col gap-2"
+          style={{ background: "rgba(46,159,230,0.06)", border: "1px solid rgba(46,159,230,0.25)" }}
+        >
+          <p className="text-xs font-medium text-pcs-textSub">Creator &amp; fee recipient</p>
+          <p className="font-code text-xs text-pcs-text break-all">{address}</p>
+          <p className="text-[11px] text-pcs-textDim">
+            This address is permanent for this token. Creator fees can only ever be claimed to it —
+            it cannot be changed after launch.
+          </p>
+          <label className="flex items-start gap-2 text-xs text-pcs-textSub cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="mt-0.5 accent-pcs-primary"
+              checked={recipientConfirmed}
+              onChange={(e) => setRecipientConfirmed(e.target.checked)}
+            />
+            <span>I confirm this is the correct fee recipient address.</span>
+          </label>
+        </div>
+      )}
+
       {/* Launch button */}
       {!isConnected ? (
         <p className="text-center text-sm text-pcs-textDim">Connect wallet to launch</p>
       ) : chainMismatch ? (
         <button
           className="w-full rounded-xl py-3 text-sm font-semibold transition"
-          style={{ background: "rgba(0,212,255,0.15)", color: "#00d4ff" }}
+          style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
           onClick={() => switchChain({ chainId: OPTIMISM_ID })}
         >
           Switch to Optimism
@@ -221,7 +248,7 @@ export function ClankerLaunchForm() {
         <div className="flex flex-col gap-2">
           <button
             className="w-full rounded-xl py-3 text-sm font-semibold transition disabled:opacity-50"
-            style={{ background: "rgba(0,212,255,0.15)", color: "#00d4ff" }}
+            style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
             disabled
           >
             Launching…
@@ -235,10 +262,9 @@ export function ClankerLaunchForm() {
         </div>
       ) : (
         <button
-          className="w-full rounded-xl py-3 text-sm font-semibold transition disabled:opacity-50"
-          style={{ background: "#00d4ff", color: "#0d1220" }}
+          className="btn-neon w-full py-3 text-sm"
           onClick={handleLaunch}
-          disabled={!name.trim() || !symbol.trim()}
+          disabled={!name.trim() || !symbol.trim() || !recipientConfirmed}
         >
           Launch Token
         </button>
@@ -248,11 +274,11 @@ export function ClankerLaunchForm() {
       {launched && (
         <div
           className="rounded-xl px-4 py-3 text-xs flex flex-col gap-2"
-          style={{ background: "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.20)" }}
+          style={{ background: "rgba(52,199,123,0.08)", border: "1px solid rgba(52,199,123,0.30)" }}
         >
           <p className="text-pcs-text font-semibold">Token launched!</p>
           {launched.token && (
-            <p className="text-pcs-textDim break-all">
+            <p className="text-pcs-textDim break-all font-code">
               Address:{" "}
               <a
                 href={`https://optimistic.etherscan.io/token/${launched.token}`}

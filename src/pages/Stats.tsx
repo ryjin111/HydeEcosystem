@@ -21,7 +21,7 @@ function StatCard({
   label: string; value: string; sub?: string; accent?: string; loading?: boolean;
 }) {
   return (
-    <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(0,212,255,0.08)" }}>
+    <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid #22252D" }}>
       <p className="text-[11px] font-semibold uppercase tracking-widest text-pcs-textDim mb-1">{label}</p>
       <p className={`text-2xl font-bold ${accent ?? "text-pcs-text"} ${loading ? "opacity-40" : ""}`}>
         {loading ? "…" : value}
@@ -36,7 +36,7 @@ function ComingSoon({ icon, label, detail }: { icon: string; label: string; deta
   return (
     <div
       className="rounded-2xl p-8 flex flex-col items-center gap-3 text-center"
-      style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(0,212,255,0.07)" }}
+      style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #1C1F26" }}
     >
       <span className="text-2xl">{icon}</span>
       <div>
@@ -58,15 +58,15 @@ export function StatsPage() {
 
   const thCls = "py-2.5 px-4 text-left text-[11px] font-semibold uppercase tracking-wide text-pcs-textDim";
   const tdCls = "py-3 px-4 text-sm";
-  const tableBg = { background: "rgba(255,255,255,0.02)", border: "1px solid rgba(0,212,255,0.07)" };
-  const rowBorder = { borderBottom: "1px solid rgba(0,212,255,0.05)" };
+  const tableBg = { background: "rgba(255,255,255,0.02)", border: "1px solid #1C1F26" };
+  const rowBorder = { borderBottom: "1px solid #1C1F26" };
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 space-y-8">
 
       {/* ── header ──────────────────────────────────────────────────────── */}
       <div>
-        <h1 className="text-2xl font-bold text-pcs-text">Stats</h1>
+        <h1 className="font-display text-2xl font-semibold text-pcs-text">Stats</h1>
         <p className="mt-1 text-xs text-pcs-textDim">
           Live protocol data from Hyde launches · Optimism
         </p>
@@ -113,7 +113,7 @@ export function StatsPage() {
                       <div className="flex items-center gap-2">
                         <div
                           className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                          style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff" }}
+                          style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
                         >
                           {pool.baseToken.symbol.slice(0, 2).toUpperCase()}
                         </div>
@@ -128,8 +128,8 @@ export function StatsPage() {
                         className="rounded px-1.5 py-0.5 text-[11px] font-bold uppercase"
                         style={
                           pool.type === "v2"
-                            ? { background: "rgba(0,212,255,0.10)", color: "#00d4ff" }
-                            : { background: "rgba(168,85,247,0.15)", color: "#a855f7" }
+                            ? { background: "rgba(52,199,123,0.12)", color: "#34C77B" }
+                            : { background: "rgba(46,159,230,0.14)", color: "#54B4F0" }
                         }
                       >
                         {pool.type === "v2" ? "Graduated" : "Auction"}
@@ -145,7 +145,7 @@ export function StatsPage() {
                 ))}
               </tbody>
               <tfoot>
-                <tr style={{ borderTop: "1px solid rgba(0,212,255,0.07)" }}>
+                <tr style={{ borderTop: "1px solid #1C1F26" }}>
                   <td colSpan={3} className={`${tdCls} pl-5 text-xs font-semibold text-pcs-textDim`}>
                     Total ({pools.length} launches · {inAuction} in auction)
                   </td>

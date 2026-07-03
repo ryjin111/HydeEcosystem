@@ -31,15 +31,15 @@ function TokenCard({ pool, onTrade }: { pool: DopplerPool; onTrade: () => void }
   return (
     <div
       className="rounded-2xl p-4 flex flex-col gap-3 cursor-pointer transition group"
-      style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.08)" }}
-      onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = "rgba(0,212,255,0.25)")}
-      onMouseLeave={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = "rgba(0,212,255,0.08)")}
+      style={{ background: "#121419", border: "1px solid #22252D" }}
+      onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = "rgba(46,159,230,0.45)")}
+      onMouseLeave={(e) => ((e.currentTarget as HTMLDivElement).style.borderColor = "#22252D")}
     >
       {/* Header */}
       <div className="flex items-center gap-3">
         <div
           className="h-10 w-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-          style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff" }}
+          style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
         >
           {bt.symbol.slice(0, 2).toUpperCase()}
         </div>
@@ -51,8 +51,8 @@ function TokenCard({ pool, onTrade }: { pool: DopplerPool; onTrade: () => void }
           className="text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wide flex-shrink-0"
           style={
             isGraduated
-              ? { background: "rgba(0,212,255,0.10)", color: "#00d4ff" }
-              : { background: "rgba(168,85,247,0.12)", color: "#a855f7" }
+              ? { background: "rgba(52,199,123,0.12)", color: "#34C77B" }
+              : { background: "rgba(46,159,230,0.14)", color: "#54B4F0" }
           }
         >
           {isGraduated ? "Graduated" : "Auction"}
@@ -83,7 +83,7 @@ function TokenCard({ pool, onTrade }: { pool: DopplerPool; onTrade: () => void }
               className="h-full rounded-full"
               style={{
                 width: `${Math.min(100, (liq / 10000) * 100)}%`,
-                background: "linear-gradient(90deg, #a855f7, #00d4ff)",
+                background: "#2E9FE6",
               }}
             />
           </div>
@@ -95,10 +95,10 @@ function TokenCard({ pool, onTrade }: { pool: DopplerPool; onTrade: () => void }
         <span className="text-[10px] text-pcs-textDim">{timeAgo(pool.createdAt)}</span>
         <button
           onClick={(e) => { e.stopPropagation(); onTrade(); }}
-          className="text-xs font-semibold px-3 py-1.5 rounded-xl transition"
-          style={{ background: "rgba(0,212,255,0.10)", color: "#00d4ff" }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.20)")}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.10)")}
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+          style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
+          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "rgba(46,159,230,0.20)")}
+          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "rgba(46,159,230,0.12)")}
         >
           Trade →
         </button>
@@ -157,8 +157,8 @@ export function LaunchesPage() {
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-pcs-text">Launches</h1>
-          <p className="text-sm text-pcs-textDim mt-1">
+          <h1 className="font-display text-2xl font-semibold text-pcs-text">Launches</h1>
+          <p className="text-sm text-pcs-textSub mt-1">
             {loading
               ? "Loading…"
               : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Optimism`}
@@ -167,10 +167,7 @@ export function LaunchesPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => navigate("/launchpad")}
-            className="text-xs font-semibold px-4 py-2 rounded-xl transition"
-            style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff", border: "1px solid rgba(0,212,255,0.20)" }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.20)")}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.12)")}
+            className="btn-primary px-4 py-2 text-xs"
           >
             + Launch Token
           </button>
@@ -185,7 +182,7 @@ export function LaunchesPage() {
         {/* Sort tabs */}
         <div
           className="flex rounded-xl overflow-hidden"
-          style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(0,212,255,0.07)" }}
+          style={{ background: "rgba(255,255,255,0.03)", border: "1px solid #22252D" }}
         >
           {sortLabels.map(({ mode, label }) => (
             <button
@@ -194,8 +191,8 @@ export function LaunchesPage() {
               className="px-4 py-1.5 text-xs font-semibold transition"
               style={
                 sort === mode
-                  ? { background: "rgba(0,212,255,0.15)", color: "#00d4ff" }
-                  : { color: "#6b7280" }
+                  ? { background: "rgba(46,159,230,0.14)", color: "#54B4F0" }
+                  : { color: "#5D6470" }
               }
             >
               {label}
@@ -209,8 +206,8 @@ export function LaunchesPage() {
           placeholder="Search token…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 min-w-[140px] rounded-xl px-3 py-1.5 text-xs text-pcs-text outline-none"
-          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(0,212,255,0.08)" }}
+          className="flex-1 min-w-[140px] rounded-xl px-3 py-1.5 text-xs text-pcs-text outline-none bg-pcs-input"
+          style={{ border: "1px solid #22252D" }}
         />
       </div>
 
@@ -228,7 +225,7 @@ export function LaunchesPage() {
       ) : displayed.length === 0 ? (
         <div
           className="rounded-2xl p-10 text-center"
-          style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.08)" }}
+          style={{ background: "#121419", border: "1px solid #22252D" }}
         >
           <p className="text-pcs-textDim text-sm">
             {search ? "No tokens match your search." : "No launches yet — be the first!"}
@@ -236,8 +233,7 @@ export function LaunchesPage() {
           {!search && (
             <button
               onClick={() => navigate("/launchpad")}
-              className="mt-4 px-5 py-2 rounded-xl text-sm font-semibold"
-              style={{ background: "rgba(0,212,255,0.10)", color: "#00d4ff" }}
+              className="btn-primary mt-4 px-5 py-2 text-sm"
             >
               Launch a Token
             </button>

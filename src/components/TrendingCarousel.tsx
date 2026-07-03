@@ -33,26 +33,26 @@ function TokenPill({
       onClick={() => onSelect(pool)}
       className="flex items-center gap-2 px-3 py-2 rounded-xl flex-shrink-0 transition text-left"
       style={{
-        background: active ? "rgba(0,212,255,0.12)" : "rgba(255,255,255,0.04)",
-        border: `1px solid ${active ? "rgba(0,212,255,0.35)" : "rgba(0,212,255,0.08)"}`,
+        background: active ? "rgba(46,159,230,0.14)" : "rgba(255,255,255,0.04)",
+        border: `1px solid ${active ? "rgba(46,159,230,0.45)" : "rgba(46,159,230,0.10)"}`,
       }}
       onMouseEnter={(e) => {
         if (!active) {
-          (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.08)";
-          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(0,212,255,0.22)";
+          (e.currentTarget as HTMLButtonElement).style.background = "rgba(46,159,230,0.10)";
+          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(46,159,230,0.28)";
         }
       }}
       onMouseLeave={(e) => {
         if (!active) {
           (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.04)";
-          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(0,212,255,0.08)";
+          (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(46,159,230,0.10)";
         }
       }}
     >
       <span className="text-[10px] font-bold text-pcs-textDim w-3">{rank}</span>
       <div
         className="h-6 w-6 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
-        style={{ background: "rgba(0,212,255,0.15)", color: "#00d4ff" }}
+        style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
       >
         {bt.symbol.slice(0, 2).toUpperCase()}
       </div>
@@ -62,7 +62,7 @@ function TokenPill({
           {isGraduated && (
             <span
               className="text-[8px] font-bold px-1 py-0.5 rounded"
-              style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff" }}
+              style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
             >
               V2
             </span>
@@ -115,7 +115,7 @@ export function TrendingCarousel({ selected, onSelect }: Props) {
         </span>
         <span
           className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-          style={{ background: "rgba(0,212,255,0.08)", color: "#00d4ff" }}
+          style={{ background: "rgba(46,159,230,0.10)", color: "#54B4F0" }}
         >
           Optimism
         </span>

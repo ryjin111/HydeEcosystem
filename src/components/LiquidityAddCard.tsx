@@ -184,18 +184,18 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Props) {
 
       {/* Settings panel */}
       {showSettings && (
-        <div className="mb-4 rounded-2xl p-3" style={{ background: "rgba(0,212,255,0.03)", border: "1px solid rgba(0,212,255,0.08)" }}>
+        <div className="mb-4 rounded-2xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #22252D" }}>
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-pcs-textSub">Slippage</span>
             <div className="flex items-center gap-1">
               {["0.1", "0.5", "1.0"].map(v => (
                 <button key={v} onClick={() => setSlippage(v)}
                   className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${slippage === v ? "bg-pcs-primary text-pcs-bg" : "text-pcs-textDim hover:text-pcs-text"}`}
-                  style={slippage !== v ? { border: "1px solid rgba(0,212,255,0.1)" } : undefined}>{v}%</button>
+                  style={slippage !== v ? { border: "1px solid #22252D" } : undefined}>{v}%</button>
               ))}
               <div className="flex items-center gap-1">
                 <input className="w-12 rounded-lg bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none"
-                  style={{ border: "1px solid rgba(0,212,255,0.1)" }}
+                  style={{ border: "1px solid #22252D" }}
                   value={slippage} onChange={e => setSlippage(e.target.value)} />
                 <span className="text-xs text-pcs-textDim">%</span>
               </div>
@@ -211,7 +211,7 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Props) {
       )}
 
       {/* Token A */}
-      <div className="rounded-2xl p-4" style={{ background: "rgba(0,212,255,0.03)", border: "1px solid rgba(0,212,255,0.06)" }}>
+      <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #1C1F26" }}>
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs text-pcs-textDim">Token A</span>
           <div className="flex items-center gap-1.5">
@@ -233,7 +233,7 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Props) {
       </div>
 
       <div className="flex justify-center py-2">
-        <div className="rounded-full p-1.5" style={{ background: "rgba(0,212,255,0.08)", border: "1px solid rgba(0,212,255,0.15)" }}>
+        <div className="rounded-full p-1.5" style={{ background: "rgba(46,159,230,0.10)", border: "1px solid #22252D" }}>
           <svg className="h-4 w-4 text-pcs-primary" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
@@ -241,7 +241,7 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Props) {
       </div>
 
       {/* Token B */}
-      <div className="rounded-2xl p-4" style={{ background: "rgba(0,212,255,0.03)", border: "1px solid rgba(0,212,255,0.06)" }}>
+      <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #1C1F26" }}>
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs text-pcs-textDim">Token B</span>
           <div className="flex items-center gap-1.5">
@@ -265,7 +265,7 @@ export function LiquidityAddCard({ network, tokens, onAddCustomToken }: Props) {
 
       {/* Pool rate info */}
       {ratio && ratio.reserveA > 0n && tokenA && tokenB && (
-        <div className="mt-3 flex justify-between rounded-xl px-3 py-2 text-xs text-pcs-textSub" style={{ background: "rgba(0,212,255,0.03)", border: "1px solid rgba(0,212,255,0.06)" }}>
+        <div className="mt-3 flex justify-between rounded-xl px-3 py-2 text-xs text-pcs-textSub" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #1C1F26" }}>
           <span>Pool rate</span>
           <span>
             1 {tokenA.symbol} = {Number(formatUnits(ratio.reserveB, tokenB.decimals)) / Number(formatUnits(ratio.reserveA, tokenA.decimals)) > 0

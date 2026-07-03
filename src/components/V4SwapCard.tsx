@@ -415,7 +415,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
       </div>
 
       {showSettings && (
-        <div className="mb-4 rounded-2xl p-4 space-y-3" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.08)' }}>
+        <div className="mb-4 rounded-2xl p-4 space-y-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid #22252D' }}>
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-pcs-textSub">Slippage Tolerance</span>
             <div className="flex items-center gap-1.5">
@@ -429,7 +429,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
                       ? "bg-pcs-primary text-pcs-bg"
                       : "text-pcs-textDim hover:text-pcs-text"
                   }`}
-                  style={slippage !== val ? { border: '1px solid rgba(0, 212, 255, 0.1)' } : undefined}
+                  style={slippage !== val ? { border: '1px solid #22252D' } : undefined}
                 >
                   {val}%
                 </button>
@@ -437,7 +437,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
               <div className="flex items-center gap-1">
                 <input
                   className="w-14 rounded-lg border-0 bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none"
-                  style={{ border: `1px solid ${Number(slippage) > 5 ? 'rgba(255,100,0,0.5)' : 'rgba(0, 212, 255, 0.1)'}` }}
+                  style={{ border: `1px solid ${Number(slippage) > 5 ? 'rgba(232,163,61,0.55)' : '#22252D'}` }}
                   value={slippage}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -458,7 +458,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
             <div className="flex items-center gap-1">
               <input
                 className="w-14 rounded-lg border-0 bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none"
-                style={{ border: '1px solid rgba(0, 212, 255, 0.1)' }}
+                style={{ border: '1px solid #22252D' }}
                 value={deadlineMins}
                 onChange={(e) => {
                   const v = e.target.value;
@@ -473,7 +473,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
             <span className="text-xs font-semibold text-pcs-textSub">Fee Tier</span>
             <input
               className="w-20 rounded-lg border-0 bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none"
-              style={{ border: '1px solid rgba(0, 212, 255, 0.1)' }}
+              style={{ border: '1px solid #22252D' }}
               value={feeTier}
               onChange={(e) => { if (/^\d*$/.test(e.target.value)) setFeeTier(e.target.value); }}
               placeholder="3000"
@@ -482,7 +482,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
         </div>
       )}
 
-      <div className="rounded-2xl p-4 overflow-hidden" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
+      <div className="rounded-2xl p-4 overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid #1C1F26' }}>
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs font-medium text-pcs-textDim">From</span>
           {tokenInBalance && address && (
@@ -523,7 +523,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
         <button
           type="button"
           onClick={swapTokenDirection}
-          className="rounded-xl border-4 p-1.5 text-pcs-primary hover:text-pcs-bg hover:bg-pcs-primary hover:shadow-neon transition"
+          className="rounded-xl border-4 p-1.5 text-pcs-primary hover:text-pcs-bg hover:bg-pcs-primary transition"
           style={{ borderColor: '#111827', background: '#1a2236' }}
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
@@ -532,7 +532,7 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
         </button>
       </div>
 
-      <div className="rounded-2xl p-4 overflow-hidden" style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px solid rgba(0, 212, 255, 0.06)' }}>
+      <div className="rounded-2xl p-4 overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid #1C1F26' }}>
         <div className="mb-2 text-xs font-medium text-pcs-textDim">To (estimated)</div>
         <div className="flex items-center gap-3">
           <input

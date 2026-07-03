@@ -153,18 +153,18 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Props
 
       {/* Settings */}
       {showSettings && (
-        <div className="mb-4 rounded-2xl p-3" style={{ background: "rgba(0,212,255,0.03)", border: "1px solid rgba(0,212,255,0.08)" }}>
+        <div className="mb-4 rounded-2xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #22252D" }}>
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-pcs-textSub">Slippage</span>
             <div className="flex items-center gap-1">
               {["0.1", "0.5", "1.0"].map(v => (
                 <button key={v} onClick={() => setSlippage(v)}
                   className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${slippage === v ? "bg-pcs-primary text-pcs-bg" : "text-pcs-textDim hover:text-pcs-text"}`}
-                  style={slippage !== v ? { border: "1px solid rgba(0,212,255,0.1)" } : undefined}>{v}%</button>
+                  style={slippage !== v ? { border: "1px solid #22252D" } : undefined}>{v}%</button>
               ))}
               <div className="flex items-center gap-1">
                 <input className="w-12 rounded-lg bg-pcs-input px-2 py-1 text-right text-xs text-pcs-text outline-none"
-                  style={{ border: "1px solid rgba(0,212,255,0.1)" }}
+                  style={{ border: "1px solid #22252D" }}
                   value={slippage} onChange={e => setSlippage(e.target.value)} />
                 <span className="text-xs text-pcs-textDim">%</span>
               </div>
@@ -182,7 +182,7 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Props
       </div>
 
       {/* LP Balance */}
-      <div className="mt-4 rounded-2xl p-4" style={{ background: "rgba(0,212,255,0.03)", border: "1px solid rgba(0,212,255,0.06)" }}>
+      <div className="mt-4 rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #1C1F26" }}>
         <div className="flex items-center justify-between">
           <span className="text-sm text-pcs-textDim">Your LP Balance</span>
           <span className="text-sm font-semibold text-pcs-text">{formatAmount(lpBalance, 18, 6)}</span>
@@ -194,7 +194,7 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Props
 
       {/* Percentage slider */}
       {hasPool && (
-        <div className="mt-4 rounded-2xl p-4" style={{ background: "rgba(0,212,255,0.03)", border: "1px solid rgba(0,212,255,0.06)" }}>
+        <div className="mt-4 rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #1C1F26" }}>
           <div className="mb-3 flex items-center justify-between">
             <span className="text-xs text-pcs-textDim">Amount to remove</span>
             <span className="text-2xl font-bold text-pcs-text">{percent}%</span>
@@ -212,7 +212,7 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Props
             {PCT_PRESETS.map(p => (
               <button key={p} onClick={() => setPercent(p)}
                 className={`rounded-xl py-1.5 text-xs font-semibold transition ${percent === p ? "bg-pcs-primary text-pcs-bg" : "text-pcs-textSub hover:text-pcs-text"}`}
-                style={percent !== p ? { background: "rgba(0,212,255,0.06)", border: "1px solid rgba(0,212,255,0.1)" } : undefined}>
+                style={percent !== p ? { background: "rgba(255,255,255,0.04)", border: "1px solid #22252D" } : undefined}>
                 {p === 100 ? "MAX" : `${p}%`}
               </button>
             ))}
@@ -221,7 +221,7 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Props
           {/* You will receive */}
           <div className="mt-4 space-y-2">
             <p className="text-xs font-semibold text-pcs-textDim">You will receive</p>
-            <div className="flex items-center justify-between rounded-xl px-3 py-2" style={{ background: "rgba(0,212,255,0.04)" }}>
+            <div className="flex items-center justify-between rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
               <div className="flex items-center gap-2">
                 {tokenA?.logoURI && <img src={tokenA.logoURI} alt={tokenA.symbol} className="h-5 w-5 rounded-full" />}
                 <span className="text-sm font-medium text-pcs-text">{tokenA?.symbol}</span>
@@ -230,7 +230,7 @@ export function LiquidityRemoveCard({ network, tokens, onAddCustomToken }: Props
                 {formatAmount(estimatedA, tokenA?.decimals ?? 18)}
               </span>
             </div>
-            <div className="flex items-center justify-between rounded-xl px-3 py-2" style={{ background: "rgba(0,212,255,0.04)" }}>
+            <div className="flex items-center justify-between rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
               <div className="flex items-center gap-2">
                 {tokenB?.logoURI && <img src={tokenB.logoURI} alt={tokenB.symbol} className="h-5 w-5 rounded-full" />}
                 <span className="text-sm font-medium text-pcs-text">{tokenB?.symbol}</span>
