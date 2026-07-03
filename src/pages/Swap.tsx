@@ -1,38 +1,36 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
+import { isGatewayLive } from "../utils/constants";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { TrendingCarousel } from "../components/TrendingCarousel";
 import type { DopplerPool } from "../components/TrendingCarousel";
+import { useHydeLaunches } from "../hooks/useDopplerTokens";
 
-/* ─── DexScreener chart embed ────────────────────────────────────────────── */
-function TokenChart({ tokenAddress }: { tokenAddress: string | null }) {
-  if (!tokenAddress) {
-    return (
-      <div
-        className="w-full h-[500px] rounded-2xl flex items-center justify-center"
-        style={{ background: "#121419", border: "1px solid #22252D" }}
-      >
-        <p className="text-xs text-pcs-textDim">Select a token to view chart</p>
-      </div>
-    );
-  }
-
-  const src = `https://dexscreener.com/optimism/${tokenAddress}?embed=1&theme=dark&trades=0&info=0`;
-
+/* ─── Token chart panel ──────────────────────────────────────────────────────
+   Chart indexers (DexScreener/GeckoTerminal) don't cover Robinhood Chain yet —
+   an honest explorer link beats an embed that 404s. */
+function TokenChart({ tokenAddress, explorerUrl }: { tokenAddress: string | null; explorerUrl: string }) {
   return (
     <div
-      className="w-full rounded-2xl overflow-hidden"
-      style={{ height: 500, border: "1px solid #22252D" }}
+      className="w-full h-[500px] rounded-2xl flex flex-col items-center justify-center gap-2"
+      style={{ background: "#121419", border: "1px solid #22252D" }}
     >
-      <iframe
-        src={src}
-        width="100%"
-        height="100%"
-        frameBorder="0"
-        allow="clipboard-write"
-        title="Token chart"
-      />
+      {tokenAddress ? (
+        <>
+          <p className="text-xs text-pcs-textDim">Charts come online as indexers add Robinhood Chain.</p>
+          <a
+            href={`${explorerUrl}/token/${tokenAddress}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-pcs-primary hover:underline"
+          >
+            View token on the Robinhood Chain explorer →
+          </a>
+        </>
+      ) : (
+        <p className="text-xs text-pcs-textDim">Select a token to view details</p>
+      )}
     </div>
   );
 }
@@ -47,65 +45,11 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-function fmtUsd(raw: string | null): string {
-  const n = parseFloat(raw ?? "0");
-  if (!n) return "—";
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
-  return `$${n.toFixed(0)}`;
-}
-
-// ─── Clanker token feed (replaces Doppler indexer) ───────────────────────────
-
-interface ClankerToken {
-  contract_address: string;
-  pool_address?: string;
-  name: string;
-  symbol: string;
-  deployed_at: string;
-  social_context?: { interface?: string };
-}
-
-function useClankerTokens() {
-  const [tokens, setTokens] = useState<ClankerToken[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch(`/api/clanker-tokens?chainId=10`)
-      .then((r) => r.json())
-      .then((d) => { setTokens(d.data ?? []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  return { tokens, loading };
-}
-
-function clankerToPool(token: ClankerToken): DopplerPool {
-  return {
-    address: token.pool_address ?? token.contract_address,
-    chainId: 10,
-    baseToken: { address: token.contract_address, name: token.name, symbol: token.symbol, decimals: 18 },
-    quoteToken: { address: "0x4200000000000000000000000000000000000006", name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
-    type: "v4",
-    dollarLiquidity: null,
-    volumeUsd: null,
-    createdAt: token.deployed_at,
-  };
-}
-
-function RecentlyLaunched({
-  chainId,
-  onSelect,
-}: {
-  chainId: number;
-  onSelect: (pool: DopplerPool) => void;
-}) {
-  const { tokens, loading } = useClankerTokens();
+function RecentlyLaunched({ onSelect }: { onSelect: (pool: DopplerPool) => void }) {
+  const { pools, loading } = useHydeLaunches();
   const navigate = useNavigate();
 
-  // Prefer Hyde-tagged tokens; fall back to all Optimism tokens
-  const hydeTokens = tokens.filter((t) => t.social_context?.interface === "Hyde");
-  const recent = (hydeTokens.length > 0 ? hydeTokens : tokens).slice(0, 8);
+  const recent = pools.slice(0, 8);
 
   return (
     <div
@@ -143,11 +87,9 @@ function RecentlyLaunched({
         <p className="p-4 text-xs text-pcs-textDim text-center">No launches yet</p>
       ) : (
         <div className="divide-y" style={{ borderColor: "rgba(255,255,255,0.03)" }}>
-          {recent.map((token) => {
-            const pool = clankerToPool(token);
-            return (
+          {recent.map((pool) => (
             <div
-              key={token.contract_address}
+              key={pool.baseToken.address}
               className="flex items-center gap-2.5 px-4 py-2 hover:bg-white/[0.02] cursor-pointer transition"
               onClick={() => onSelect(pool)}
             >
@@ -156,24 +98,23 @@ function RecentlyLaunched({
                 className="h-7 w-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
                 style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
               >
-                {token.symbol.slice(0, 2).toUpperCase()}
+                {pool.baseToken.symbol.slice(0, 2).toUpperCase()}
               </div>
 
               {/* Name + time */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-pcs-text truncate">{token.symbol}</span>
+                  <span className="text-xs font-bold text-pcs-text truncate">{pool.baseToken.symbol}</span>
                 </div>
-                <span className="text-[10px] text-pcs-textDim">{token.name}</span>
+                <span className="text-[10px] text-pcs-textDim">{pool.baseToken.name}</span>
               </div>
 
               {/* Time */}
               <div className="text-right flex-shrink-0">
-                <p className="text-[9px] text-pcs-textDim">{timeAgo(token.deployed_at)} ago</p>
+                <p className="text-[9px] text-pcs-textDim">{timeAgo(pool.createdAt)} ago</p>
               </div>
             </div>
-            );
-          })}
+          ))}
         </div>
       )}
     </div>
@@ -205,6 +146,8 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
     setChartTokenAddress(address);
   };
 
+  const gatewayLive = isGatewayLive(network.id);
+
   return (
     <div className="w-full max-w-6xl mx-auto">
       {/* Trending carousel — full width */}
@@ -215,21 +158,39 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
 
       {/* Two-column layout */}
       <div className="flex flex-col lg:flex-row gap-5 items-start">
-        {/* Left: Swap card */}
+        {/* Left: Swap card (or the honest not-yet state) */}
         <div className="w-full lg:w-[440px] flex-shrink-0">
-          <V4SwapCard
-            network={network}
-            tokens={tokens}
-            onAddCustomToken={onAddCustomToken}
-            forceTokenOut={selectedPool?.baseToken.address}
-            onTokenOutChange={handleTokenOutChange}
-          />
+          {gatewayLive ? (
+            <V4SwapCard
+              network={network}
+              tokens={tokens}
+              onAddCustomToken={onAddCustomToken}
+              forceTokenOut={selectedPool?.baseToken.address}
+              onTokenOutChange={handleTokenOutChange}
+            />
+          ) : (
+            <div
+              className="w-full rounded-2xl p-6 flex flex-col gap-3 shadow-card"
+              style={{ background: "#121419", border: "1px solid #22252D" }}
+            >
+              <h2 className="font-display text-lg font-semibold text-pcs-text">Exchange</h2>
+              <p className="text-sm text-pcs-textDim">
+                Trading opens as tokens graduate from the launch curve. The Hyde swap
+                router isn't deployed on Robinhood Chain yet — launched tokens trade
+                on their launch curve, and graduated pools will be tradeable here.
+              </p>
+              <p className="text-xs text-pcs-textDim">
+                Want in early? Launch or back a token on the{" "}
+                <a href="/launchpad" className="text-pcs-primary hover:underline">Launchpad</a>.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Right: Chart + Recently Launched */}
         <div className="flex-1 min-w-0 flex flex-col gap-4 w-full">
-          <TokenChart tokenAddress={chartTokenAddress} />
-          <RecentlyLaunched chainId={network.id} onSelect={handleSelect} />
+          <TokenChart tokenAddress={chartTokenAddress} explorerUrl={network.explorerUrl} />
+          <RecentlyLaunched onSelect={handleSelect} />
         </div>
       </div>
     </div>

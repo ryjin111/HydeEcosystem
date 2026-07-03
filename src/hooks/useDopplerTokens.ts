@@ -1,44 +1,78 @@
 import { useEffect, useState } from "react";
+import { createPublicClient, http, defineChain, parseAbiItem } from "viem";
 import type { TokenInfo } from "../utils/constants";
+import { ROBINHOOD_MAINNET, DOPPLER_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
-const OPTIMISM_CHAIN_ID = 10;
-// HydeAntiSnipeHook deployed on Optimism — all Hyde V4 pools use this hook
-const HYDE_HOOK_ADDRESS = "0x4B2336d2DF984891cB98D693E48D310154109080" as `0x${string}`;
+const ROBINHOOD_CHAIN_ID = 4663;
+
+const AIRLOCK = DOPPLER_CONTRACTS_BY_CHAIN[ROBINHOOD_CHAIN_ID].airlock;
+
+// Doppler Airlock events — every Hydeout launch emits Create; graduation emits Migrate.
+const CREATE_EVENT  = parseAbiItem("event Create(address asset, address indexed numeraire, address initializer, address poolOrHook)");
+const MIGRATE_EVENT = parseAbiItem("event Migrate(address indexed asset, address indexed pool)");
+
+const ERC20_META_ABI = [
+  { type: "function", name: "name",   stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+] as const;
+
+// Dedicated client: launches must load even before a wallet connects.
+const robinhoodChain = defineChain({
+  id: ROBINHOOD_CHAIN_ID,
+  name: ROBINHOOD_MAINNET.name,
+  nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: [ROBINHOOD_MAINNET.rpcUrl] } },
+});
+const client = createPublicClient({ chain: robinhoodChain, transport: http() });
 
 async function fetchHydePools(): Promise<DopplerPool[]> {
-  const r = await fetch("/api/clanker-tokens?chainId=10");
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const d = await r.json();
-  return (d.data ?? []).map((t: {
-    contract_address: string;
-    name: string;
-    symbol: string;
-    deployed_at: string;
-  }): DopplerPool => ({
-    address: t.contract_address,
-    chainId: OPTIMISM_CHAIN_ID,
-    baseToken: {
-      address: t.contract_address,
-      name: t.name,
-      symbol: t.symbol,
-      decimals: 18,
-    },
-    quoteToken: {
-      address: "0x4200000000000000000000000000000000000006",
-      name: "Wrapped Ether",
-      symbol: "WETH",
-      decimals: 18,
-    },
-    type: "v4",
-    dollarLiquidity: null,
-    volumeUsd: null,
-    createdAt: t.deployed_at,
-  }));
+  const [createLogs, migrateLogs] = await Promise.all([
+    client.getLogs({ address: AIRLOCK, event: CREATE_EVENT, fromBlock: 0n, toBlock: "latest" }),
+    client.getLogs({ address: AIRLOCK, event: MIGRATE_EVENT, fromBlock: 0n, toBlock: "latest" }),
+  ]);
+
+  const graduated = new Set(migrateLogs.map((l) => (l.args.asset as string).toLowerCase()));
+
+  // newest first
+  const logs = [...createLogs].reverse();
+
+  const pools = await Promise.all(
+    logs.map(async (log): Promise<DopplerPool | null> => {
+      const asset = log.args.asset as `0x${string}`;
+      try {
+        const [name, symbol, block] = await Promise.all([
+          client.readContract({ address: asset, abi: ERC20_META_ABI, functionName: "name" }),
+          client.readContract({ address: asset, abi: ERC20_META_ABI, functionName: "symbol" }),
+          client.getBlock({ blockNumber: log.blockNumber }),
+        ]);
+        return {
+          address: asset,
+          chainId: ROBINHOOD_CHAIN_ID,
+          baseToken: { address: asset, name, symbol, decimals: 18 },
+          quoteToken: {
+            address: ROBINHOOD_MAINNET.weth,
+            name: "Wrapped Ether",
+            symbol: "WETH",
+            decimals: 18,
+          },
+          // 'v4' = live on the launch curve (Auction badge), 'v2' = graduated
+          type: graduated.has(asset.toLowerCase()) ? "v2" : "v4",
+          dollarLiquidity: null,
+          volumeUsd: null,
+          createdAt: new Date(Number(block.timestamp) * 1000).toISOString(),
+        };
+      } catch {
+        return null; // unreadable token — skip rather than crash the board
+      }
+    })
+  );
+
+  return pools.filter((p): p is DopplerPool => p !== null);
 }
 
-/** Fetches tokens launched via HydeTokenFactory on Optimism as TokenInfo[].
- *  Each token gets dopplerPool set so V4SwapCard routes through the anti-snipe hook. */
+/** Tokens launched via the Hydeout launchpad on Robinhood Chain, as TokenInfo[].
+ *  No swap routing attached — trading opens as tokens graduate. */
 export function useHydeTokens(chainId: number): {
   tokens: TokenInfo[];
   loading: boolean;
@@ -47,7 +81,7 @@ export function useHydeTokens(chainId: number): {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (chainId !== OPTIMISM_CHAIN_ID) return;
+    if (chainId !== ROBINHOOD_CHAIN_ID) return;
 
     let cancelled = false;
     setLoading(true);
@@ -61,15 +95,11 @@ export function useHydeTokens(chainId: number): {
             name: p.baseToken.name,
             symbol: p.baseToken.symbol,
             decimals: p.baseToken.decimals,
-            dopplerPool: {
-              type: "v4",
-              hookAddress: HYDE_HOOK_ADDRESS,
-            },
           }))
         );
       })
       .catch(() => {
-        // API unavailable — leave tokens empty
+        // RPC unavailable — leave tokens empty
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -83,7 +113,7 @@ export function useHydeTokens(chainId: number): {
   return { tokens, loading };
 }
 
-/** Fetches full pool objects for the Launchpad explore tab and trending carousel. */
+/** Full pool objects for the Launchpad explore tab and trending carousel. */
 export function useHydeLaunches(): {
   pools: DopplerPool[];
   loading: boolean;

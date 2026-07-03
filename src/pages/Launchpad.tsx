@@ -2,9 +2,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
-import { ClankerLaunchForm } from "../components/ClankerLaunchForm";
+import { LaunchTokenForm } from "../components/LaunchTokenForm";
 
-const OPTIMISM_CHAIN_ID = 10;
+const ROBINHOOD_CHAIN_ID = 4663;
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 
@@ -28,8 +28,6 @@ function timeAgo(iso: string): string {
 /* ─── Pool card (Explore tab) ─────────────────────────────────────────────── */
 
 const CHAIN_LABELS: Record<number, string> = {
-  57073: "Ink",
-  10: "Optimism",
   4663: "Robinhood L2",
 };
 
@@ -110,8 +108,8 @@ export function LaunchpadPage() {
 
   const handleTrade = (tokenAddress: string, chainId: number) => {
     if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
-    // All Hyde launches are on Optimism (chainId 10) — gate non-Optimism tokens
-    if (chainId !== OPTIMISM_CHAIN_ID) return;
+    // All Hyde launches are on Robinhood Chain (4663) — gate anything else
+    if (chainId !== ROBINHOOD_CHAIN_ID) return;
     navigate(`/swap?out=${tokenAddress}`);
   };
 
@@ -190,7 +188,7 @@ export function LaunchpadPage() {
       )}
 
       {/* Launch tab */}
-      {tab === "launch" && <ClankerLaunchForm />}
+      {tab === "launch" && <LaunchTokenForm />}
     </div>
   );
 }
