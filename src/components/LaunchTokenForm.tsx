@@ -20,6 +20,8 @@ export function LaunchTokenForm() {
 
   const [name,       setName]       = useState("");
   const [symbol,     setSymbol]     = useState("");
+  const [imageUrl,   setImageUrl]   = useState("");
+  const [description, setDescription] = useState("");
   const [preview,    setPreview]    = useState<RobinhoodLaunchPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -30,8 +32,27 @@ export function LaunchTokenForm() {
   // Creator address is immutable on-chain — a stale confirmation or preview
   // must not survive a wallet switch
   useEffect(() => { setRecipientConfirmed(false); setPreview(null); setPreviewError(null); }, [address]);
-  // A preview belongs to exactly one (name, symbol) pair
-  useEffect(() => { setPreview(null); setRecipientConfirmed(false); setPreviewError(null); }, [name, symbol]);
+  // A preview belongs to exactly one input set — any edit invalidates it
+  useEffect(() => { setPreview(null); setRecipientConfirmed(false); setPreviewError(null); }, [name, symbol, imageUrl, description]);
+
+  // Small images embed straight into the on-chain metadata (data URI) — no
+  // pinning service, no server, permanent. Size-gated: tokenURI is calldata.
+  const MAX_EMBED_BYTES = 24 * 1024;
+  const handleImageFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(file.type)) {
+      toast.error("Use a PNG, JPG, GIF, WebP or SVG image."); return;
+    }
+    if (file.size > MAX_EMBED_BYTES) {
+      toast.error("Image too large to store on-chain (max 24 KB) — paste an image URL instead."); return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setImageUrl(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const imageUrlValid = !imageUrl
+    || /^https:\/\/.+/.test(imageUrl) || /^ipfs:\/\/.+/.test(imageUrl) || /^data:image\//.test(imageUrl);
 
   const chainMismatch = isConnected && chainId !== ROBINHOOD_CHAIN_ID;
   const formValid = !!name.trim() && !!symbol.trim();
@@ -44,7 +65,7 @@ export function LaunchTokenForm() {
     try {
       toast.loading("Simulating launch on Robinhood Chain…", { id: toastId });
       const sim = await simulateRobinhoodLaunch(publicClient as PublicClient, {
-        name, symbol, creator: address,
+        name, symbol, imageUrl: imageUrl || undefined, description: description || undefined, creator: address,
       });
       setPreview(sim);
       toast.success("Pre-flight passed — review and confirm below.", { id: toastId });
@@ -67,11 +88,11 @@ export function LaunchTokenForm() {
       const result = await executeRobinhoodLaunch(
         publicClient as PublicClient,
         walletClient as WalletClient,
-        { name, symbol, creator: address }
+        { name, symbol, imageUrl: imageUrl || undefined, description: description || undefined, creator: address }
       );
       toast.success("Token launched!", { id: toastId, duration: 8000 });
       setLaunched({ token: result.tokenAddress, tx: result.transactionHash });
-      setName(""); setSymbol(""); setPreview(null); setRecipientConfirmed(false);
+      setName(""); setSymbol(""); setImageUrl(""); setDescription(""); setPreview(null); setRecipientConfirmed(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       const code = (err as { code?: number; cause?: { code?: number } })?.code
@@ -151,6 +172,71 @@ export function LaunchTokenForm() {
         />
       </div>
 
+      {/* Token image — optional; URL or a small file embedded permanently on-chain */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium text-pcs-textSub">Token Image <span className="text-pcs-textDim font-normal">(optional)</span></label>
+        <div className="flex items-center gap-2">
+          <input
+            className="input flex-1 font-code"
+            placeholder="https:// or ipfs:// image URL"
+            value={imageUrl.startsWith("data:") ? "" : imageUrl}
+            onChange={(e) => setImageUrl(e.target.value.trim())}
+            disabled={imageUrl.startsWith("data:")}
+          />
+          <label
+            className="text-xs font-semibold px-3 py-2 rounded-xl cursor-pointer transition flex-shrink-0"
+            style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
+          >
+            Upload
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+              className="hidden"
+              onChange={(e) => handleImageFile(e.target.files?.[0])}
+            />
+          </label>
+        </div>
+        {imageUrl && imageUrlValid && (
+          <div className="flex items-center gap-2 mt-1">
+            <img
+              src={imageUrl}
+              alt="Token"
+              className="h-10 w-10 rounded-full object-cover flex-shrink-0"
+              style={{ border: "1px solid #22252D" }}
+              onError={() => toast.error("Image failed to load — check the URL")}
+            />
+            <p className="text-[11px] text-pcs-textDim flex-1">
+              {imageUrl.startsWith("data:")
+                ? "Embedded — stored permanently on-chain with the token."
+                : "Referenced by URL in the on-chain metadata."}
+            </p>
+            <button
+              className="text-[11px] text-pcs-textDim hover:text-pcs-text transition"
+              onClick={() => setImageUrl("")}
+            >
+              Remove
+            </button>
+          </div>
+        )}
+        {imageUrl && !imageUrlValid && (
+          <p className="text-[11px]" style={{ color: "#E8A33D" }}>Must be an https://, ipfs:// or uploaded image.</p>
+        )}
+        <p className="text-[10px] text-pcs-textDim">Uploads up to 24 KB are embedded on-chain forever; larger images should be hosted and pasted as a URL.</p>
+      </div>
+
+      {/* Description — optional, goes into the on-chain metadata */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium text-pcs-textSub">Description <span className="text-pcs-textDim font-normal">(optional)</span></label>
+        <textarea
+          className="input resize-none"
+          rows={2}
+          placeholder="One or two lines about the token"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          maxLength={280}
+        />
+      </div>
+
       {/* Simulate failure — amber panel with the raw reason, launch stays dead */}
       {previewError && (
         <div
@@ -173,12 +259,24 @@ export function LaunchTokenForm() {
           <p className="text-xs font-medium text-pcs-textSub">Pre-flight receipt</p>
 
           {/* 1. Token identity */}
-          <div className="flex justify-between text-xs">
+          <div className="flex justify-between items-center text-xs">
             <span className="text-pcs-textDim">Token</span>
-            <span className="text-pcs-text font-medium">
+            <span className="text-pcs-text font-medium flex items-center gap-2">
+              {imageUrl && imageUrlValid && (
+                <img src={imageUrl} alt="" className="h-5 w-5 rounded-full object-cover" style={{ border: "1px solid #22252D" }} />
+              )}
               {name.trim()} <span className="font-code">{symbol.trim()}</span>
             </span>
           </div>
+          {(imageUrl || description) && (
+            <div className="flex justify-between text-xs">
+              <span className="text-pcs-textDim">Metadata</span>
+              <span className="text-pcs-text font-medium">
+                {[imageUrl ? (imageUrl.startsWith("data:") ? "image embedded on-chain" : "image by URL") : null,
+                  description ? "description" : null].filter(Boolean).join(" + ")}
+              </span>
+            </div>
+          )}
 
           {/* 2. Supply split — 100% of supply goes to the launch curve */}
           <div className="flex flex-col gap-1">
@@ -245,7 +343,7 @@ export function LaunchTokenForm() {
         <button
           className="btn-neon w-full py-3 text-sm"
           onClick={handlePreview}
-          disabled={!formValid || previewing}
+          disabled={!formValid || !imageUrlValid || previewing}
         >
           {previewing ? "Simulating…" : "Preview Launch"}
         </button>
