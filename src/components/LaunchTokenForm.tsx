@@ -107,7 +107,7 @@ export function LaunchTokenForm() {
       >
         <div className="flex justify-between text-pcs-textDim">
           <span>Total supply</span>
-          <span className="text-pcs-text font-medium">1,000,000,000 (900M to the curve)</span>
+          <span className="text-pcs-text font-medium">1,000,000,000 (100% on the launch curve)</span>
         </div>
         <div className="flex justify-between text-pcs-textDim">
           <span>Launch fee (anti-snipe)</span>
@@ -155,9 +155,9 @@ export function LaunchTokenForm() {
       {previewError && (
         <div
           className="rounded-xl px-4 py-3 text-xs flex flex-col gap-1"
-          style={{ background: "rgba(230,159,46,0.08)", border: "1px solid rgba(230,159,46,0.35)" }}
+          style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.35)" }}
         >
-          <p className="font-medium" style={{ color: "#E69F2E" }}>Pre-flight simulation failed</p>
+          <p className="font-medium" style={{ color: "#E8A33D" }}>Pre-flight simulation failed</p>
           <p className="text-pcs-textDim break-all">{previewError.slice(0, 300)}</p>
         </div>
       )}
