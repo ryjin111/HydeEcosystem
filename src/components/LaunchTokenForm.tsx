@@ -136,7 +136,10 @@ export function LaunchTokenForm() {
         </div>
         <div className="flex justify-between text-pcs-textDim">
           <span>Trading fees</span>
-          <span className="text-pcs-text font-medium">100% to the creator</span>
+          {/* Split verified from the on-chain RehypeDopplerHookMigrator source:
+              AIRLOCK_OWNER_FEE_BPS = 500 — Doppler takes 5% OF the fee, the
+              rest routes to the creator. Hydeout takes nothing. */}
+          <span className="text-pcs-text font-medium">95% creator · 5% Doppler · 0% Hydeout</span>
         </div>
         <div className="flex justify-between text-pcs-textDim">
           <span>Graduation</span>
