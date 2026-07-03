@@ -117,7 +117,7 @@ export function TrendingCarousel({ selected, onSelect }: Props) {
           className="text-[9px] font-bold px-1.5 py-0.5 rounded"
           style={{ background: "rgba(46,159,230,0.10)", color: "#54B4F0" }}
         >
-          Optimism
+          Robinhood L2
         </span>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
