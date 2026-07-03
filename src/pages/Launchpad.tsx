@@ -30,6 +30,7 @@ function timeAgo(iso: string): string {
 const CHAIN_LABELS: Record<number, string> = {
   57073: "Ink",
   10: "Optimism",
+  4663: "Robinhood L2",
 };
 
 function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void }) {
@@ -120,7 +121,7 @@ export function LaunchpadPage() {
       <div className="mb-8">
         <h1 className="font-display text-2xl font-semibold text-pcs-text">Launchpad</h1>
         <p className="text-sm text-pcs-textSub mt-1">
-          Instant token launches on Optimism — earn trading fees from day one.
+          Instant token launches on Robinhood L2 — earn trading fees from day one.
         </p>
       </div>
 
@@ -147,7 +148,7 @@ export function LaunchpadPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-pcs-textDim">
-              {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Optimism`}
+              {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Robinhood L2`}
             </p>
             <button
               onClick={refetch}
@@ -165,7 +166,7 @@ export function LaunchpadPage() {
             >
               <p className="text-pcs-textDim text-sm">No launches found yet.</p>
               <p className="text-pcs-textDim text-xs mt-1">
-                Be the first to launch a token on Optimism!
+                Be the first to launch a token on Robinhood L2!
               </p>
               <button
                 onClick={() => setTab("launch")}

@@ -161,7 +161,7 @@ export function LaunchesPage() {
           <p className="text-sm text-pcs-textSub mt-1">
             {loading
               ? "Loading…"
-              : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Optimism`}
+              : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Robinhood L2`}
           </p>
         </div>
         <div className="flex items-center gap-2">

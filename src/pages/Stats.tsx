@@ -68,7 +68,7 @@ export function StatsPage() {
       <div>
         <h1 className="font-display text-2xl font-semibold text-pcs-text">Stats</h1>
         <p className="mt-1 text-xs text-pcs-textDim">
-          Live protocol data from Hyde launches · Optimism
+          Live protocol data from Hyde launches · Robinhood L2
         </p>
       </div>
 
@@ -83,7 +83,7 @@ export function StatsPage() {
       {/* ── token table ─────────────────────────────────────────────────── */}
       <div>
         <h2 className="mb-3 text-sm font-bold text-pcs-text">
-          Hyde Launches · Optimism
+          Hyde Launches · Robinhood L2
         </h2>
         <div className="rounded-2xl overflow-hidden" style={tableBg}>
           {loading ? (
