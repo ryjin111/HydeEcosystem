@@ -18,4 +18,6 @@ export type DopplerPool = {
   dollarLiquidity: string | null;
   volumeUsd: string | null;
   createdAt: string;
+  /** Curve progress toward graduation, 0–100 (100 = graduated). Null when unknown. */
+  progress: number | null;
 };
