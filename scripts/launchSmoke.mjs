@@ -60,3 +60,67 @@ try {
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 process.exitCode = fail ? 1 : 0; // natural exit — process.exit() trips a libuv teardown assert on Windows
+
+// ─── tokenURI metadata lane (lane #2) ───────────────────────────────────────
+// Same self-contained data-URI metadata the form builds — proven against the
+// live chain, then decoded back to verify round-trip integrity.
+function buildTokenURI({ name, symbol, imageUrl, description }) {
+  if (!imageUrl && !description) return "";
+  const metadata = { name: name.trim(), symbol: symbol.trim() };
+  if (imageUrl) metadata.image = imageUrl.trim();
+  if (description) metadata.description = description.trim();
+  const json = JSON.stringify(metadata);
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 8192)));
+  return `data:application/json;base64,${btoa(binary)}`;
+}
+
+const uri = buildTokenURI({ name: "Hyde Smoke", symbol: "SMOKE", imageUrl: "https://example.com/logo.png", description: "smoke-test metadata" });
+const decoded = JSON.parse(Buffer.from(uri.split(",")[1], "base64").toString("utf8"));
+check("tokenURI round-trip", decoded.image === "https://example.com/logo.png" && decoded.description === "smoke-test metadata", uri.slice(0, 48) + "…");
+
+try {
+  const paramsWithMeta = MulticurveBuilder.forChain(4663)
+    .tokenConfig({ type: "dopplerERC20V1", name: "Hyde Smoke", symbol: "SMOKE", tokenURI: uri })
+    .saleConfig({ initialSupply: parseEther("1000000000"), numTokensToSell: parseEther("1000000000"), numeraire: A.weth })
+    .withMarketCapPresets()
+    .withRehypeDopplerHook({
+      hookAddress: A.rehypeDopplerHook, buybackDestination: CREATOR, feeRoutingMode: "routeToBeneficiaryFees",
+      feeDistributionInfo: {
+        assetFeesToAssetBuybackWad: 0n, assetFeesToNumeraireBuybackWad: 0n, assetFeesToBeneficiaryWad: WAD, assetFeesToLpWad: 0n,
+        numeraireFeesToAssetBuybackWad: 0n, numeraireFeesToNumeraireBuybackWad: 0n, numeraireFeesToBeneficiaryWad: WAD, numeraireFeesToLpWad: 0n,
+      },
+      startFee: 30000, endFee: 10000, durationSeconds: 3600,
+    })
+    .withGovernance({ type: "noOp" })
+    .withMigration({ type: "uniswapV2Split" })
+    .withUserAddress(CREATOR)
+    .build();
+  const sdk2 = new DopplerSDK({ publicClient, chainId: 4663 });
+  const sim2 = await sdk2.factory.simulateCreateMulticurve(paramsWithMeta);
+  check("simulate WITH metadata tokenURI (LIVE 4663)", /^0x[0-9a-fA-F]{40}$/.test(sim2.tokenAddress), `token=${sim2.tokenAddress}`);
+} catch (e) {
+  check("simulate WITH metadata tokenURI (LIVE 4663)", false, e.message?.replace(/\n/g, " ").slice(0, 160));
+}
+
+// ─── Drift guard vs src/utils/dopplerLaunch.ts (lesson: audit 16961) ─────────
+import { readFileSync } from "node:fs";
+const launchSrc = readFileSync(new URL("../src/utils/dopplerLaunch.ts", import.meta.url), "utf8");
+const launchNeedles = [
+  ["dopplerERC20V1 token type", 'type: "dopplerERC20V1"'],
+  ["data-URI metadata marker", "data:application/json;base64,"],
+  ["startFee 3%", "START_FEE = 30_000"],
+  ["endFee 1%", "END_FEE = 10_000"],
+  ["fee routing to beneficiary", 'feeRoutingMode: "routeToBeneficiaryFees"'],
+  ["noOp governance", 'withGovernance({ type: "noOp" })'],
+  ["V2 split migration", 'withMigration({ type: "uniswapV2Split" })'],
+  ["1B supply", 'parseEther("1000000000")'],
+  ["100% to curve", "LAUNCH_TOKENS_FOR_SALE = LAUNCH_TOTAL_SUPPLY"],
+];
+for (const [label, needle] of launchNeedles) {
+  check(`drift guard: dopplerLaunch contains ${label}`, launchSrc.includes(needle));
+}
+
+console.log(`\nFINAL ${pass}/${pass + fail} checks passed`);
+process.exitCode = fail ? 1 : 0;

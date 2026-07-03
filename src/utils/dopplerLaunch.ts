@@ -48,13 +48,40 @@ const WAD = 10n ** 18n;
 export type RobinhoodLaunchInput = {
   name: string;
   symbol: string;
-  /** Optional metadata URI (logo/description JSON). Empty string accepted. */
-  tokenURI?: string;
+  /** Image URL (https:// or ipfs://) OR a data: URI of an embedded image. */
+  imageUrl?: string;
+  /** Short token description shown by explorers/indexers that read metadata. */
+  description?: string;
   /** Registered creator / fee recipient — IMMUTABLE after launch. */
   creator: Address;
   /** Optional platform integrator address (protocol fee share). */
   integrator?: Address;
 };
+
+/**
+ * tokenURI is a permanent on-chain string. We store a self-contained
+ * data-URI metadata JSON (name/symbol/image/description) — readable by any
+ * indexer, zero dependence on a pinning service or our own servers. Empty
+ * when no image/description was provided.
+ */
+export function buildTokenURI(input: Pick<RobinhoodLaunchInput, "name" | "symbol" | "imageUrl" | "description">): string {
+  if (!input.imageUrl && !input.description) return "";
+  const metadata: Record<string, string> = {
+    name: input.name.trim(),
+    symbol: input.symbol.trim(),
+  };
+  if (input.imageUrl) metadata.image = input.imageUrl.trim();
+  if (input.description) metadata.description = input.description.trim();
+  const json = JSON.stringify(metadata);
+  // unicode-safe base64 (btoa exists in browsers and Node 16+); chunked so a
+  // large embedded image can't blow the call stack via spread
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 8192) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 8192)));
+  }
+  return `data:application/json;base64,${btoa(binary)}`;
+}
 
 export function buildRobinhoodLaunchParams(
   input: RobinhoodLaunchInput
@@ -68,7 +95,7 @@ export function buildRobinhoodLaunchParams(
       type: "dopplerERC20V1",
       name: input.name.trim(),
       symbol: input.symbol.trim(),
-      tokenURI: input.tokenURI ?? "",
+      tokenURI: buildTokenURI(input),
     })
     .saleConfig({
       initialSupply: LAUNCH_TOTAL_SUPPLY,
