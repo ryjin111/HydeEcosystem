@@ -150,8 +150,8 @@ export const OPTIMISM_MAINNET: NetworkConfig = {
 };
 
 export const NETWORKS: NetworkConfig[] = [
-  OPTIMISM_MAINNET,
-  // ROBINHOOD_MAINNET, // enable with the launchpad slice — Doppler stack verified on-chain, Hyde gateway not yet deployed
+  ROBINHOOD_MAINNET,
+  // OPTIMISM_MAINNET,  // legacy lane retired 2026-07-03 — Hydeout is Robinhood-only
   // INK_MAINNET,       // hidden — multichain later
   // UNICHAIN_MAINNET,  // dropped
   // ROBINHOOD_TESTNET,
@@ -224,6 +224,13 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     hydeTokenFactory: "0x9532Dc6534122443a0C14F0Ec6407447f262fF42" as Address,
   },
 };
+
+/** True once the HydeV4Gateway is actually deployed on the chain — the swap lane
+ *  stays honestly disabled until then (no submitting swaps to a placeholder). */
+export function isGatewayLive(chainId: number): boolean {
+  const gateway = V4_CONTRACTS_BY_CHAIN[chainId]?.gateway;
+  return !!gateway && gateway !== PLACEHOLDER_V4_GATEWAY;
+}
 
 /** Doppler protocol deployment on a chain — drives the token-launch (launchpad) flow. */
 export type DopplerContracts = {
