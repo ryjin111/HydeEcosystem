@@ -221,9 +221,9 @@ function CollectButton({ token, onCollected }: { token: TokenRow; onCollected: (
       )}
       disabled={busy}
       className="flex-shrink-0 text-xs font-semibold px-4 py-2 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
-      style={{ background: "rgba(0,212,255,0.10)", color: "#00d4ff", border: "1px solid rgba(0,212,255,0.20)" }}
-      onMouseEnter={(e) => { if (!busy) (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.20)"; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.10)"; }}
+      style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0", border: "1px solid rgba(46,159,230,0.35)" }}
+      onMouseEnter={(e) => { if (!busy) (e.currentTarget as HTMLButtonElement).style.background = "rgba(46,159,230,0.20)"; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(46,159,230,0.12)"; }}
     >
       {isPending ? "Confirm…" : isConfirming ? "Confirming…" : "Collect Fees"}
     </button>
@@ -236,12 +236,12 @@ function TokenCard({ token, onCollected }: { token: TokenRow; onCollected: () =>
   const { fees } = token;
   const hasHistory = fees.collectCount > 0;
   return (
-    <div className="rounded-2xl p-5 flex flex-col gap-4" style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.08)" }}>
+    <div className="rounded-2xl p-5 flex flex-col gap-4" style={{ background: "#121419", border: "1px solid #22252D" }}>
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="h-10 w-10 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-               style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff" }}>
+               style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}>
             {token.symbol.slice(0, 2).toUpperCase()}
           </div>
           <div className="min-w-0">
@@ -267,7 +267,7 @@ function TokenCard({ token, onCollected }: { token: TokenRow; onCollected: () =>
       {/* Footer */}
       <div className="flex items-center justify-between text-[11px] text-pcs-textDim">
         <span>{hasHistory ? `Collected ${fees.collectCount}× total` : "No collections yet"}</span>
-        <span className="flex items-center gap-1 font-semibold" style={{ color: "#00d4ff" }}>
+        <span className="flex items-center gap-1 font-semibold" style={{ color: "#54B4F0" }}>
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
           Pending fees
         </span>
@@ -324,7 +324,7 @@ export function ClaimFeesPage() {
     <div className="w-full max-w-2xl mx-auto px-4">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-pcs-text">Claim Fees</h1>
+        <h1 className="font-display text-2xl font-semibold text-pcs-text">Claim Fees</h1>
         <p className="text-sm text-pcs-textDim mt-1">
           Paste a <strong className="text-pcs-text">token address</strong> to see its fees, or a{" "}
           <strong className="text-pcs-text">creator wallet</strong> to see all their tokens.
@@ -334,7 +334,7 @@ export function ClaimFeesPage() {
 
       {/* Search */}
       <div className="flex items-center gap-2 rounded-2xl px-4 py-3 mb-2"
-           style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.12)" }}>
+           style={{ background: "#121419", border: "1px solid #22252D" }}>
         <input
           type="text"
           placeholder="Token address or creator wallet (0x…)"
@@ -347,9 +347,9 @@ export function ClaimFeesPage() {
           onClick={handleSearch}
           disabled={loading}
           className="text-xs font-semibold px-4 py-1.5 rounded-xl transition disabled:opacity-50"
-          style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff", border: "1px solid rgba(0,212,255,0.20)" }}
-          onMouseEnter={(e) => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.22)"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,212,255,0.12)"; }}
+          style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0", border: "1px solid rgba(46,159,230,0.35)" }}
+          onMouseEnter={(e) => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = "rgba(46,159,230,0.28)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(46,159,230,0.14)"; }}
         >
           {loading ? "Loading…" : "Look up"}
         </button>
@@ -377,7 +377,7 @@ export function ClaimFeesPage() {
 
       {/* No results */}
       {!loading && searched && tokens.length === 0 && (
-        <div className="rounded-2xl p-10 text-center" style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.08)" }}>
+        <div className="rounded-2xl p-10 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
           <p className="text-pcs-textDim text-sm">
             {mode === "token"
               ? "This token was not launched via HydeTokenFactory."
@@ -395,7 +395,7 @@ export function ClaimFeesPage() {
               ? <>Showing fees for token <span className="font-mono">{searchedAddr.slice(0, 6)}…{searchedAddr.slice(-4)}</span></>
               : <>{tokens.length} token{tokens.length !== 1 ? "s" : ""} by creator <span className="font-mono">{searchedAddr.slice(0, 6)}…{searchedAddr.slice(-4)}</span></>
             }
-            {modeLabel && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(0,212,255,0.08)", color: "#00d4ff" }}>{modeLabel}</span>}
+            {modeLabel && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(46,159,230,0.10)", color: "#54B4F0" }}>{modeLabel}</span>}
           </p>
           {tokens.map((token) => (
             <TokenCard key={token.address} token={token} onCollected={handleCollected} />

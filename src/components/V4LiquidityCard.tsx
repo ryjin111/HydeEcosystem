@@ -398,7 +398,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: Pro
   };
 
   /* ── styles ──────────────────────────────────────────────────────────── */
-  const box = { background: "rgba(0, 212, 255, 0.03)", border: "1px solid rgba(0, 212, 255, 0.06)" };
+  const box = { background: "rgba(255,255,255,0.02)", border: "1px solid #1C1F26" };
 
   /* ═══════════════════════════════════════════════════════════════════════
      Render
@@ -440,7 +440,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: Pro
           <span className="mb-1.5 block text-xs font-medium text-pcs-textDim">Token A</span>
           <TokenSelector label="Token A" selected={tokenA} tokens={tokens} onSelect={t => { setTokenA(t); resetAmounts(); }} onAddCustom={onAddCustomToken} chainId={network.id} />
         </div>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-pcs-primary" style={{ background: "rgba(0, 212, 255, 0.08)" }}>
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-pcs-primary" style={{ background: "rgba(46,159,230,0.10)" }}>
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
         </div>
         <div className="flex-1 rounded-2xl p-3" style={box}>
@@ -495,7 +495,7 @@ export function V4LiquidityCard({ network, tokens, mode, onAddCustomToken }: Pro
                   onClick={() => selectStrategy(s.id)}
                   className={`rounded-2xl p-3 text-left transition ${strategyId === s.id ? "ring-1 ring-pcs-primary" : "hover:ring-1 hover:ring-pcs-primary/30"}`}
                   style={strategyId === s.id
-                    ? { ...box, background: "rgba(0, 212, 255, 0.08)" }
+                    ? { ...box, background: "rgba(46,159,230,0.10)" }
                     : box}
                 >
                   <p className="text-xs font-semibold text-pcs-text">{s.label}</p>

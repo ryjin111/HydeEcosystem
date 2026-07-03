@@ -38,13 +38,13 @@ function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string
   return (
     <div
       className="rounded-2xl p-4 flex flex-col gap-3 border transition hover:border-pcs-primary/40"
-      style={{ background: "#0d1220", borderColor: "rgba(0,212,255,0.10)" }}
+      style={{ background: "#121419", borderColor: "#22252D" }}
     >
       {/* Token identity */}
       <div className="flex items-center gap-3">
         <div
           className="h-10 w-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-          style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff" }}
+          style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
         >
           {bt.symbol.slice(0, 2).toUpperCase()}
         </div>
@@ -62,8 +62,8 @@ function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string
           <span
             className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
             style={{
-              background: pool.type === "v4" ? "rgba(168,85,247,0.15)" : "rgba(0,212,255,0.10)",
-              color: pool.type === "v4" ? "#a855f7" : "#00d4ff",
+              background: pool.type === "v4" ? "rgba(46,159,230,0.14)" : "rgba(52,199,123,0.12)",
+              color: pool.type === "v4" ? "#54B4F0" : "#34C77B",
             }}
           >
             {pool.type}
@@ -88,10 +88,10 @@ function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string
         <span className="text-xs text-pcs-textDim">{timeAgo(pool.createdAt)}</span>
         <button
           onClick={() => onTrade(bt.address, pool.chainId)}
-          className="text-xs font-semibold px-3 py-1.5 rounded-xl transition"
-          style={{ background: "rgba(0,212,255,0.10)", color: "#00d4ff" }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,212,255,0.18)")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(0,212,255,0.10)")}
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+          style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.20)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.12)")}
         >
           Trade →
         </button>
@@ -103,7 +103,7 @@ function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 
 export function LaunchpadPage() {
-  const [tab, setTab] = useState<"explore" | "launch">("explore");
+  const [tab, setTab] = useState<"explore" | "launch">("launch");
   const { pools, loading, refetch } = useHydeLaunches();
   const navigate = useNavigate();
 
@@ -118,23 +118,23 @@ export function LaunchpadPage() {
     <div className="max-w-6xl mx-auto px-4 w-full">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-pcs-text">Launchpad</h1>
-        <p className="text-sm text-pcs-textDim mt-1">
+        <h1 className="font-display text-2xl font-semibold text-pcs-text">Launchpad</h1>
+        <p className="text-sm text-pcs-textSub mt-1">
           Instant token launches on Optimism — earn trading fees from day one.
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 p-1 rounded-2xl w-fit" style={{ background: "rgba(255,255,255,0.04)" }}>
-        {(["explore", "launch"] as const).map((t) => (
+      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #1C1F26" }}>
+        {(["launch", "explore"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className="px-5 py-2 rounded-xl text-sm font-semibold transition capitalize"
+            className="px-5 py-2 rounded-lg text-sm font-semibold transition"
             style={
               tab === t
-                ? { background: "rgba(0,212,255,0.15)", color: "#00d4ff" }
-                : { color: "#6b7280" }
+                ? { background: "rgba(46,159,230,0.14)", color: "#54B4F0" }
+                : { color: "#5D6470" }
             }
           >
             {t === "explore" ? "Explore Launches" : "Launch a Token"}
@@ -161,7 +161,7 @@ export function LaunchpadPage() {
           {!loading && pools.length === 0 && (
             <div
               className="rounded-2xl p-10 text-center"
-              style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.08)" }}
+              style={{ background: "#121419", border: "1px solid #22252D" }}
             >
               <p className="text-pcs-textDim text-sm">No launches found yet.</p>
               <p className="text-pcs-textDim text-xs mt-1">
@@ -169,8 +169,7 @@ export function LaunchpadPage() {
               </p>
               <button
                 onClick={() => setTab("launch")}
-                className="mt-4 px-5 py-2 rounded-xl text-sm font-semibold"
-                style={{ background: "rgba(0,212,255,0.10)", color: "#00d4ff" }}
+                className="btn-primary mt-4 px-5 py-2 text-sm"
               >
                 Launch a Token
               </button>

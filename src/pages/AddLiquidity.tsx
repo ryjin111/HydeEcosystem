@@ -16,7 +16,7 @@ export function AddLiquidityPage({ network, tokens, onAddCustomToken }: Props) {
       {/* Add / Remove toggle */}
       <div
         className="mb-4 flex items-center rounded-2xl p-1 mx-auto"
-        style={{ background: '#111827', border: '1px solid rgba(0, 212, 255, 0.08)' }}
+        style={{ background: '#121419', border: '1px solid #22252D' }}
       >
         <button
           type="button"

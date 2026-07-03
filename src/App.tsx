@@ -35,21 +35,21 @@ function App() {
   type SidebarSection = { title: string; items: SidebarItem[] };
 
   const sidebarSections: SidebarSection[] = [
-  {
-      title: "HydeSwap",
+    {
+      title: "Launchpad",
+      items: [
+        { to: "/launchpad", label: "Launch a Token", icon: LaunchIcon },
+        { to: "/launches", label: "Launches", icon: GridIcon },
+      ],
+    },
+    {
+      title: "Trade",
       items: [
         { to: "/swap", label: "Exchange", icon: SwapIcon },
         { to: "/add-liquidity", label: "Liquidity", icon: LiquidityIcon },
       ],
     },
     {
-      title: "Launcher",
-      items: [
-        { to: "/launchpad", label: "Launchpad", icon: LaunchIcon },
-        { to: "/launches", label: "Launches", icon: GridIcon },
-      ],
-    },
-       {
       title: "Earn",
       items: [
         { to: "/farms", label: "Farms", icon: FarmIcon },
@@ -74,12 +74,12 @@ function App() {
         className={`fixed top-0 left-0 z-30 h-full w-56 flex flex-col transition-transform duration-200 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
-        style={{ background: '#0d1220', borderRight: '1px solid rgba(0, 212, 255, 0.08)' }}
+        style={{ background: '#0F1114', borderRight: '1px solid #1C1F26' }}
       >
         {/* Sidebar header */}
-        <div className="flex h-14 items-center gap-2.5 px-4" style={{ borderBottom: '1px solid rgba(0, 212, 255, 0.06)' }}>
-          <img src="/logo/lo.png" alt="Hyde" className="h-7 w-7 object-contain" style={{ filter: 'drop-shadow(0 0 6px rgba(0, 212, 255, 0.5))' }} />
-          <span className="text-lg font-bold tracking-tight" style={{ color: '#00d4ff', textShadow: '0 0 10px rgba(0, 212, 255, 0.5)' }}>
+        <div className="flex h-14 items-center gap-2.5 px-4" style={{ borderBottom: '1px solid #1C1F26' }}>
+          <img src="/logo/lo.png" alt="Hyde" className="h-7 w-7 rounded-md object-contain" />
+          <span className="font-display text-lg font-semibold tracking-tight text-pcs-text">
             Hyde
           </span>
         </div>
@@ -124,7 +124,7 @@ function App() {
         </nav>
 
         {/* Sidebar footer */}
-        <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(0, 212, 255, 0.06)' }}>
+        <div className="px-4 py-3" style={{ borderTop: '1px solid #1C1F26' }}>
           <div className="text-xs text-pcs-textDim">
             {selectedNetwork.name}
           </div>
@@ -159,7 +159,7 @@ function App() {
               <Route path="/launchpad" element={<LaunchpadPage />} />
               <Route path="/launches" element={<LaunchesPage />} />
               <Route path="/remove-liquidity" element={<Navigate to="/add-liquidity" replace />} />
-              <Route path="*" element={<Navigate to="/swap" replace />} />
+              <Route path="*" element={<Navigate to="/launchpad" replace />} />
             </Routes>
           </div>
         </main>

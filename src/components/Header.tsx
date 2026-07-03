@@ -89,12 +89,12 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
     <>
       <header
         className="sticky top-0 z-20 flex h-14 items-center justify-between px-4 backdrop-blur-md"
-        style={{ background: 'rgba(13, 18, 32, 0.9)', borderBottom: '1px solid rgba(0, 212, 255, 0.06)' }}
+        style={{ background: 'rgba(11, 12, 15, 0.88)', borderBottom: '1px solid #1C1F26' }}
       >
         {/* Left: sidebar toggle */}
         <button
           onClick={onToggleSidebar}
-          className="rounded-lg p-2 text-pcs-textSub hover:text-pcs-primary hover:bg-white/[0.03] transition"
+          className="rounded-lg p-2 text-pcs-textSub hover:text-pcs-text hover:bg-white/[0.03] transition"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             {sidebarOpen ? (
@@ -111,7 +111,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
             value={selectedNetwork.id}
             onChange={(e) => onNetworkChange(Number(e.target.value))}
             className="rounded-xl bg-pcs-card px-3 py-1.5 text-xs font-medium text-pcs-textSub outline-none cursor-pointer"
-            style={{ border: '1px solid rgba(0, 212, 255, 0.1)' }}
+            style={{ border: '1px solid #22252D' }}
           >
             {networks.map((net) => (
               <option key={net.id} value={net.id}>
@@ -128,12 +128,12 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
             <div className="flex items-center gap-2">
               <div
                 className="hidden sm:block rounded-xl px-3 py-1.5 text-xs font-medium text-pcs-textSub"
-                style={{ background: 'rgba(0, 212, 255, 0.05)', border: '1px solid rgba(0, 212, 255, 0.1)' }}
+                style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid #22252D' }}
               >
                 {nativeBalance?.formatted ? Number(nativeBalance.formatted).toFixed(4) : "0"} {selectedNetwork.currencySymbol}
               </div>
               <button
-                className="rounded-xl bg-pcs-primary px-4 py-1.5 font-mono text-xs font-semibold text-pcs-bg hover:shadow-neon transition"
+                className="rounded-xl bg-pcs-primary px-4 py-1.5 font-mono text-xs font-semibold text-pcs-bg hover:bg-pcs-primaryBright transition"
                 onClick={() => disconnect()}
               >
                 {shortenAddress(address)}
@@ -148,7 +148,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
         <div className="mx-auto max-w-[420px] px-4 mt-3">
           <div
             className="flex items-center justify-between gap-3 rounded-xl px-4 py-2.5"
-            style={{ background: 'rgba(255, 64, 129, 0.07)', border: '1px solid rgba(255, 64, 129, 0.25)' }}
+            style={{ background: 'rgba(229, 72, 77, 0.07)', border: '1px solid rgba(229, 72, 77, 0.30)' }}
           >
             {/* Left: icon + text */}
             <div className="flex items-center gap-2 min-w-0">
@@ -164,9 +164,9 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
               onClick={switchNetwork}
               className="shrink-0 rounded-lg px-3 py-1 text-xs font-semibold transition hover:opacity-90 active:scale-95"
               style={{
-                background: 'rgba(255, 64, 129, 0.15)',
-                border: '1px solid rgba(255, 64, 129, 0.4)',
-                color: '#ff4081',
+                background: 'rgba(229, 72, 77, 0.14)',
+                border: '1px solid rgba(229, 72, 77, 0.45)',
+                color: '#E5484D',
               }}
             >
               Switch

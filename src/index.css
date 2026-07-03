@@ -8,84 +8,79 @@
 
 body {
   @apply min-h-screen bg-pcs-bg text-pcs-text font-sans;
-  background-image:
-    radial-gradient(ellipse at 20% 0%, rgba(0, 212, 255, 0.07), transparent 50%),
-    radial-gradient(ellipse at 80% 100%, rgba(124, 58, 237, 0.06), transparent 50%),
-    radial-gradient(ellipse at 50% 50%, rgba(0, 255, 159, 0.02), transparent 60%);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Card - cyberpunk dark card with subtle cyan border glow */
+/* Display type — headings, brand, page titles */
+.font-display {
+  font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Card — flat surface, hairline border, soft elevation */
 .card {
-  @apply rounded-3xl bg-pcs-card p-5 shadow-card;
-  border: 1px solid rgba(0, 212, 255, 0.12);
-  position: relative;
+  @apply rounded-2xl bg-pcs-card p-5 shadow-card;
+  border: 1px solid #22252D;
 }
 
-/* Optional: very subtle top-edge glow line */
-.card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 10%; right: 10%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.2), transparent);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-/* Monospace elements — advanced payload fields, addresses */
+/* Monospace elements — payload fields, addresses, hashes */
 .font-code {
   font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
 }
 
-/* Input - deep dark input field */
+/* Input — recessed well, quiet focus ring */
 .input {
-  @apply w-full rounded-2xl border bg-pcs-input px-4 py-3 text-sm text-pcs-text outline-none transition placeholder:text-pcs-textDim;
-  border-color: rgba(0, 212, 255, 0.1);
+  @apply w-full rounded-xl border bg-pcs-input px-4 py-3 text-sm text-pcs-text outline-none transition placeholder:text-pcs-textDim;
+  border-color: #22252D;
 }
 .input:focus {
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.1), 0 0 12px rgba(0, 212, 255, 0.08);
+  border-color: rgba(46, 159, 230, 0.55);
+  box-shadow: 0 0 0 3px rgba(46, 159, 230, 0.12);
 }
 
-/* Primary action button - cyan neon with glow */
+/* Primary action button — solid accent, no gradient, no glow */
 .btn-primary {
   @apply rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
-  background: linear-gradient(135deg, #00d4ff 0%, #00ffff 50%, #00d4ff 100%);
-  color: #0a0f1e;
-  text-shadow: none;
+  background: #2E9FE6;
+  color: #0B0C0F;
 }
 .btn-primary:hover:not(:disabled) {
-  box-shadow: 0 0 16px rgba(0, 212, 255, 0.4), 0 0 32px rgba(0, 255, 255, 0.15);
+  background: #54B4F0;
+}
+.btn-primary:active:not(:disabled) {
+  background: #1F81C0;
 }
 
-/* Secondary / outline button - cyan border with glow on hover */
+/* Secondary / outline button — neutral, quiet */
 .btn-secondary {
-  @apply rounded-xl border bg-transparent px-3 py-1.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
-  border-color: rgba(0, 212, 255, 0.35);
-  color: #00d4ff;
+  @apply rounded-xl border px-3 py-1.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  border-color: #2A2E37;
+  background: transparent;
+  color: #9BA1AC;
 }
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(0, 212, 255, 0.08);
-  border-color: rgba(0, 212, 255, 0.6);
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.15);
+  border-color: #3A3F4B;
+  background: rgba(255, 255, 255, 0.03);
+  color: #EDEFF3;
 }
 
-/* Neon gradient button variant (for swap CTA) */
+/* Large CTA (legacy name kept — components reference it). Solid accent. */
 .btn-neon {
-  @apply rounded-2xl px-5 py-3 text-base font-bold transition disabled:cursor-not-allowed disabled:opacity-40;
-  background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
-  color: #ffffff;
+  @apply rounded-xl px-5 py-3 text-base font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  background: #2E9FE6;
+  color: #0B0C0F;
   letter-spacing: 0.01em;
 }
 .btn-neon:hover:not(:disabled) {
-  box-shadow: 0 0 24px rgba(0, 212, 255, 0.4), 0 0 48px rgba(124, 58, 237, 0.25);
-  filter: brightness(1.05);
+  background: #54B4F0;
 }
 .btn-neon:active:not(:disabled) {
-  transform: scale(0.98);
+  background: #1F81C0;
+  transform: scale(0.99);
 }
 
-/* Scrollbar styling */
+/* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -93,15 +88,15 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 212, 255, 0.15);
+  background: #2A2E37;
   border-radius: 8px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 212, 255, 0.3);
+  background: #3A3F4B;
 }
 
 /* Selection highlight */
 ::selection {
-  background: rgba(0, 212, 255, 0.25);
-  color: #e0f7ff;
+  background: rgba(46, 159, 230, 0.30);
+  color: #EDEFF3;
 }

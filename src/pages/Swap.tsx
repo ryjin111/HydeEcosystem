@@ -11,7 +11,7 @@ function TokenChart({ tokenAddress }: { tokenAddress: string | null }) {
     return (
       <div
         className="w-full h-[500px] rounded-2xl flex items-center justify-center"
-        style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.08)" }}
+        style={{ background: "#121419", border: "1px solid #22252D" }}
       >
         <p className="text-xs text-pcs-textDim">Select a token to view chart</p>
       </div>
@@ -23,7 +23,7 @@ function TokenChart({ tokenAddress }: { tokenAddress: string | null }) {
   return (
     <div
       className="w-full rounded-2xl overflow-hidden"
-      style={{ height: 500, border: "1px solid rgba(0,212,255,0.08)" }}
+      style={{ height: 500, border: "1px solid #22252D" }}
     >
       <iframe
         src={src}
@@ -110,12 +110,12 @@ function RecentlyLaunched({
   return (
     <div
       className="rounded-2xl overflow-hidden"
-      style={{ background: "#0d1220", border: "1px solid rgba(0,212,255,0.08)" }}
+      style={{ background: "#121419", border: "1px solid #22252D" }}
     >
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-2.5"
-        style={{ borderBottom: "1px solid rgba(0,212,255,0.06)" }}
+        style={{ borderBottom: "1px solid #1C1F26" }}
       >
         <span className="text-[11px] font-semibold uppercase tracking-widest text-pcs-textDim">
           Recently Launched
@@ -142,7 +142,7 @@ function RecentlyLaunched({
       ) : recent.length === 0 ? (
         <p className="p-4 text-xs text-pcs-textDim text-center">No launches yet</p>
       ) : (
-        <div className="divide-y" style={{ borderColor: "rgba(0,212,255,0.04)" }}>
+        <div className="divide-y" style={{ borderColor: "rgba(255,255,255,0.03)" }}>
           {recent.map((token) => {
             const pool = clankerToPool(token);
             return (
@@ -154,7 +154,7 @@ function RecentlyLaunched({
               {/* Avatar */}
               <div
                 className="h-7 w-7 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0"
-                style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff" }}
+                style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
               >
                 {token.symbol.slice(0, 2).toUpperCase()}
               </div>

@@ -4,35 +4,35 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Cyberpunk Neon Dark palette
+        // Hyde dark — flat, credible-finance palette. One accent, no neon.
         pcs: {
-          bg: "#0a0f1e",
-          card: "#111827",
-          cardLight: "#1a2236",
-          input: "#0d1426",
-          border: "#1e2d44",
-          hover: "#1a2540",
-          text: "#e0f7ff",
-          textSub: "#94a3b8",
-          textDim: "#4a6080",
-          primary: "#00d4ff",
-          primaryDark: "#0098b8",
-          primaryBright: "#00ffff",
-          secondary: "#7c3aed",
-          success: "#00ff9f",
-          warning: "#ffb237",
-          failure: "#ff4081",
+          bg: "#0B0C0F",
+          card: "#121419",
+          cardLight: "#181B22",
+          input: "#0E1014",
+          border: "#22252D",
+          hover: "#1A1D24",
+          text: "#EDEFF3",
+          textSub: "#9BA1AC",
+          textDim: "#5D6470",
+          primary: "#2E9FE6",
+          primaryDark: "#1F81C0",
+          primaryBright: "#54B4F0",
+          secondary: "#8B93A3",
+          success: "#34C77B",
+          warning: "#E8A33D",
+          failure: "#E5484D",
         },
         brand: {
-          yellow: "#ff4081",
-          blue: "#00d4ff"
+          yellow: "#E8A33D",
+          blue: "#2E9FE6"
         },
       },
       boxShadow: {
-        card: "0 0 1px rgba(0, 212, 255, 0.05), 0 4px 16px rgba(0, 0, 0, 0.3), 0 8px 32px rgba(0, 0, 0, 0.2)",
-        swap: "0 0 20px rgba(0, 212, 255, 0.08)",
-        neon: "0 0 8px rgba(0, 212, 255, 0.3), 0 0 20px rgba(0, 212, 255, 0.1)",
-        neonPink: "0 0 8px rgba(255, 64, 129, 0.3), 0 0 20px rgba(255, 64, 129, 0.1)",
+        card: "0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.25)",
+        swap: "0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.25)",
+        neon: "0 1px 2px rgba(0, 0, 0, 0.4)",
+        neonPink: "0 1px 2px rgba(0, 0, 0, 0.4)",
       },
       borderRadius: {
         '2.5xl': '1.25rem',
@@ -44,6 +44,7 @@ module.exports = {
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+        display: ['Space Grotesk', 'Inter', 'system-ui', 'sans-serif'],
         mono: ['IBM Plex Mono', 'JetBrains Mono', 'monospace'],
       },
     }

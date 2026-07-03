@@ -16,7 +16,15 @@
       "clanker-sdk/v4": [
         "./node_modules/clanker-sdk/dist/v4/index.d.ts",
         "../node_modules/clanker-sdk/dist/v4/index.d.ts"
-      ]
+      ],
+      "viem": ["./node_modules/viem"],
+      "viem/*": ["./node_modules/viem/*"],
+      "wagmi": ["./node_modules/wagmi"],
+      "wagmi/*": ["./node_modules/wagmi/*"],
+      "@wagmi/core": ["./node_modules/@wagmi/core"],
+      "@wagmi/core/*": ["./node_modules/@wagmi/core/*"],
+      "@wagmi/connectors": ["./node_modules/@wagmi/connectors"],
+      "@wagmi/connectors/*": ["./node_modules/@wagmi/connectors/*"]
     }
   },
   "include": ["src"]
