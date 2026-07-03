@@ -1,5 +1,5 @@
 import type { Address, Hex } from "viem";
-import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS, OPTIMISM_TOKENS } from "../tokens";
+import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, ROBINHOOD_MAINNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS, OPTIMISM_TOKENS } from "../tokens";
 
 export type TokenInfo = {
   symbol: string;
@@ -85,6 +85,20 @@ export const ROBINHOOD_TESTNET: NetworkConfig = {
   tokens: ROBINHOOD_TESTNET_TOKENS,
 };
 
+// Robinhood Chain Mainnet — chain id 4663 (0x1237), verified live via eth_chainId 2026-07-03.
+// WETH verified on-chain (UniswapV2MigratorSplit.weth() + symbol/name check).
+export const ROBINHOOD_MAINNET: NetworkConfig = {
+  id: 4663,
+  name: "Robinhood Chain",
+  rpcUrl: "https://rpc.mainnet.chain.robinhood.com",
+  explorerUrl: "https://robinhoodchain.blockscout.com",
+  currencySymbol: "ETH",
+  factory: PLACEHOLDER_FACTORY,   // no V2 factory needed — launches go via Doppler / V4
+  router: PLACEHOLDER_ROUTER,
+  weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+  tokens: ROBINHOOD_MAINNET_TOKENS,
+};
+
 export const PHAROS_ATLANTIC_TESTNET: NetworkConfig = {
   id: 688689,
   name: "Pharos Atlantic Testnet",
@@ -137,6 +151,7 @@ export const OPTIMISM_MAINNET: NetworkConfig = {
 
 export const NETWORKS: NetworkConfig[] = [
   OPTIMISM_MAINNET,
+  // ROBINHOOD_MAINNET, // enable with the launchpad slice — Doppler stack verified on-chain, Hyde gateway not yet deployed
   // INK_MAINNET,       // hidden — multichain later
   // UNICHAIN_MAINNET,  // dropped
   // ROBINHOOD_TESTNET,
@@ -185,6 +200,19 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway: "0x21d6Ce25aa1AB3F59eE51b7693A596C6d39A03C9" as Address
   },
+  // Robinhood Chain Mainnet (4663) — canonical Uniswap V4, every address verified on-chain 2026-07-03:
+  //   eth_getCode ≠ 0x on all, and poolManager() cross-checked identical from SIX contracts
+  //   (UniswapV4Initializer, DopplerLensQuoter, UniversalRouter, Quoter, PositionManager, StateView).
+  //   universalRouter from Bundler.router(); positionManager/stateView are Blockscout-verified sources;
+  //   PositionManager.permit2() → canonical Permit2.
+  [ROBINHOOD_MAINNET.id]: {
+    poolManager:     "0x8366a39CC670B4001A1121B8F6A443A643e40951" as Address,
+    universalRouter: "0x8876789976dEcBfCbBbe364623C63652db8C0904" as Address,
+    quoter:          "0x7232686FC954f12079cadFC5e9F755a9fEAeb3Ca" as Address,
+    positionManager: "0x58daec3116aae6D93017bAAea7749052E8a04fA7" as Address,
+    permit2:         "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
+    gateway:         PLACEHOLDER_V4_GATEWAY, // HydeV4Gateway not yet deployed on 4663 — Foundry deploy needs clint's key
+  },
   // Optimism Mainnet — Uniswap V4
   [10]: {
     poolManager:      "0x9a13F98Cb987694C9F086b1F5eB990EeA8264Ec3" as Address,
@@ -196,6 +224,43 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     hydeTokenFactory: "0x9532Dc6534122443a0C14F0Ec6407447f262fF42" as Address,
   },
 };
+
+/** Doppler protocol deployment on a chain — drives the token-launch (launchpad) flow. */
+export type DopplerContracts = {
+  airlock: Address;
+  bundler: Address;
+  dopplerDeployer: Address;
+  tokenFactory: Address;
+  uniswapV4Initializer: Address;
+  dopplerLensQuoter: Address;
+  governanceFactory: Address;
+  noOpGovernanceFactory: Address;
+  noOpMigrator: Address;
+  streamableFeesLockerV2: Address;
+  uniswapV2MigratorSplit: Address;
+};
+
+// Robinhood Chain Mainnet (4663) Doppler stack.
+// Source: docs.doppler.lol contract-addresses page, cross-checked byte-identical against
+// @whetstone-research/doppler-sdk@1.0.27 address map; key contracts eth_getCode-verified on-chain 2026-07-03.
+export const DOPPLER_CONTRACTS_BY_CHAIN: Record<number, DopplerContracts> = {
+  [ROBINHOOD_MAINNET.id]: {
+    airlock:                "0xeb7C034704eF8Dcd2D32324c1545f62fB4aD0862" as Address,
+    bundler:                "0xEdE0B5fae363232c396724Fa962250Fa197cc5a1" as Address,
+    dopplerDeployer:        "0x4389AD34938B14F25cff7ED983c53f5a42A2573f" as Address,
+    tokenFactory:           "0x1B37D3a72082029c44B35B604Ea473617580b69a" as Address, // DopplerERC20V1Factory
+    uniswapV4Initializer:   "0x6cce158B6D1747617fc218592B4D60B239B957ea" as Address,
+    dopplerLensQuoter:      "0xf4c22465532f64777FfcD7770831AEca38F35c04" as Address,
+    governanceFactory:      "0xDeb0447DAE3EB177c4dbA8bBCCCa25c8F273B7ef" as Address,
+    noOpGovernanceFactory:  "0x85f37f74Ef2478A770318bc810177a9835911aD7" as Address,
+    noOpMigrator:           "0xba2F330EDb16cD8056f5988d8CE19BbC63475A0e" as Address,
+    streamableFeesLockerV2: "0x7B6147AC3F615bdb764e7EbD5f517dac1AD163B8" as Address,
+    uniswapV2MigratorSplit: "0xB05046cEa797c993FB5b583098B1c4682e9Da333" as Address,
+  },
+};
+
+/** StateView (read-only V4 pool state) on Robinhood mainnet — Blockscout-verified, poolManager() cross-checked. */
+export const ROBINHOOD_STATE_VIEW = "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b" as Address;
 
 // Template encoding config for auto payload generation.
 // Adjust ABI parameter lists and command byte to match your deployed V4 periphery.
