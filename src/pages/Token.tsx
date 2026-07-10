@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive } from "../utils/constants";
-import { useHydeLaunches } from "../hooks/useDopplerTokens";
+import { useHydeLaunches, useHydeToken } from "../hooks/useDopplerTokens";
 import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { Card, Button, Stat, Progress, Badge, VerifiedBadge, SectionLabel } from "../components/ui/kit";
@@ -64,27 +64,32 @@ const short = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
 
 export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
   const { address = "" } = useParams();
-  const { pools, loading } = useHydeLaunches();
+  const { pools } = useHydeLaunches();
   const verify = useVerifiedStatus(address);
   const { pair, checked } = useDexPair(address);
   const { holders } = useTopHolders(address);
   const [copied, setCopied] = useState(false);
   const [chartLoad, setChartLoad] = useState(false); // don't auto-embed DEXScreener's raw UI
 
-  const pool = useMemo(() => pools.find((p) => p.address.toLowerCase() === address.toLowerCase()), [pools, address]);
+  // Prefer the board pool (richer: precise graduation %); else read the token
+  // directly by address so launches OUTSIDE the newest-60 page still render.
+  const boardPool = useMemo(() => pools.find((p) => p.address.toLowerCase() === address.toLowerCase()), [pools, address]);
+  const { pool: fetchedPool, loading: tokenLoading } = useHydeToken(address);
+  const pool = boardPool ?? fetchedPool;
 
-  if (loading) return <div className="py-20 text-center text-pcs-textSub">Loading token…</div>;
+  if (tokenLoading && !boardPool) return <div className="py-20 text-center text-pcs-textSub">Loading token…</div>;
   if (!pool) {
     return (
       <Card variant="panel" className="mx-auto max-w-lg text-center">
-        <p className="py-6 text-pcs-textSub">This token isn’t on the Hydeout board.</p>
+        <p className="py-6 text-pcs-textSub">This isn’t a Hydeout launch token.</p>
         <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
       </Card>
     );
   }
 
   const sym = pool.baseToken.symbol || "?";
-  const graduated = pool.type === "v2";
+  // graduated if the board says so, or if it has an indexed Uniswap pair (a live pool)
+  const graduated = pool.type === "v2" || !!pair;
 
   return (
     <div className="mx-auto grid w-full max-w-[1200px] gap-5 lg:grid-cols-[1fr,380px]">
@@ -114,13 +119,22 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
             <Stat label="Price" value="—" />
           </div>
 
-          {pool.progress != null && (
+          {graduated ? (
+            <div className="mt-4">
+              <Progress pct={100} showLabel />
+              <p className="mt-1 font-mono text-[11px] text-pcs-textDim">Graduated — liquidity migrated to a Uniswap pool.</p>
+            </div>
+          ) : pool.progress != null ? (
             <div className="mt-4">
               <Progress pct={pool.progress} showLabel />
-              <p className="mt-1 font-mono text-[11px] text-pcs-textDim">{graduated ? "Graduated — liquidity migrated to a Uniswap pool." : `On the launch curve · ${pool.progress.toFixed(1)}% to graduation.`}</p>
+              <p className="mt-1 font-mono text-[11px] text-pcs-textDim">On the launch curve · {pool.progress.toFixed(1)}% to graduation.</p>
             </div>
+          ) : (
+            <p className="mt-4 font-mono text-[11px] text-pcs-textDim">On the launch curve.</p>
           )}
-          <p className="mt-3 font-mono text-[11px] text-pcs-textDim">Launched {new Date(pool.createdAt).toLocaleString()}</p>
+          {new Date(pool.createdAt).getUTCFullYear() > 2020 && (
+            <p className="mt-3 font-mono text-[11px] text-pcs-textDim">Launched {new Date(pool.createdAt).toLocaleString()}</p>
+          )}
         </Card>
 
         {/* Chart zone — the default is ALWAYS our kit-styled panel; the raw
