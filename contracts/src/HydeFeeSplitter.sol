@@ -32,6 +32,7 @@ contract HydeFeeSplitter {
     error AlreadyInitialized();
     error NotFactory();
     error ETHTransferFailed();
+    error TransferFailed();
 
     event Split(address indexed token, uint256 toCreator, uint256 toTreasury);
 
@@ -58,8 +59,10 @@ contract HydeFeeSplitter {
             if (balance == 0) continue;
             uint256 toTreasury = (balance * hydeBps) / BPS_DENOMINATOR;
             uint256 toCreator = balance - toTreasury;
-            if (toTreasury > 0) token.transfer(treasury, toTreasury);
-            token.transfer(creator_, toCreator);
+            // SafeERC20-style: a false-returning (non-reverting) token must NOT
+            // emit a Split for a transfer that didn't move funds.
+            if (toTreasury > 0) _safeTransfer(tokens[i], treasury, toTreasury);
+            _safeTransfer(tokens[i], creator_, toCreator);
             emit Split(tokens[i], toCreator, toTreasury);
         }
 
@@ -75,6 +78,14 @@ contract HydeFeeSplitter {
             if (!ok2) revert ETHTransferFailed();
             emit Split(address(0), toCreator, toTreasury);
         }
+    }
+
+    /// @dev Handles standard (returns bool), non-standard (returns nothing, e.g.
+    /// USDT), and malicious (returns false without reverting) ERC-20s. Reverts
+    /// unless the transfer both executed AND — if it returned data — returned true.
+    function _safeTransfer(address token, address to, uint256 amount) internal {
+        (bool ok, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transfer.selector, to, amount));
+        if (!ok || (data.length != 0 && !abi.decode(data, (bool)))) revert TransferFailed();
     }
 
     receive() external payable {}
