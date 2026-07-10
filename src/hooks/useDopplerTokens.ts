@@ -151,7 +151,8 @@ async function fetchHydePools(): Promise<DopplerPool[]> {
 }
 
 /** Tokens launched via the Hydeout launchpad on Robinhood Chain, as TokenInfo[].
- *  No swap routing attached — trading opens as tokens graduate. */
+ *  No swap-routing metadata attached here; the Token page gates executable swaps
+ *  on isGatewayLive() until router metadata (hook address per pool) is wired. */
 export function useHydeTokens(chainId: number): {
   tokens: TokenInfo[];
   loading: boolean;
