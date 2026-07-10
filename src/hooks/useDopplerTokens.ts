@@ -195,7 +195,17 @@ export function useHydeTokens(chainId: number): {
 
 // Canonical launch-token implementation (EIP-1167/Solady clone target). ADAPTER
 // CONSTANT: on the Hyde own-stack this becomes HydeTokenFactory's implementation.
-const LAUNCH_IMPL = "3be8b97fd0e713b5abe0649fa830223b6b4bc599";
+export const LAUNCH_IMPL = "3be8b97fd0e713b5abe0649fa830223b6b4bc599";
+
+/** SINGLE SOURCE OF TRUTH for EIP-1167 impl resolution (kami's direction): read
+ *  the minimal-proxy implementation from ONCHAIN BYTECODE. getCode only — no
+ *  scans, no Blockscout dependency. Returns undefined for EOAs / non-clones.
+ *  Used by fetchLaunchToken, isHydeLaunch AND useVerifiedStatus — one regex. */
+export async function getLaunchImplementation(address: `0x${string}`): Promise<`0x${string}` | undefined> {
+  const code = await client.getCode({ address }).catch(() => undefined);
+  const m = code?.match(/363d73([0-9a-fA-F]{40})5af4/);
+  return m ? (`0x${m[1].toLowerCase()}` as `0x${string}`) : undefined;
+}
 
 /** Read ONE launch by address — ADAPTER BOUNDARY. All Doppler-specific reads live
  *  here; on own-stack this swaps to Hyde-contract reads. Returns null when the
@@ -203,9 +213,7 @@ const LAUNCH_IMPL = "3be8b97fd0e713b5abe0649fa830223b6b4bc599";
  *  a metadata multicall; graduation is inferred from the DEXScreener pair client-side. */
 export async function fetchLaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
   // confirm it's a launch: minimal-proxy clone of the known token implementation
-  const code = await client.getCode({ address }).catch(() => undefined);
-  const m = code?.match(/363d73([0-9a-fA-F]{40})5af4/);
-  if (!m || m[1].toLowerCase() !== LAUNCH_IMPL) return null;
+  if ((await getLaunchImplementation(address)) !== `0x${LAUNCH_IMPL}`) return null;
 
   const meta = await client.multicall({
     contracts: [
@@ -231,9 +239,7 @@ export async function fetchLaunchToken(address: `0x${string}`): Promise<DopplerP
 /** Cheap check: is this address a Hyde launch token (minimal-proxy clone of the
  *  canonical implementation)? getCode only — no scans. Used to filter holdings. */
 export async function isHydeLaunch(address: `0x${string}`): Promise<boolean> {
-  const code = await client.getCode({ address }).catch(() => undefined);
-  const m = code?.match(/363d73([0-9a-fA-F]{40})5af4/);
-  return !!m && m[1].toLowerCase() === LAUNCH_IMPL;
+  return (await getLaunchImplementation(address)) === `0x${LAUNCH_IMPL}`;
 }
 
 /** Single-token read for /token/:address — works for launches OUTSIDE the board
