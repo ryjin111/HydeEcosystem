@@ -69,6 +69,7 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
   const { pair, checked } = useDexPair(address);
   const { holders } = useTopHolders(address);
   const [copied, setCopied] = useState(false);
+  const [chartLoad, setChartLoad] = useState(false); // don't auto-embed DEXScreener's raw UI
 
   const pool = useMemo(() => pools.find((p) => p.address.toLowerCase() === address.toLowerCase()), [pools, address]);
 
@@ -122,14 +123,28 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
           <p className="mt-3 font-mono text-[11px] text-pcs-textDim">Launched {new Date(pool.createdAt).toLocaleString()}</p>
         </Card>
 
-        {/* chart zone — real embed when indexed, designed fallback otherwise */}
+        {/* Chart zone — the default is ALWAYS our kit-styled panel; the raw
+           DEXScreener embed (which can flash its own connecting/error UI on this
+           L2) is NEVER first-class — it loads only on an explicit click (kami's
+           chart gate). Indexed tokens get load-inline + open-external; others get
+           the designed fallback. */}
         <Card className="p-0 overflow-hidden">
-          {pair ? (
+          {chartLoad && pair ? (
             <iframe title="chart" src={`https://dexscreener.com/robinhood/${pair}?embed=1&theme=dark&info=0`} className="h-[460px] w-full border-0" />
           ) : (
-            <div className="flex h-[460px] flex-col items-center justify-center gap-2 bg-pcs-input/40 text-center">
+            <div className="flex h-[460px] flex-col items-center justify-center gap-3 bg-pcs-input/40 px-6 text-center">
               <SectionLabel>Live chart</SectionLabel>
-              <p className="max-w-sm text-pcs-textSub">{checked ? "Live chart appears once the token graduates to a Uniswap pool and is indexed on DEXScreener. Until then it trades on its Hyde auction curve." : "Checking for a live chart…"}</p>
+              {pair ? (
+                <>
+                  <p className="max-w-sm text-pcs-textSub">Live market chart for this pool on DEXScreener.</p>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button variant="secondary" size="sm" onClick={() => setChartLoad(true)}>▶ Load live chart</Button>
+                    <a href={`https://dexscreener.com/robinhood/${pair}`} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm">Open on DEXScreener ↗</Button></a>
+                  </div>
+                </>
+              ) : (
+                <p className="max-w-sm text-pcs-textSub">{checked ? "Live chart appears once the token graduates to a Uniswap pool and is indexed on DEXScreener. Until then it trades on its Hyde auction curve." : "Checking for a live chart…"}</p>
+              )}
             </div>
           )}
         </Card>
