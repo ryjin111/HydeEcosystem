@@ -79,7 +79,7 @@ export function Progress({ pct, className, showLabel }: { pct: number; className
         </div>
       )}
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-pcs-input">
-        <span className="block h-full rounded-full bg-gradient-to-r from-pcs-primaryDark to-pcs-primary transition-[width] duration-500" style={{ width: p + '%' }} />
+        <span className="block h-full rounded-full bg-gradient-to-r from-pcs-primary to-pcs-primaryBright transition-[width] duration-500" style={{ width: p + '%' }} />
       </div>
     </div>
   );
@@ -90,7 +90,7 @@ export function Pill({ active, children, ...rest }: { active?: boolean; children
   return (
     <button
       className={cx('h-8 shrink-0 rounded-full border px-3.5 text-[13px] font-medium transition',
-        active ? 'border-pcs-primary bg-pcs-primary/12 text-pcs-primary' : 'border-pcs-border text-pcs-textSub hover:text-pcs-text hover:border-pcs-hover')}
+        active ? 'border-pcs-primary bg-pcs-primary/20 text-pcs-primaryBright' : 'border-pcs-border text-pcs-textSub hover:text-pcs-text hover:border-pcs-hover')}
       {...rest}
     >
       {children}
