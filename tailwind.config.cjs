@@ -22,6 +22,7 @@ module.exports = {
           success: "#34C77B",
           warning: "#E8A33D",
           failure: "#E5484D",
+          accentGlow: "rgba(46,159,230,0.14)", // hero/active card glow only
         },
         brand: {
           yellow: "#E8A33D",
@@ -33,6 +34,8 @@ module.exports = {
         swap: "0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.25)",
         neon: "0 1px 2px rgba(0, 0, 0, 0.4)",
         neonPink: "0 1px 2px rgba(0, 0, 0, 0.4)",
+        // hero/active glow-border (the one premium tell — used sparingly)
+        glow: "inset 0 0 0 1px rgba(46,159,230,0.35), 0 0 44px rgba(46,159,230,0.14)",
       },
       borderRadius: {
         '2.5xl': '1.25rem',
