@@ -11,6 +11,7 @@ import { LaunchesPage } from "./pages/Launches";
 import { UiKitPage } from "./pages/UiKit";
 import { DiscoverPage } from "./pages/Discover";
 import { TokenPage } from "./pages/Token";
+import { ProfilePage } from "./pages/Profile";
 import { NETWORKS } from "./utils/constants";
 import { useTokenList } from "./hooks/useTokenList";
 import { useHydeTokens } from "./hooks/useDopplerTokens";
@@ -162,6 +163,8 @@ function App() {
               <Route path="/" element={<DiscoverPage />} />
               <Route path="/discover" element={<DiscoverPage />} />
               <Route path="/token/:address" element={<TokenPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/profile/:address" element={<ProfilePage />} />
               <Route path="/launchpad" element={<LaunchpadPage />} />
               <Route path="/launches" element={<LaunchesPage />} />
               <Route path="/_ui" element={<UiKitPage />} />
