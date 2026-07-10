@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
+import { isGatewayLive } from "../utils/constants";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { V4SwapCard } from "../components/V4SwapCard";
@@ -128,7 +129,7 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
           ) : (
             <div className="flex h-[460px] flex-col items-center justify-center gap-2 bg-pcs-input/40 text-center">
               <SectionLabel>Live chart</SectionLabel>
-              <p className="max-w-sm text-pcs-textSub">{checked ? "Live chart appears once the token graduates to a Uniswap pool and is indexed on DEXScreener. Until then it trades on the Hyde auction curve — use the swap panel." : "Checking for a live chart…"}</p>
+              <p className="max-w-sm text-pcs-textSub">{checked ? "Live chart appears once the token graduates to a Uniswap pool and is indexed on DEXScreener. Until then it trades on its Hyde auction curve." : "Checking for a live chart…"}</p>
             </div>
           )}
         </Card>
@@ -141,9 +142,23 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
           <p className="mt-2 text-sm text-pcs-textSub">Anti-snipe: the swap fee <b className="text-pcs-text">starts at 3% and decays to 1%</b> over the first hour after launch. No max-wallet cap, no blacklist.</p>
         </Card>
 
-        {/* existing verified swap — reused, pre-selected to this token */}
-        <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} forceTokenOut={pool.address.toLowerCase()} />
-        <p className="text-center font-mono text-[11px] text-pcs-textDim">Swap fee settles 3%→1% · 95% creator · 5% Doppler · 0% platform</p>
+        {/* Swap: correct routing needs live gateway + dopplerPool metadata. On
+           this chain isGatewayLive() is false + launch tokens carry no routing
+           metadata, so an executable widget would route wrong / mislead. Present
+           an HONEST disabled state instead (kami correctness gate); the reused
+           V4SwapCard renders only where the router is genuinely live. */}
+        {isGatewayLive(network.id) ? (
+          <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} forceTokenOut={pool.address.toLowerCase()} />
+        ) : (
+          <Card variant="panel">
+            <SectionLabel>Trade</SectionLabel>
+            <p className="mt-2 text-sm text-pcs-textSub">In-app swap isn’t live on {network.name} yet. This token trades on its Hyde auction curve — a swap router UI is coming.</p>
+            {graduated && (
+              <a href={`https://dexscreener.com/robinhood/${pool.address}`} target="_blank" rel="noreferrer" className="mt-3 inline-block"><Button variant="secondary" size="sm">View market ↗</Button></a>
+            )}
+          </Card>
+        )}
+        <p className="text-center font-mono text-[11px] text-pcs-textDim">Swap fee: 3%→1% (first hour) · 95% creator · 5% Doppler · 0% platform</p>
 
         <Card variant="panel">
           <SectionLabel>Top Holders</SectionLabel>
