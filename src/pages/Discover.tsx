@@ -83,7 +83,7 @@ export function DiscoverPage() {
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="font-display text-3xl font-bold text-pcs-text sm:text-4xl">Launch, trade, and earn</h1>
-            <p className="mt-1 text-pcs-textSub">Fair token launches on a source-verified Doppler · Rehype stack. Robinhood Chain.</p>
+            <p className="mt-1 text-pcs-textSub">Fair token launches — creators earn 95% of the swap fee. Source-verified launch stack (Doppler · Rehype).</p>
           </div>
           <Link to="/launchpad"><Button variant="primary" size="lg">Launch a Token</Button></Link>
         </div>
