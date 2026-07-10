@@ -24,6 +24,24 @@ contract MockERC20 {
     }
 }
 
+// malicious: "succeeds" (no revert) but returns false and moves nothing
+contract FalseToken {
+    mapping(address => uint256) public balanceOf;
+    function mint(address to, uint256 amount) external { balanceOf[to] += amount; }
+    function transfer(address, uint256) external pure returns (bool) { return false; }
+}
+
+// non-standard (USDT-style): moves funds but returns NO data
+contract NoReturnToken {
+    mapping(address => uint256) public balanceOf;
+    function mint(address to, uint256 amount) external { balanceOf[to] += amount; }
+    function transfer(address to, uint256 amount) external {
+        require(balanceOf[msg.sender] >= amount, "bal");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+    }
+}
+
 contract HydeFeeSplitterTest is Test {
     HydeSplitterFactory factory;
     MockERC20 weth;
@@ -133,6 +151,33 @@ contract HydeFeeSplitterTest is Test {
         vm.prank(address(0xDEAD)); // arbitrary caller
         HydeFeeSplitter(payable(clone)).split(tokens);
         assertEq(weth.balanceOf(creator), 0.99 ether);
+    }
+
+    /* ─── hardened transfer handling (money contract) ─────────────────────── */
+
+    // a false-returning token must revert — never emit a Split for a no-op transfer
+    function test_split_reverts_on_false_returning_token() public {
+        FalseToken bad = new FalseToken();
+        address clone = factory.cloneFor(creator);
+        bad.mint(clone, 1_000 ether);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(bad);
+        vm.expectRevert(HydeFeeSplitter.TransferFailed.selector);
+        HydeFeeSplitter(payable(clone)).split(tokens);
+        assertEq(bad.balanceOf(treasury), 0, "no funds moved");
+        assertEq(bad.balanceOf(creator), 0, "no funds moved");
+    }
+
+    // a non-standard no-return token (USDT-style) must still work
+    function test_split_accepts_no_return_token() public {
+        NoReturnToken usdt = new NoReturnToken();
+        address clone = factory.cloneFor(creator);
+        usdt.mint(clone, 1_000 ether);
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdt);
+        HydeFeeSplitter(payable(clone)).split(tokens); // must NOT revert
+        assertEq(usdt.balanceOf(treasury), 10 ether);
+        assertEq(usdt.balanceOf(creator), 990 ether);
     }
 
     /* ─── fuzz: split is exact and total-preserving for any amount ─────────── */
