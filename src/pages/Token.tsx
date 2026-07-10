@@ -153,8 +153,9 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
           <Card variant="panel">
             <SectionLabel>Trade</SectionLabel>
             <p className="mt-2 text-sm text-pcs-textSub">In-app swap isn’t live on {network.name} yet. This token trades on its Hyde auction curve — a swap router UI is coming.</p>
-            {graduated && (
-              <a href={`https://dexscreener.com/robinhood/${pool.address}`} target="_blank" rel="noreferrer" className="mt-3 inline-block"><Button variant="secondary" size="sm">View market ↗</Button></a>
+            {graduated && pair && (
+              // reuse the resolved PAIR address (DEXScreener canonical) — never a dead link
+              <a href={`https://dexscreener.com/robinhood/${pair}`} target="_blank" rel="noreferrer" className="mt-3 inline-block"><Button variant="secondary" size="sm">View market ↗</Button></a>
             )}
           </Card>
         )}
