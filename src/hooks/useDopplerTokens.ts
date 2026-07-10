@@ -34,31 +34,62 @@ const robinhoodChain = defineChain({
 });
 const client = createPublicClient({ chain: robinhoodChain, transport: http() });
 
-async function fetchHydePools(): Promise<DopplerPool[]> {
-  const [createLogs, migrateLogs] = await Promise.all([
-    client.getLogs({ address: AIRLOCK, event: CREATE_EVENT, fromBlock: 0n, toBlock: "latest" }),
-    client.getLogs({ address: AIRLOCK, event: MIGRATE_EVENT, fromBlock: 0n, toBlock: "latest" }),
-  ]);
+// Bounded scan: with thousands of launches, block-0 / all-asset getLogs times
+// out in the browser. Scan the NEWEST launches backwards in fixed block chunks,
+// then enrich only that page — all queries bounded. `MAX_SHOWN` caps the board
+// page (newest first); older launches load via pagination later (not silently
+// dropped — the count reflects the page, and there's a documented cap here).
+const RANGE = 100_000n;   // blocks per getLogs (public-RPC-safe)
+const MAX_SHOWN = 60;     // newest launches enriched per board load
 
+// chunked getLogs over bounded ranges; the call factory keeps viem's typed logs
+async function getLogsChunked<E>(call: (from: bigint, to: bigint) => Promise<E[]>, fromBlock: bigint, toBlock: bigint): Promise<E[]> {
+  const out: E[] = [];
+  for (let s = fromBlock; s <= toBlock; s += RANGE) {
+    const e = s + RANGE - 1n > toBlock ? toBlock : s + RANGE - 1n;
+    out.push(...(await call(s, e)));
+  }
+  return out;
+}
+
+type CreateLog = { args: { asset: `0x${string}` }; blockNumber: bigint | null };
+const blockOf = (l: CreateLog): bigint => l.blockNumber ?? 0n;
+
+async function fetchHydePools(): Promise<DopplerPool[]> {
+  const latest = await client.getBlockNumber();
+
+  // walk backwards from `latest` in RANGE chunks until we have MAX_SHOWN creates
+  const collected: CreateLog[] = [];
+  let toB = latest;
+  for (let guard = 0; guard < 80 && collected.length < MAX_SHOWN && toB > 0n; guard++) {
+    const fromB = toB > RANGE ? toB - RANGE + 1n : 0n;
+    const chunk = await client.getLogs({ address: AIRLOCK, event: CREATE_EVENT, fromBlock: fromB, toBlock: toB });
+    collected.unshift(...(chunk as unknown as CreateLog[]));
+    if (fromB === 0n) break;
+    toB = fromB - 1n;
+  }
+
+  // newest first, capped to the page
+  const logs = collected.slice(-MAX_SHOWN).reverse();
+  if (logs.length === 0) return [];
+  const assets = logs.map((l) => l.args.asset as `0x${string}`);
+  const createBlockOf = new Map(logs.map((l) => [l.args.asset.toLowerCase(), blockOf(l)]));
+
+  // enrichment range = only the block span this page covers (bounded)
+  const fromB = logs.map(blockOf).reduce((a, b) => (a < b ? a : b), latest);
+
+  // graduation status for this page (Migrate over the bounded span)
+  const migrateLogs = await getLogsChunked((f, t) => client.getLogs({ address: AIRLOCK, event: MIGRATE_EVENT, fromBlock: f, toBlock: t }), fromB, latest);
   const graduated = new Set(migrateLogs.map((l) => (l.args.asset as string).toLowerCase()));
 
-  // newest first
-  const logs = [...createLogs].reverse();
-  const assets = logs.map((l) => l.args.asset as `0x${string}`);
-  const createBlockOf = new Map(logs.map((l) => [(l.args.asset as string).toLowerCase(), l.blockNumber]));
-
   // Curve baseline: tokens transferred INTO the PoolManager in each asset's
-  // create block = the initial curve inventory. Exact even when a launch
-  // pre-mints a creator allocation (the naive supply-minus-balance metric
-  // would count that allocation as "sold"). One log query covers all assets;
-  // the create-block filter drops later sell-side inflows.
-  const seedTransfers = assets.length
-    ? await client.getLogs({ address: assets, event: TRANSFER_EVENT, args: { to: POOL_MANAGER }, fromBlock: 0n, toBlock: "latest" })
-    : [];
+  // create block. Bounded to this page's asset set + block span (not block-0,
+  // not all 2600+ assets), so it stays a small browser-safe query.
+  const seedTransfers = await getLogsChunked((f, t) => client.getLogs({ address: assets, event: TRANSFER_EVENT, args: { to: POOL_MANAGER }, fromBlock: f, toBlock: t }), fromB, latest);
   const initialCurve = new Map<string, bigint>();
   for (const t of seedTransfers) {
     const asset = t.address.toLowerCase();
-    if (t.blockNumber !== createBlockOf.get(asset)) continue;
+    if ((t.blockNumber ?? 0n) !== createBlockOf.get(asset)) continue;
     initialCurve.set(asset, (initialCurve.get(asset) ?? 0n) + (t.args.value as bigint));
   }
 
@@ -72,7 +103,7 @@ async function fetchHydePools(): Promise<DopplerPool[]> {
   });
 
   // Block timestamps, deduped.
-  const uniqueBlocks = [...new Set(logs.map((l) => l.blockNumber))];
+  const uniqueBlocks = [...new Set(logs.map(blockOf))];
   const blockTimes = new Map(
     (await Promise.all(uniqueBlocks.map((bn) => client.getBlock({ blockNumber: bn }))))
       .map((b) => [b.number, Number(b.timestamp)])
@@ -96,7 +127,7 @@ async function fetchHydePools(): Promise<DopplerPool[]> {
       progress = Math.min(100, Number((sold * 10000n) / initial) / 100);
     }
 
-    const ts = blockTimes.get(log.blockNumber);
+    const ts = blockTimes.get(blockOf(log));
     return {
       address: asset,
       chainId: ROBINHOOD_CHAIN_ID,
