@@ -228,6 +228,14 @@ export async function fetchLaunchToken(address: `0x${string}`): Promise<DopplerP
   };
 }
 
+/** Cheap check: is this address a Hyde launch token (minimal-proxy clone of the
+ *  canonical implementation)? getCode only — no scans. Used to filter holdings. */
+export async function isHydeLaunch(address: `0x${string}`): Promise<boolean> {
+  const code = await client.getCode({ address }).catch(() => undefined);
+  const m = code?.match(/363d73([0-9a-fA-F]{40})5af4/);
+  return !!m && m[1].toLowerCase() === LAUNCH_IMPL;
+}
+
 /** Single-token read for /token/:address — works for launches OUTSIDE the board
  *  page. Fails to null (honest not-found), never throws/blanks the page. */
 export function useHydeToken(address?: string): { pool: DopplerPool | null; loading: boolean } {
