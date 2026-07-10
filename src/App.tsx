@@ -8,6 +8,7 @@ import { PoolsPage } from "./pages/Pools";
 import { StatsPage } from "./pages/Stats";
 import { LaunchpadPage } from "./pages/Launchpad";
 import { LaunchesPage } from "./pages/Launches";
+import { UiKitPage } from "./pages/UiKit";
 import { NETWORKS } from "./utils/constants";
 import { useTokenList } from "./hooks/useTokenList";
 import { useHydeTokens } from "./hooks/useDopplerTokens";
@@ -158,6 +159,7 @@ function App() {
               <Route path="/stats" element={<StatsPage />} />
               <Route path="/launchpad" element={<LaunchpadPage />} />
               <Route path="/launches" element={<LaunchesPage />} />
+              <Route path="/_ui" element={<UiKitPage />} />
               <Route path="/remove-liquidity" element={<Navigate to="/add-liquidity" replace />} />
               <Route path="*" element={<Navigate to="/launchpad" replace />} />
             </Routes>
