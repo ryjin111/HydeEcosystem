@@ -9,6 +9,7 @@ import { StatsPage } from "./pages/Stats";
 import { LaunchpadPage } from "./pages/Launchpad";
 import { LaunchesPage } from "./pages/Launches";
 import { UiKitPage } from "./pages/UiKit";
+import { DiscoverPage } from "./pages/Discover";
 import { NETWORKS } from "./utils/constants";
 import { useTokenList } from "./hooks/useTokenList";
 import { useHydeTokens } from "./hooks/useDopplerTokens";
@@ -157,6 +158,8 @@ function App() {
               <Route path="/farms" element={<FarmsPage network={selectedNetwork} />} />
               <Route path="/pools" element={<PoolsPage network={selectedNetwork} />} />
               <Route path="/stats" element={<StatsPage />} />
+              <Route path="/" element={<DiscoverPage />} />
+              <Route path="/discover" element={<DiscoverPage />} />
               <Route path="/launchpad" element={<LaunchpadPage />} />
               <Route path="/launches" element={<LaunchesPage />} />
               <Route path="/_ui" element={<UiKitPage />} />
