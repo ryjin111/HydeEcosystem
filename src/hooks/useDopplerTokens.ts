@@ -193,6 +193,59 @@ export function useHydeTokens(chainId: number): {
   return { tokens, loading };
 }
 
+// Canonical launch-token implementation (EIP-1167/Solady clone target). ADAPTER
+// CONSTANT: on the Hyde own-stack this becomes HydeTokenFactory's implementation.
+const LAUNCH_IMPL = "3be8b97fd0e713b5abe0649fa830223b6b4bc599";
+
+/** Read ONE launch by address — ADAPTER BOUNDARY. All Doppler-specific reads live
+ *  here; on own-stack this swaps to Hyde-contract reads. Returns null when the
+ *  address is NOT a launch (honest not-found). No block-0 scans — just getCode +
+ *  a metadata multicall; graduation is inferred from the DEXScreener pair client-side. */
+export async function fetchLaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
+  // confirm it's a launch: minimal-proxy clone of the known token implementation
+  const code = await client.getCode({ address }).catch(() => undefined);
+  const m = code?.match(/363d73([0-9a-fA-F]{40})5af4/);
+  if (!m || m[1].toLowerCase() !== LAUNCH_IMPL) return null;
+
+  const meta = await client.multicall({
+    contracts: [
+      { address, abi: ERC20_META_ABI, functionName: "name" } as const,
+      { address, abi: ERC20_META_ABI, functionName: "symbol" } as const,
+    ],
+  });
+  const name = meta[0].result as string | undefined;
+  const symbol = meta[1].result as string | undefined;
+  if (!name || !symbol) return null;
+
+  return {
+    address, chainId: ROBINHOOD_CHAIN_ID,
+    baseToken: { address, name, symbol, decimals: 18 },
+    quoteToken: { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    // type refined by the Token page from the DEXScreener pair (has pool = graduated)
+    type: "v4", dollarLiquidity: null, volumeUsd: null,
+    createdAt: new Date(0).toISOString(), // exact create time is unindexed; omitted honestly
+    progress: null, // precise % only for board (newest-page) tokens; honest null here
+  };
+}
+
+/** Single-token read for /token/:address — works for launches OUTSIDE the board
+ *  page. Fails to null (honest not-found), never throws/blanks the page. */
+export function useHydeToken(address?: string): { pool: DopplerPool | null; loading: boolean } {
+  const [pool, setPool] = useState<DopplerPool | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) { setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    fetchLaunchToken(address as `0x${string}`)
+      .then((p) => { if (!cancelled) setPool(p); })
+      .catch(() => { if (!cancelled) setPool(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [address]);
+  return { pool, loading };
+}
+
 /** Full pool objects for the Launchpad explore tab and trending carousel. */
 export function useHydeLaunches(): {
   pools: DopplerPool[];
