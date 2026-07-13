@@ -2,5 +2,11 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+test = "test"
+optimizer = true
+optimizer_runs = 200
+fuzz = { runs = 256 }
+invariant = { runs = 256, depth = 32 }
 
+# Level-3 own-stack contracts (CONTRACT_SPEC_L3.md): HydeERC20 / HydeFeeCollector (+ HydeTokenFactory, held).
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
