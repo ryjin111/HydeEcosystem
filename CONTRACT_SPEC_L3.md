@@ -10,7 +10,9 @@
 
 ---
 
-## 0. Locked decisions (all resolved — clint/kami 2026-07-13)
+## 0. Locked decisions (clint/kami 2026-07-13)
+> **One item is build-start-nonblocking but DEPLOYMENT-blocking (kami audit 21158.2):** the buyback-sink *consumer* (§9) is open, but the collector's immutable `buybackSink` **address + semantics must be fixed in the reviewed manifest before any deploy** (it's a constructor immutable, `!= address(0)`). Contract build may start now; deploy cannot until this is pinned.
+
 - **Fee split (own-stack): 90% creator / 5% buyback&burn / 5% Hydeout** of LP trading fees — immutable `creatorBps=9000`, `buybackBps=500`, `hydeoutBps=500`, `sum==1e4` (clint 2026-07-13, msg 21123; supersedes the earlier 95/5 draft). *(The LIVE Doppler rail's 95/5 is a separate already-deployed system, NOT this contract — this L3 own-stack spec is the sole definition of 90/5/5.)*
 - **Buyback&burn mechanism — PROPOSED Option A (pending kami audit + clint confirm, §9):** the 5% buyback leg is realised **swap-free in the permissionless hot path.** Fees accrue in BOTH the launch token (LT) and the numéraire (N). The **LT portion of the buyback leg is burned on `collect`** (direct supply reduction — no swap, no MEV); the **N portion accrues to a `buybackSink`** for a **separate, slippage-guarded buyback** (never an in-`collect` swap). Rationale: an atomic swap inside the permissionless `collect` is **sandwichable** and would force an oracle + reentrancy surface, breaking this spec's no-swap selector story (INV-14). Option B (atomic in-collect swap-and-burn) is documented+rejected for v1 in §7.12.
 - Launch fee: **$1 flat in the chain's canonical USD stablecoin**, atomic, before deploy (PROTOCOL_PLAN §2.5).
@@ -32,7 +34,7 @@ Per-chain surface = the adapter config (§5). No dependency beyond a compatible 
 
 ## 2. `HydeERC20` (implementation, cloned)
 
-**Inherits:** minimal ERC-20 + EIP-2612 `permit` (holder UX). **No owner. No mint-after-init. No blacklist. No pause.** (Non-seizable by design — the honesty/trust claim.) The **only** post-init supply mutation is `burn(uint256) onlyCollector`, which **decreases** `totalSupply` for the 5% buyback&burn leg (§4) — one-directional, callable solely by the immutable `COLLECTOR`, never mints, never seizes a holder's balance (it burns the collector's own accrued fee tokens). `COLLECTOR` is recorded in the fixed exempt set at init, so the burn source is max-wallet-exempt.
+**Inherits:** minimal ERC-20 + EIP-2612 `permit` (holder UX). **No owner. No mint-after-init. No blacklist. No pause.** (Non-seizable by design — the honesty/trust claim.) The **only** post-init supply mutation is `burn(uint256) onlyCollector`, which **decreases** `totalSupply` for the 5% buyback&burn leg (§4) — one-directional, callable solely by the immutable `COLLECTOR`, never mints, never seizes a holder's balance (it burns the collector's own accrued fee tokens). The burn has **no recipient** (supply-reducing), and the collector's own balance is max-wallet-exempt, so the max-wallet hook never interferes.
 
 **Immutable-after-init storage (set once in `initialize`, no setters):**
 | field | meaning |
@@ -65,7 +67,7 @@ if (block.timestamp < maxWalletExpiry && !exempt[to] && from != COLLECTOR)
 **Immutables (ALL set in the constructor, NO setters):**
 - `IMPL` — the `HydeERC20` implementation.
 - `COLLECTOR` — the `HydeFeeCollector`.
-- Economic config, **all `immutable`**: `stablecoin`, `launchFeeAmount`, `supportsPermit`, `launchFeeTreasury`, `hydeoutTreasury`, `buybackSink`, `buybackBps (==500)`, `hydeoutBps (==500)`, `uniV3Factory`, `positionManager`, `swapRouter`, `quoter`, `wrappedNative`, `feeTier`, `maxWalletBps`, `maxWalletWindowSecs`, `graduationThreshold`. (`creatorBps` is not stored — it's the enforced remainder `1e4 - buybackBps - hydeoutBps == 9000`, so the creator can never be short-changed by a rounding or config drift.)
+- Economic config, **all `immutable`**: `stablecoin`, `launchFeeAmount`, `supportsPermit`, `launchFeeTreasury`, `uniV3Factory`, `positionManager`, `swapRouter`, `quoter`, `wrappedNative`, `feeTier`, `maxWalletBps`, `maxWalletWindowSecs`, `graduationThreshold`. **The trading-fee split legs (`hydeoutTreasury`, `buybackSink`, `buybackBps`, `hydeoutBps`) live on the COLLECTOR, not here (kami audit 21158.1)** — `collect` executes on the collector, so its authoritative source must be a collector immutable, not a cross-contract read. `creatorBps` is stored nowhere — it's the enforced remainder `1e4 - buybackBps - hydeoutBps == 9000`, so the creator can never be short-changed by rounding or config drift.
 - **Presets — NOT an `immutable` dynamic array (illegal in Solidity; kami audit pt.4).** Encode the fixed preset set as a hard-coded `pure` library / internal function `preset(uint8 id) → (int24 initialTick, int24 tickLower, int24 tickUpper, uint256 graduationThreshold)` reverting on an unknown id, **or** a small fixed count of individual `immutable` fields. Either way presets are compile-time constants — owner cannot add/alter them, no path to change launch economics.
 - **Chain-gate is a deploy-time constant:** a factory whose `stablecoin == address(0) || launchFeeAmount == 0` **cannot be constructed for live use** (constructor requires a configured stablecoin+amount), so a live factory always charges exactly its immutable $1. There is no "disabled/native/free" runtime branch to exploit.
 
@@ -80,7 +82,7 @@ if (block.timestamp < maxWalletExpiry && !exempt[to] && from != COLLECTOR)
 2. `_deployClone()` — `Clones.cloneDeterministic(IMPL, salt)`, `salt = keccak256(msg.sender, symbol, nonce++)` (monotonic `nonce` → **no salt collision** even for identical name+symbol from the same creator).
 3. `token.initialize(...)` — same-tx, `onlyFactory`+`initializer`-guarded (no front-run window, §2). Mints 1B into the seeding flow; sets `maxWallet = supply*maxWalletBps/1e4`, `maxWalletExpiry = now + maxWalletWindowSecs`, and the fixed exempt set (incl. precomputed pool).
 4. `_seedLiquidity()` — **exact V3 mint flow (kami audit pt.6):** compute pool addr (deterministic), create+init the pool at `feeTier`/preset tick if absent, then mint the **single-sided** position via `positionManager.mint(...)` with **`recipient = COLLECTOR`**. The **factory is the transient payer**: it holds the freshly-minted 1B only across this call and transfers it into the position inside the **`uniswapV3MintCallback`** (callback authorized to accept **only** a call from the expected precomputed pool, only while a launch is in-flight). **Invariant: after `mint`, factory and collector each hold `0` launch-token balance** — 100% is in the position (INV-15). If pool create/init or `mint` reverts, the whole `launch` reverts (fee + clone rolled back — no orphan token).
-5. `COLLECTOR.register(token, msg.sender, tokenId)` — only-factory; stores immutable `{creator, tokenId}` (the Hydeout treasury + buyback sink are factory-level immutables, shared across launches — not per-token).
+5. `COLLECTOR.register(token, msg.sender, tokenId)` — only-factory; stores immutable `{creator, tokenId}` (the Hydeout treasury + buyback sink are collector-level immutables, shared across launches — not per-token).
 6. Emit `LaunchFeePaid` + `LaunchCreated`.
 
 **Events:**
@@ -92,9 +94,11 @@ if (block.timestamp < maxWalletExpiry && !exempt[to] && from != COLLECTOR)
 
 ## 4. `HydeFeeCollector`
 
+**Collector immutables (constructor-set, NO setters — kami audit 21158.1):** `FACTORY` (deploy-cycle, below), `hydeoutTreasury`, `buybackSink`, `buybackBps (==500)`, `hydeoutBps (==500)`. These are the **authoritative source** for the `collect` split (it runs here, so it must not depend on a cross-contract read). The deployer supplies them to the collector constructor from the reviewed per-chain manifest (§8); a different split or recipient = a separately deployed collector+factory pair, never a setter. Constructor asserts `buybackBps == 500 && hydeoutBps == 500 && buybackBps + hydeoutBps < 1e4` and both recipients `!= address(0)` (a zero `buybackSink` would silently strand the N buyback leg).
+
 **Deployment sequence (resolves the factory↔collector cycle — kami audit pt.3):** the factory needs `COLLECTOR` immutable and the collector's `onlyFactory` needs the factory address — a cycle. Resolve **without a post-deploy setter**: (1) compute the factory's **CREATE2-predicted address** from its deploy salt + init-code hash; (2) deploy `HydeFeeCollector` with that predicted address baked as its immutable `FACTORY`; (3) deploy `HydeTokenFactory` (with the collector immutable) **to that predicted address** (same CREATE2 salt). No init-seizure window — the collector trusts exactly one address, fixed at its construction; if the factory fails to land at the predicted address, deployment is aborted. *(Fallback if predict-deploy is impractical: a one-shot `initFactory(addr)` on the collector, callable **once** by the immutable deployer then permanently locked; test that a second call / non-deployer caller reverts.)*
 
-**Custody:** holds every launch's V3 position NFT. Registry `positionOf[token] = {creator, tokenId, graduated}` written **once** by the factory (`onlyFactory` `register`), never mutated after. (Fee recipients `hydeoutTreasury`/`buybackSink` are factory-level immutables, not stored per token.)
+**Custody:** holds every launch's V3 position NFT. Registry `positionOf[token] = {creator, tokenId, graduated}` written **once** by the factory (`onlyFactory` `register`), never mutated after. (Fee recipients `hydeoutTreasury`/`buybackSink` are collector-level immutables, not stored per token.)
 
 **LP is locked by ABSENCE of a code path (kami audit pt.3):** there is **no** `decreaseLiquidity`, `withdraw`, `burn`, `transferPosition`, `collect`-to-arbitrary-recipient, generic `execute`/`call`/`delegatecall`/`multicall`, or `approve`/`setApprovalForAll` on the position — and **no owner/admin function that can move or touch the NFT.** The collector grants **no ERC-721 or ERC-20 approvals** on the position to anyone. `onERC721Received` returns the selector but **never forwards or acts**. There is **no inheritance that introduces a transfer/approve/withdraw path** (collector inherits only minimal, audited bases — no `Ownable`-over-position, no proxy). The only external actions are `collect(token)` (recipient hard-wired to `this` then split) and `graduate(token)` (label). This is the "liquidity locked forever" guarantee — **provable by enumerating every selector** and showing none reach `positionManager.{transferFrom,decreaseLiquidity,burn,approve}` directly or transitively (INV-4 + selector test).
 
@@ -109,11 +113,11 @@ if (block.timestamp < maxWalletExpiry && !exempt[to] && from != COLLECTOR)
   else                safeTransfer(buybackSink, buybackCut); // N leg: to sink for a separate guarded buyback
   safeTransfer(creator, creatorCut);
   ```
-  Atomic; **revert on any transfer/burn failure** (no partial split, no accrual buffer). Emits `FeesCollected` + (on a non-zero LT burn) `BuybackBurned`. Launch-token legs never revert on the max-wallet cap — the token hook exempts `from == COLLECTOR` (§2 pt.8), and the burn sink is a max-wallet-exempt address.
+  Atomic; **revert on any transfer/burn failure** (no partial split, no accrual buffer). Emits `FeesCollected` + (on a non-zero LT burn) `BuybackBurned`. Launch-token legs never revert on the max-wallet cap — the token hook exempts `from == COLLECTOR` (§2 pt.8); and a **real `burn` has no recipient** (it reduces `totalSupply` from the collector's own balance — kami audit 21158.4), so no max-wallet *recipient* check applies to the buyback burn at all.
   - **Burn semantics:** `HydeERC20.burn(uint256)` is a **restricted `onlyCollector` real burn** that reduces `totalSupply` (NOT a public burn, NOT a transfer to `address(0)` which most ERC-20s revert on). It is the **only** post-init supply-changing path and can **only decrease** supply → INV-5 becomes "supply == 1e9 at launch, monotonically non-increasing, no mint path." This is the sole exception to `HydeERC20`'s "no mint-after-init / no privileged supply mutation" claim and is deliberately one-directional + collector-gated.
 - `graduate(address token) external` — **permissionless**. `require(!graduated)`, read the milestone metric (accumulated numéraire/`wrappedNative` reserve in the position vs `graduationThreshold`), `require(metric >= threshold)`, set `graduated = true`, emit `Graduated`. **No liquidity moves** (Option A) — label only.
 
-**Immutable invariants per token:** `creator`, `tokenId` — no setter reaches them post-`register`. Fee legs `hydeoutTreasury`, `buybackSink`, `buybackBps(=500)`, `hydeoutBps(=500)` are factory-level immutables (constructor-set, shared across launches, no setter).
+**Immutable invariants per token:** `creator`, `tokenId` — no setter reaches them post-`register`. Fee legs `hydeoutTreasury`, `buybackSink`, `buybackBps(=500)`, `hydeoutBps(=500)` are **collector-level** immutables (constructor-set, shared across all launches on this collector, no setter).
 
 **Events:** `FeesCollected(token, creator, creatorAmt0, hydeoutAmt0, buybackAmt0, creatorAmt1, hydeoutAmt1, buybackAmt1)`, `BuybackBurned(token, amountBurned)`, `Graduated(token, atMetric)`, `PositionRegistered(token, creator, tokenId)`.
 
@@ -165,7 +169,7 @@ if (block.timestamp < maxWalletExpiry && !exempt[to] && from != COLLECTOR)
 |---|---|---|
 | INV-1 | `creatorCut + hydeoutCut + buybackCut == collected`; `creatorCut == collected - collected*500/1e4 - collected*500/1e4` (remainder, no dust); creator never underpaid across fuzzed amounts/decimals | property + fuzz(amount, decimals) |
 | INV-2 | `buybackBps == 500 && hydeoutBps == 500` always; `creatorBps == 9000` (derived remainder); no path raises either 5% leg | invariant |
-| INV-3 | `creator` & `treasury` recipients unchanged by ANY call sequence | invariant (fuzz calldata) |
+| INV-3 | `creator`, `hydeoutTreasury`, `buybackSink`, `buybackBps`, `hydeoutBps` all unchanged by ANY call sequence — no reachable selector mutates a recipient or a split value | invariant (fuzz calldata) |
 | INV-4 | position liquidity never decreases; NFT never leaves collector | invariant |
 | INV-5 | `totalSupply == 1e9*1e18` at launch; minted 100% at init; **monotonically non-increasing** thereafter (only `onlyCollector burn` decreases it); no mint path reachable after init | property |
 | INV-6 | max-wallet blocks recipient over cap **iff** `now < expiry`; never after; never blocks `from`(sell); expiry immutable | property + fuzz(buy/sell sequences, time warps) |
