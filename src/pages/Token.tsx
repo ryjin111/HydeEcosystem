@@ -166,29 +166,61 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
 
       {/* ---------- right rail ---------- */}
       <div className="space-y-5">
-        <Card variant="panel">
-          <SectionLabel>Trading restrictions</SectionLabel>
-          <p className="mt-2 text-sm text-pcs-textSub">Anti-snipe: the swap fee <b className="text-pcs-text">starts at 3% and decays to 1%</b> over the first hour after launch. No max-wallet cap, no blacklist.</p>
-        </Card>
-
-        {/* Swap: correct routing needs live gateway + dopplerPool metadata. On
-           this chain isGatewayLive() is false + launch tokens carry no routing
-           metadata, so an executable widget would route wrong / mislead. Present
-           an HONEST disabled state instead (kami correctness gate); the reused
-           V4SwapCard renders only where the router is genuinely live. */}
+        {/* Rail-aware trade widget (§3.2). When the router genuinely goes live, the reused
+           V4SwapCard executes; otherwise the primary action routes to the live pair and the
+           in-app Buy/Sell is shown REFERENCE-ONLY (dimmed, non-interactive) — never implying
+           Hyde submits/pre-fills an order it can't carry. Graduation is NEVER cited as a reason. */}
         {isGatewayLive(network.id) ? (
           <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} forceTokenOut={pool.address.toLowerCase()} />
         ) : (
           <Card variant="panel">
             <SectionLabel>Trade</SectionLabel>
-            <p className="mt-2 text-sm text-pcs-textSub">In-app swap isn’t live on {network.name} yet. This token trades on its Hyde auction curve — a swap router UI is coming.</p>
-            {graduated && pair && (
-              // reuse the resolved PAIR address (DEXScreener canonical) — never a dead link
-              <a href={`https://dexscreener.com/robinhood/${pair}`} target="_blank" rel="noreferrer" className="mt-3 inline-block"><Button variant="secondary" size="sm">View market ↗</Button></a>
+            {pair ? (
+              <>
+                <a
+                  href={`https://dexscreener.com/robinhood/${pair}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 block rounded-xl py-2.5 text-center text-sm font-semibold transition hover:opacity-90"
+                  style={{ background: "#2E9FE6", color: "#04121C" }}
+                >
+                  Trade on live pair ↗
+                </a>
+                <p className="mt-2 text-xs text-pcs-textSub">Trading is live on this token’s pair.</p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-pcs-textSub">Native Hyde swap is not available for this rail yet. This token trades on its Hyde auction curve.</p>
             )}
+            {/* reference-only in-app swap preview — dimmed + non-interactive until native swap carries the order */}
+            <div className="mt-3 select-none rounded-xl p-3 opacity-50" style={{ background: "#171A21", border: "1px solid #22252D", pointerEvents: "none" }} aria-disabled>
+              <div className="flex gap-2">
+                <span className="flex-1 rounded-lg py-1.5 text-center text-xs font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B" }}>Buy</span>
+                <span className="flex-1 rounded-lg py-1.5 text-center text-xs font-semibold" style={{ background: "rgba(229,72,77,0.12)", color: "#E5484D" }}>Sell</span>
+              </div>
+              <div className="mt-2 flex gap-1.5">
+                {["0.1", "0.5", "1"].map((v) => (
+                  <span key={v} className="flex-1 rounded-md py-1 text-center font-mono text-[11px] tabular-nums" style={{ background: "#121419", color: "#8A93A2", border: "1px solid #22252D" }}>{v}</span>
+                ))}
+              </div>
+              <p className="mt-2 font-mono text-[10px]" style={{ color: "#5B6472" }}>Native Hyde swap · preview — not live on this rail</p>
+            </div>
           </Card>
         )}
-        <p className="text-center font-mono text-[11px] text-pcs-textDim">Swap fee: 3%→1% (first hour) · 95% creator · 5% Doppler · 0% platform</p>
+
+        {/* Trust card — LIVE vs Hyde-stack strictly bucketed (§3.3, §3.9). */}
+        <Card variant="panel">
+          <SectionLabel>Trust</SectionLabel>
+          <div className="mt-2 space-y-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>LIVE</span>
+              <VerifiedBadge status={verify} />
+            </div>
+            <p className="text-pcs-textSub">Current rail: <b className="text-pcs-text font-mono">95% creator / 5% Doppler</b> · anti-snipe swap fee <b className="text-pcs-text">3%→1%</b> (first hour) · no max-wallet, no blacklist.</p>
+            <div className="my-2 h-px" style={{ background: "#22252D" }} />
+            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>COMING · HYDE STACK</p>
+            <p style={{ color: "#5B6472" }} className="font-mono text-[11px]">$1 flat launch · 90/5/5 (creator / buyback&amp;burn / Hydeout) · LP locked forever · anti-snipe max-wallet</p>
+          </div>
+        </Card>
 
         <Card variant="panel">
           <SectionLabel>Top Holders</SectionLabel>

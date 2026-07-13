@@ -22,7 +22,15 @@ function App() {
     () => NETWORKS.find((network) => network.id === selectedNetworkId) ?? NETWORKS[0],
     [selectedNetworkId]
   );
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Open by default on desktop; CLOSED on phones so the fixed drawer doesn't cover the board on
+  // first load (shiro mobile blocker 21214). The Header hamburger toggles it as an overlay drawer.
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    typeof window === "undefined" ? true : window.innerWidth >= 768
+  );
+  // On mobile, tapping a nav item should dismiss the drawer so the chosen page is visible.
+  const closeOnMobile = () => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) setSidebarOpen(false);
+  };
   const { tokens: baseTokens, addCustomToken } = useTokenList(selectedNetwork);
   const { tokens: hydeTokens } = useHydeTokens(selectedNetwork.id);
 
@@ -109,6 +117,7 @@ function App() {
                     <NavLink
                       key={item.to}
                       to={item.to}
+                      onClick={closeOnMobile}
                       className={({ isActive }) =>
                         `flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition ${
                           isActive

@@ -152,6 +152,15 @@ export function LaunchTokenForm() {
         </div>
       </div>
 
+      {/* Coming with the Hyde stack — future-tense only (§2.C / §3.3); flips live when the
+          own-stack HydeTokenFactory deploys. Never a present-tense claim on the current rail. */}
+      <div className="rounded-xl px-4 py-3" style={{ background: "rgba(224,163,46,0.06)", border: "1px solid rgba(224,163,46,0.25)" }}>
+        <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>COMING · HYDE STACK</p>
+        <p className="mt-1 font-mono text-[11px]" style={{ color: "#8A93A2" }}>
+          $1 flat launch fee · 90/5/5 fee split (90% creator · 5% buyback&amp;burn · 5% Hydeout) · LP locked forever · anti-snipe max-wallet
+        </p>
+      </div>
+
       {/* Name */}
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-medium text-pcs-textSub">Token Name</label>
