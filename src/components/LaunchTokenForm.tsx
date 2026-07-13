@@ -9,6 +9,7 @@ import {
   type RobinhoodLaunchPreview,
 } from "../utils/dopplerLaunch";
 import { ROBINHOOD_MAINNET } from "../utils/constants";
+import { TokenImage } from "./TokenImage";
 
 /* ─── component ────────────────────────────────────────────────────────────── */
 
@@ -201,12 +202,11 @@ export function LaunchTokenForm() {
         </div>
         {imageUrl && imageUrlValid && (
           <div className="flex items-center gap-2 mt-1">
-            <img
+            <TokenImage
               src={imageUrl}
-              alt="Token"
-              className="h-10 w-10 rounded-full object-cover flex-shrink-0"
+              symbol={symbol}
+              className="h-10 w-10 rounded-full flex-shrink-0 text-sm"
               style={{ border: "1px solid #22252D" }}
-              onError={() => toast.error("Image failed to load — check the URL")}
             />
             <p className="text-[11px] text-pcs-textDim flex-1">
               {imageUrl.startsWith("data:")
@@ -266,7 +266,7 @@ export function LaunchTokenForm() {
             <span className="text-pcs-textDim">Token</span>
             <span className="text-pcs-text font-medium flex items-center gap-2">
               {imageUrl && imageUrlValid && (
-                <img src={imageUrl} alt="" className="h-5 w-5 rounded-full object-cover" style={{ border: "1px solid #22252D" }} />
+                <TokenImage src={imageUrl} symbol={symbol} className="h-5 w-5 rounded-full text-[8px]" style={{ border: "1px solid #22252D" }} />
               )}
               {name.trim()} <span className="font-code">{symbol.trim()}</span>
             </span>
