@@ -54,7 +54,7 @@ Land straight on the live coin board, not a form.
 - **Almost Graduated** column: the coins nearing the graduation milestone, each a mini curve bar.
 - **Filter tabs:** New · Almost Graduated · Graduated · **sort** (Trending/Top/New) · **search**.
 - **Coin card grid:** art · name/ticker · creator · age · **market cap** · holders · **curve %** ·
-  **`✓ Verified` + `90% creator` chips** · **quick-buy presets (0.1/0.5/1 + Buy)**.
+  **`✓ Verified` + `95% creator` chips** · **quick-buy presets (0.1/0.5/1 + Buy)**.
   - Quick-buy obeys the same rail-aware execution rule as the coin-page widget (§3.2).
 
 ### B. Coin page — `/token/:address`
@@ -72,9 +72,9 @@ Land straight on the live coin board, not a form.
     rail") until native swap actually executes and carries the selected side/amount.
   - **Market** card: mcap · price · 24h vol · liquidity · holders · total supply — each maps to a
     live adapter field or is hidden. Never simulated.
-  - **Trust** card: **LIVE** = ✓ Verified stack, **90% creator fees**. **"Hyde stack" (future-tense)**
-    = $1 launch, **90/5/5 fee split** (90% creator · 5% buyback & burn · 5% Hydeout), LP locked
-    forever, anti-snipe max-wallet (§3.3, §3.9).
+  - **Trust** card: **LIVE** = ✓ Verified stack, **95% creator / 5% Doppler** (current rail).
+    **"Hyde stack" (future-tense)** = $1 launch, **90/5/5 fee split** (90% creator · 5% buyback &
+    burn · 5% Hydeout), LP locked forever, anti-snipe max-wallet (§3.3, §3.9).
   - **Links:** website · X · explorer.
 
 ### C. Launch flow — `/launch`
@@ -87,10 +87,10 @@ Dead-simple, pump.fun-behavior, Hyde skin.
   **On the current rail, hide the image/social fields unless their values can actually persist** —
   don't show inputs that silently drop.
 - **Creator & fee-recipient confirm block:** connected wallet shown full-mono + checkbox gate
-  ("this wallet is the immutable creator — 90% of trading fees route here permanently"). Resets
+  ("this wallet is the immutable creator — 95% of trading fees route here permanently"). Resets
   on wallet switch. (Creator = `msg.sender`; matches L3 §creator-spoof fix.)
 - **Live board-card preview** (right) updates as the form fills (monogram until an image persists).
-- **"What you get":** Launch cost (this rail) = **Gas only** · supply 1B · **90% creator** ·
+- **"What you get":** Launch cost (this rail) = **Gas only** · supply 1B · **95% creator / 5% Doppler** ·
   **Trading is live from launch** (state only where the active rail supports it — never "block 1").
 - **"Coming with the Hyde stack"** (future-tense): **$1 flat launch fee** · **90/5/5 fee split**
   (90% creator · 5% buyback & burn · 5% Hydeout) · LP locked forever · anti-snipe max-wallet.
@@ -143,13 +143,15 @@ known to support launch-time trading; "block 1" is imprecise and can overclaim a
 **3.8 Comments deferred.** No Comments tab in the first build unless a real indexed source + a
 moderation/abuse policy exist; hide the tab, don't ship an empty or unmoderated feed.
 
-**3.9 Fee split = clint-confirmed 90/5/5, honesty-bucketed.** Trading fees route **90% creator ·
-5% buyback & burn · 5% Hydeout** (supersedes the old 95/5). Display rules:
-- **Headline creator chip = `90% creator`** (was 95%) everywhere it appears.
-- The **buyback&burn (5%) and Hydeout (5%) legs are own-stack economics** — they only exist once
-  the `CONTRACT_SPEC_L3.md` factory deploys. Per §3.3 they carry the **future-tense "Hyde stack"**
-  treatment; do not present them as present-tense/current-rail claims. The full 90/5/5 breakdown
-  lives in the Hyde-stack trust panel, not the LIVE chip.
+**3.9 Two fee models, strictly bucketed by rail.**
+- **Current rail (LIVE, present-tense):** **95% creator / 5% Doppler** — matches deployed source
+  (`LaunchTokenForm.tsx`, `Discover.tsx`, `Token.tsx`) and `CONTRACT_SPEC_L3.md`. This is the
+  **only** fee number allowed on the board chip, LIVE trust card, creator-confirm block, and
+  current-rail "What you get".
+- **Hyde own-stack (future-tense only):** clint-confirmed **90/5/5** — **90% creator · 5% buyback &
+  burn · 5% Hydeout**. Shown **only** in the "coming with the Hyde stack" / future-tense sections
+  (§3.3), never as a present-tense/current-rail claim, until gojo updates `CONTRACT_SPEC_L3.md`
+  and it deploys. Superseding the LIVE 95/5 waits on that protocol approval.
 - Copy stays **gojo source-true** (§3.5): "buyback & burn" describes a mechanism, never an implied
   price floor or guaranteed return.
 
