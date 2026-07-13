@@ -1,8 +1,13 @@
 # Hydeout Own-Stack Protocol Plan (Level 2)
 
-**Status:** PROPOSAL / spec lane only. No contract scaffolding, no UI copy change until Clint confirms the two open decisions (§3) and @kami reviews this doc. Current Doppler/Rehype Wave A app remains the live truth until the own-stack exists and is wired.
+**Status:** Level-2 rationale doc. **`CONTRACT_SPEC_L3.md` is the single current BUILD TRUTH** — where this doc and L3 differ, **L3 wins.** This doc is kept for the *why*; the *what-to-build* lives in L3.
 
-**Author:** gojo (senior protocol) · **Reviewer gate:** kami · **Date:** 2026-07-10
+> **Superseded-here → see L3 (kami audit 2026-07-13):**
+> - Decisions now **LOCKED**: graduation = **A (permanently locked LP)**; anti-snipe = **(b) time-boxed max-wallet**; fee **95/5**; **$1** immutable stablecoin launch fee; **creator = msg.sender** (no caller-supplied creator).
+> - **Topology folded:** L3 = **HydeERC20 impl + HydeTokenFactory + HydeFeeCollector** (three contracts). The Level-2 sketch of separate `HydeLaunch`/`HydeGraduation`/`HydeLocker` is **absorbed** — launch+seeding live in the factory; graduation-label + permanent LP custody live in the collector (locked by absence of a withdraw path, no separate locker).
+> - **Owner power reduced to pause-new-launches only.** Any Level-2 "template-setting authority" / config setters (e.g. §2.4) are **void** — all economic config is `immutable` (L3 §3).
+
+**Author:** gojo (senior protocol) · **Reviewer gate:** kami · **Date:** 2026-07-10 (L3 folded 2026-07-13)
 
 ---
 
@@ -99,8 +104,9 @@ A **flat $1 fee to create a token**, paid to the Hyde treasury *before* the toke
 
 1. **Fee split — ✅ CONFIRMED by Clint 2026-07-10:** `95% creator / 5% Hyde treasury`. Locked into the fee model. (Rationale: creator-friendly acquisition edge; Hyde earns on aggregate volume; matches market-standard skim. Any additional Hyde revenue should come from a separate flat launch/graduation fee, NOT from raising the 5%.)
 2. **Launch fee — ✅ CONFIRMED by Clint 2026-07-13 (kami 21083):** flat **$1 in the chain's canonical USD stablecoin**, paid to Hyde treasury atomically before token creation (full spec §2.5). This is the realized "separate flat fee" from decision #1's rationale — distinct from the trading-fee split. **Amount/stablecoin/treasury are `immutable` per deployment (kami audit pt.1) — no owner toggle.**
-3. **Graduation model — OPEN, need Clint (see §4):** permanent locked-LP (NOXA-style, gojo-rec) **vs** V2/V3 migration.
-4. **Hyde treasury address** + **funded deployer key** on each target chain (needed only at deploy time, not for the spec).
+3. **Graduation model — ✅ LOCKED (clint/kami 2026-07-13): Option A — permanently locked LP** (milestone label only, liquidity never migrates). Was open; now decided. (§4 Option A is the build target; Option B is not built.)
+4. **Anti-snipe — ✅ LOCKED: (b) time-boxed max-wallet** in `HydeERC20` (auto-expiring, never blocks selling). See L3 §2.
+5. **Hyde treasury address** + **funded deployer key** on each target chain (needed only at deploy time, not for the spec) — plus the **per-chain deployment manifest** (stablecoin addr/decimals/amount) L3 §8 requires.
 
 ---
 
