@@ -137,9 +137,23 @@ simulated in shipped UI. Mock placeholder content is illustrative only and must 
 
 **3.6 No on-chain image bytes; media is optional IPFS metadata.** Token contracts carry
 name/symbol only. Image/socials = optional `ipfs://<CID>` reference (not embedded), rendered
-through a configurable IPFS gateway — no generic URL / third-party upload provider — with a
-generated monogram fallback. **Hide any field whose value can't actually persist on the active
-rail** rather than showing an input that silently drops.
+through a configurable IPFS gateway (`VITE_IPFS_GATEWAY`, Filebase subdomain or public fallback)
+— no generic URL / third-party upload provider — with a generated monogram fallback. **Hide any
+field whose value can't actually persist on the active rail** rather than showing an input that
+silently drops.
+
+**3.6a Launch image-field states (pin-on-launch).** When the pin route is wired, the launch image
+field is a 4-state machine — never let a launch fire on an unresolved image:
+- **Idle:** dropzone, "PNG/GIF · square · pinned to IPFS on launch."
+- **Uploading/pinning:** spinner + "Pinning to IPFS…", **launch button disabled** until a CID
+  returns.
+- **Pinned:** thumbnail + short `ipfs://bafy…` shown mono (proof of persistence), rendered via the
+  configured gateway.
+- **Failed:** inline error + **monogram fallback auto-applies**; launch still allowed image-less
+  (image is optional).
+Before the pin route exists (paste-a-CID mode), states 2–3 collapse to a validated `ipfs://`
+input — same honesty rule: only accept a value that will actually persist. Pinning credentials are
+**server-side only** (never a `VITE_*` var); the client sees the returned CID, never the key.
 
 **3.7 "Trading is live from launch," never "block 1."** State it only where the active rail is
 known to support launch-time trading; "block 1" is imprecise and can overclaim across adapters.
