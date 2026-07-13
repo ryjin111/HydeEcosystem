@@ -19,14 +19,18 @@ protocol-agnostic and carries over.
 
 ---
 
-## 1. Design system ("credible-finance, elevated" — dark, Hyde-blue, no neon)
+## 1. Design system ("credible-finance, elevated" — dark, Hyde-blue; neon reserved for trending cards)
 
 ### Color
 - **Base:** bg `#0B0C0F` · surface `#121419` · elevated `#171A21` · hairline `#22252D`
 - **Text:** `#E8EBF0` / muted `#8A93A2` / faint `#5B6472`
 - **Accent:** Hyde-blue `#2E9FE6` · hover `#54B4F0`
 - **Semantic:** success/graduated `#34C77B` · danger/sell `#E5484D` · amber (warn/soon) `#E0A32E`
-- **No gradients, no glows** except a single optional hero card. Flat = the credible tell.
+- **Flat by default — no gradients, no glows** on the general surface (flat = the credible tell),
+  with **two sanctioned exceptions:** the single optional hero card, and a **restrained Hyde-blue
+  neon border/glow reserved for trending cards only** (the board's "hot right now" signature). Neon
+  never spreads to non-trending cards, chrome, or UI — its scarcity is what makes it read as
+  "trending." Glow = a soft `#2E9FE6` outer border + faint inner sheen, not a saturated bloom.
 
 ### Type — Space Grotesk display · Inter UI · IBM Plex Mono numbers/addresses
 - Every `$` / `%` / address / count = **mono, tabular-nums**. Labels = uppercase-tracked, muted.
@@ -144,10 +148,11 @@ known to support launch-time trading; "block 1" is imprecise and can overclaim a
 moderation/abuse policy exist; hide the tab, don't ship an empty or unmoderated feed.
 
 **3.9 Two fee models, strictly bucketed by rail.**
-- **Current rail (LIVE, present-tense):** **95% creator / 5% Doppler** — matches deployed source
-  (`LaunchTokenForm.tsx`, `Discover.tsx`, `Token.tsx`) and `CONTRACT_SPEC_L3.md`. This is the
-  **only** fee number allowed on the board chip, LIVE trust card, creator-confirm block, and
-  current-rail "What you get".
+- **Current rail (LIVE, present-tense):** **95% creator / 5% Doppler** — matches the deployed
+  source (`LaunchTokenForm.tsx`, `Discover.tsx`, `Token.tsx`). This is the **only** fee number
+  allowed on the board chip, LIVE trust card, creator-confirm block, and current-rail "What you
+  get". (Note: `CONTRACT_SPEC_L3.md` names a different 5% recipient for the *own-stack*, not this
+  rail — do not cite L3 as the source for the LIVE Doppler split.)
 - **Hyde own-stack (future-tense only):** clint-confirmed **90/5/5** — **90% creator · 5% buyback &
   burn · 5% Hydeout**. Shown **only** in the "coming with the Hyde stack" / future-tense sections
   (§3.3), never as a present-tense/current-rail claim, until gojo updates `CONTRACT_SPEC_L3.md`
@@ -156,6 +161,6 @@ moderation/abuse policy exist; hide the tab, don't ship an empty or unmoderated 
   price floor or guaranteed return.
 
 ## 4. Per-screen look-gate bar (shiro)
-One-card system · Hyde-blue accent, no neon · mono numbers · graduation bar = milestone not gate ·
+One-card system · Hyde-blue accent, neon reserved for trending cards only · mono numbers · graduation bar = milestone not gate ·
 live ticker/tape real · trade controls rail-aware & honest (§3.2) · LIVE vs Hyde-stack split ·
 metrics map-or-hide · responsive/mobile clean. Builder = **bords** (per kami routing).
