@@ -1,12 +1,24 @@
 # Hydeout Own-Stack — Level-3 Contract Spec & Threat Model
 
 **Status:** BUILD SPEC — decisions locked, ready for kami audit → then kuro implements.
-**Author:** gojo (senior protocol) · **Reviewer gate:** kami · **Builder:** kuro · **Date:** 2026-07-14 (rev5: WETH vault + kami audit-21263 fixes)
+**Author:** gojo (senior protocol) · **Reviewer gate:** kami · **Builder:** kuro · **Date:** 2026-07-14 (rev6: kami audit-21268 epoch/liability fixes)
 **Parent:** `PROTOCOL_PLAN.md` (Level-2). This doc pins the contract interfaces, invariants, and tests.
 **Build path:** contract workspace under `D:\agentmanagerworks\` (kami 21085) — never in a shared app tree.
 
 > "Checked for bugs" = layered testing + independent review, **never** a claim any contract is bug-free
 > (kami). No public deploy / no push until review passes + a second independent review.
+
+> **REV6 2026-07-14 — kami re-audit 21268 epoch/liability fixes (3).** (1) **Cumulative vest target** — per-update
+> `mulDiv` floored on every sync/claim, so frequent updates could sum to < `epochAmount`; now store `epochVested` and
+> vest to a cumulative `vestedTarget = mulDiv(epochAmount, t1-epochStart, DURATION)` (`newlyVested = vestedTarget −
+> epochVested`), which hits **exactly `epochAmount` at finish**. (2) **Direct holder reserve** — the old derived
+> `holderReserve` under-counted vested-but-uncheckpointed index accrual; track `holderFunded`/`holderClaimed`
+> directly (`holder liability = holderFunded − holderClaimed`), exact without iterating holders. (3) **Honest dust** —
+> an O(1) pro-rata index has bounded per-holder rounding dust; carry the **global** index-allocation remainder into
+> `nextEpochAmount`, keep the residual **reserved & solvent**, and **drop the "every wei claimable" overclaim** —
+> state/test the bound instead. Added a spam-every-second (indivisible epoch) test. LT/WETH lock, branch-exact
+> settle, non-extendable epochs, per-token Hyde, donation safety, TWAP readiness, Blockscout **passed** (21268).
+> Graduate/threshold + kuro's build stay held; amended → new SHA.
 
 > **REV5 2026-07-14 — kami audit 21263 fixes (3).** (1) **Own-stack pools LOCKED to LT/WETH** (not "preferred") —
 > USDG stays launch-fee-only; fee assets are exactly LT + WETH; the one pinned route is **LT→WETH direct at
@@ -45,8 +57,11 @@
   swap LT→WETH via the pinned route. Then splits the WETH **90/5/5** with **exact liability reclassification**
   (audit-21263 pt.2).
 - **Creator & Hyde = pull-based WETH claim buckets; holders vest via NON-EXTENDABLE FIXED EPOCHS (audit-21263
-  pt.3).** Each holder distribution funds the **next** epoch; the current epoch's `epochFinish` never moves; exact
-  `mulDiv` vesting reaches 100% at finish. This closes JIT sniping *and* the permissionless stream-extension grief.
+  pt.3 / 21268).** Each holder distribution funds the **next** epoch; the current epoch's `epochFinish` never moves;
+  vesting uses a **cumulative `epochVested` target** so the epoch reaches exactly `epochAmount` at finish even under
+  frequent updates (audit-21268 pt.1). Holder reserve is tracked **directly** as `holderFunded − holderClaimed`
+  (pt.2), and the vault stays **solvent** with a **bounded, explicitly-reserved** per-holder index-rounding dust —
+  **not** an "every wei exactly claimable" claim (pt.3). This closes JIT sniping *and* the stream-extension grief.
 - **`HydeERC20` has NO burn.** Supply **constant 1e9 forever**. Creator paid in **WETH** (never the launch token) →
   the old `from==COLLECTOR` max-wallet bypass is gone (§2).
 - **Launch fee: $1 flat in USDG**, atomic, before deploy — unchanged; USDG used only for the launch fee.
@@ -169,16 +184,21 @@ non-zero, `hydeBps==500 && holderBps==500 && hydeBps+holderBps<1e4`, `MAX_SLIPPA
 | `registered[token]`, `creator[token]` | set once by `onlyFactory register` |
 | `rawFees[token][asset]` | un-settled raw V3 fees (asset ∈ {LT, WETH}) |
 | `creatorClaimable[token]`, `hydeClaimable[token]` | **WETH** owed to creator / Hyde (claim any time) |
-| `epochAmount[token]`, `epochStart[token]`, `epochFinish[token]` | the current holder epoch (`epochFinish = epochStart + DURATION`), vests by exact `mulDiv` |
-| `nextEpochAmount[token]` | WETH queued for the **next** epoch (from settles during the active epoch + zero-supply re-queues) — **never extends the current epoch** |
+| `epochAmount[token]`, `epochStart[token]`, `epochFinish[token]`, `epochVested[token]` | the current holder epoch (`epochFinish = epochStart + DURATION`); `epochVested` = cumulative WETH vested from this epoch so far (audit-21268 pt.1) |
+| `nextEpochAmount[token]` | WETH queued for the **next** epoch (settles during the active epoch + zero-supply re-queues + carried index-allocation remainder) — **never extends the current epoch** |
 | `lastUpdateTime[token]`, `rewardPerTokenStored[token]` | the holder claim-index checkpoint |
 | `totalEligibleSupply[token]`, `userRewardPerTokenPaid[token][h]`, `rewards[token][h]` | eligible supply, per-holder anchor, crystallized WETH owed |
+| `holderFunded[token]`, `holderClaimed[token]` | **direct** aggregate holder reserve (audit-21268 pt.2): `holderFunded += holderCut` on every settle; `holderClaimed += owed` on every holder claim; **holder WETH liability = `holderFunded − holderClaimed`** — exact, no holder iteration, no undercount |
 
-**Derived liability (NOT separately tracked — audit-21263 pt.2):** `accountedBalance[asset]` is the sole explicitly-
-tracked ledger. Per-token liability is **derived** from the component maps:
+**Liability (audit-21268 pt.2 — holder reserve tracked DIRECTLY, not derived from vesting components).**
+`accountedBalance[asset]` is the sole explicitly-tracked custody ledger. Per-token liability:
 `liability[token][LT] = rawFees[token][LT]`;
-`liability[token][WETH] = rawFees[token][WETH] + creatorClaimable[token] + hydeClaimable[token] + holderReserve[token]`,
-where `holderReserve[token] = nextEpochAmount + (epochAmount − vestedSoFar) + Σ_h rewards[h]`. **Cross-namespace
+`liability[token][WETH] = rawFees[token][WETH] + creatorClaimable[token] + hydeClaimable[token] + (holderFunded[token]
+− holderClaimed[token])`. The holder term is **`holderFunded − holderClaimed`**, NOT the old
+`nextEpochAmount + (epochAmount − vestedSoFar) + Σ_h rewards[h]` — that under-counted the WETH already vested into the
+**index** but not yet checkpointed into any holder's `rewards[h]` (it's owed but was in neither the unvested nor the
+crystallized term). `holderFunded` (incremented by every `holderCut` at settle) minus `holderClaimed` (incremented on
+every holder claim) is the **exact** WETH still owed to holders, with **no holder iteration**. **Cross-namespace
 solvency (INV-27):** for every asset `balanceOf(this) >= accountedBalance[asset] == Σ_token liability[token][asset]`.
 
 **Global custody — PULL-and-MEASURE (donation-proof).** `noteRaw` (`onlyCollector`) does `before = balanceOf(this);
@@ -187,19 +207,37 @@ accountedBalance[asset] += received; rawFees[token][asset] += received;`. A dona
 a fee-on-transfer shortfall reverts. `settle`'s swap output is measured the same way. `accountedBalance` is **never**
 gated on ambient balance.
 
-**Epoch vesting math (exact `mulDiv`, no rate-carry):**
+**Epoch vesting math — CUMULATIVE target (audit-21268 pt.1), plus honest index-dust carry (pt.3):**
 - `_maybeRoll(token)` (internal): `if (now >= epochFinish[token] && nextEpochAmount[token] > 0) { epochAmount =
-  nextEpochAmount; nextEpochAmount = 0; epochStart = now; epochFinish = now + DURATION; lastUpdateTime = now; }` —
-  rolls a new epoch **only after the current one ends** (never resets an active epoch's clock).
-- `_updateReward(token, acct, bal, excl)` (before every balance change + before claim/settle):
-  `t1 = min(now, epochFinish[token]); newlyVested = (t1 > lastUpdateTime[token]) ? mulDiv(epochAmount[token], t1 -
-  lastUpdateTime[token], DURATION) : 0;` **vests by exact elapsed fraction** →
-  `if (totalEligibleSupply[token] > 0) rewardPerTokenStored += mulDiv(newlyVested, PRECISION, totalEligibleSupply);
-  else nextEpochAmount[token] += newlyVested;` (**zero-supply vest is re-queued, never lost**); `lastUpdateTime = t1;`
-  then `_maybeRoll(token);` then `if (acct != 0) { if (!excl) rewards[acct] = mulDiv(bal, rewardPerTokenStored -
-  userRewardPerTokenPaid[acct], PRECISION) + rewards[acct]; userRewardPerTokenPaid[acct] = rewardPerTokenStored; }`.
-  Because vesting is `epochAmount·elapsed/DURATION` computed directly, at `epochFinish` **exactly `epochAmount` has
-  vested — no stranded rate-division carry** (audit-21263 pt.3).
+  nextEpochAmount; nextEpochAmount = 0; epochStart = now; epochFinish = now + DURATION; epochVested = 0;
+  lastUpdateTime = now; }` — rolls a new epoch **only after the current one ends** (never resets an active clock);
+  `epochVested` reset to 0 for the fresh epoch.
+- `_updateReward(token, acct, bal, excl)` (before every balance change + before claim/settle) — **vest against a
+  cumulative target so per-update flooring can't accumulate a shortfall (audit-21268 pt.1):**
+  ```
+  t1 = min(now, epochFinish[token]);
+  vestedTarget = mulDiv(epochAmount[token], t1 - epochStart[token], DURATION);   // cumulative, monotonic
+  newlyVested  = vestedTarget - epochVested[token];                             // never floors twice
+  epochVested[token] = vestedTarget;
+  if (totalEligibleSupply[token] > 0) {
+      indexDelta = mulDiv(newlyVested, PRECISION, totalEligibleSupply[token]);
+      rewardPerTokenStored[token] += indexDelta;
+      allocated = mulDiv(indexDelta, totalEligibleSupply[token], PRECISION);     // what the index actually distributes
+      if (newlyVested > allocated) nextEpochAmount[token] += (newlyVested - allocated);  // carry global index-dust (pt.3)
+  } else {
+      nextEpochAmount[token] += newlyVested;                                     // zero-supply vest re-queued, never lost
+  }
+  lastUpdateTime[token] = t1;
+  _maybeRoll(token);
+  if (acct != 0) { if (!excl) rewards[acct] = mulDiv(bal, rewardPerTokenStored - userRewardPerTokenPaid[acct],
+      PRECISION) + rewards[acct]; userRewardPerTokenPaid[acct] = rewardPerTokenStored; }
+  ```
+  At `epochFinish`, `t1 - epochStart == DURATION` ⇒ `vestedTarget == mulDiv(epochAmount, DURATION, DURATION) ==
+  epochAmount` **exactly**, regardless of how many times `_updateReward` ran in between — so the epoch vests 100% with
+  no per-update floor shortfall. The **global** index-allocation remainder (`newlyVested − allocated`) is carried into
+  `nextEpochAmount` so it re-streams. **Honest bound (pt.3):** the *per-holder* `mulDiv(bal, Δindex, PRECISION)` still
+  floors, so `Σ_holders earned ≤ index-allocated` by a **bounded residual** (< 1 wei × holders-touched-per-checkpoint)
+  that **stays reserved & solvent** in the vault — it is NOT claimed as "every wei is claimable" (§7.7, INV-25).
 
 **Functions:**
 - `sync(from, to, balFrom, balTo, amount, fromExcl, toExcl)` — `require(registered[msg.sender])`. `_updateReward` for
@@ -223,7 +261,9 @@ gated on ambient balance.
     allowance; `accountedBalance[WETH] += wethAmt;` (new WETH enters, apportioned below).
   - **Split `wethAmt` 90/5/5 (both legs):** `hydeCut = mulDiv(wethAmt, hydeBps, 1e4); holderCut = mulDiv(wethAmt,
     holderBps, 1e4); creatorCut = wethAmt - hydeCut - holderCut;` `creatorClaimable[token] += creatorCut;
-    hydeClaimable[token] += hydeCut; _queueReward(token, holderCut);`. (WETH leg: the `-= amountIn` on `rawFees` and
+    hydeClaimable[token] += hydeCut; holderFunded[token] += holderCut; _queueReward(token, holderCut);`. (`holderFunded`
+    is incremented **only here**, once per settled holderCut — NOT on the index-dust re-queue, so `holderFunded −
+    holderClaimed` stays the exact holder liability.) (WETH leg: the `-= amountIn` on `rawFees` and
     the `+= (creatorCut+hydeCut+holderCut == amountIn)` on the buckets net to **zero** change in `liability[token]
     [WETH]` — a pure reclassification, INV-27 holds. LT leg: `accountedBalance[WETH] += wethAmt` matches the bucket
     increments, and `accountedBalance[LT] -= amountIn` matches `rawFees[LT]` — no phantom liability.) Emits
@@ -238,8 +278,9 @@ gated on ambient balance.
   > 0`)** — this is the fix for the flush/extension grief (audit-21263 pt.3).
 - `claim(token[, holder]) external nonReentrant` — **holder vested WETH.** `_updateReward(token, holder,
   balanceOf(holder), isRewardExcluded(holder)); owed = rewards[token][holder]; require(owed>0); rewards=0;
-  accountedBalance[WETH] -= owed; WETH.safeTransfer(holder, owed);` — CEI, O(1), rounds down. Third party may trigger;
-  funds go to `holder`.
+  holderClaimed[token] += owed; accountedBalance[WETH] -= owed; WETH.safeTransfer(holder, owed);` — CEI, O(1), rounds
+  down. Third party may trigger; funds go to `holder`. (`holderClaimed += owed` keeps `holderFunded − holderClaimed`
+  exact — INV-27.)
 - `claimCreator(token)` / `claimHyde(token) external nonReentrant` — **WETH to the immutable `creator[token]` /
   `hydeoutTreasury`.** `owed = creatorClaimable/hydeClaimable; require(owed>0); zero it; accountedBalance[WETH] -=
   owed; WETH.safeTransfer(recipient, owed);`. (Anyone triggers; funds to the fixed recipient.) **For one-tx treasury
@@ -298,9 +339,13 @@ epoch**. Supply constant.
    external calls). INV-11, INV-23.
 5. **Max-wallet trap** → time-boxed, expiry immutable, selling never restricted. INV-6.
 6. **Init front-run / re-init** → `initializer` + `onlyFactory` + deterministic salt. INV-10.
-7. **Rounding/dust / vest stranding** → creator = remainder (exact 5% legs); **epoch vests by exact `mulDiv`
-   (`epochAmount·elapsed/DURATION`) → 100% at `epochFinish`, no rate-carry**; the zero-eligible-supply vest is
-   **re-queued into `nextEpochAmount`** (never lost); claims round down. INV-1, INV-25, INV-32.
+7. **Rounding/dust / vest exactness** → creator = remainder (exact 5% legs); the epoch vests against a **cumulative
+   `epochVested` target** (`vestedTarget = mulDiv(epochAmount, elapsed, DURATION)`), so per-update flooring can't
+   accumulate a shortfall and the epoch reaches **exactly `epochAmount` at finish** (audit-21268 pt.1); the
+   zero-eligible-supply vest and the **global index-allocation remainder** are **re-queued into `nextEpochAmount`**
+   (never lost); the **per-holder** index rounding leaves a **bounded, explicitly-reserved dust** (< 1 wei ×
+   holders-per-checkpoint) — the vault stays solvent and every wei is *reserved*, but we do **not** claim every wei
+   is *claimable* (audit-21268 pt.3). Claims round down. INV-1, INV-25, INV-32.
 8. **bps escalation** → `hydeBps`/`holderBps` immutable, capped 500 (creator ≥ 9000). INV-2.
 9. **Owner overreach onto live tokens** → owner = future-launch config only. INV-9, INV-12.
 10. **Snipe on pool init** → single-sided seed at a fixed preset tick; max-wallet caps opening accumulation.
@@ -356,14 +401,14 @@ epoch**. Supply constant.
 | INV-22 | `initialize` reverts on zero poolRecipient/vault or out-of-range maxWallet params | unit |
 | INV-23 | **`sync` never reverts on the normal path** (no external calls; `mulDiv`/checked); reverts ONLY for a non-registered caller | property + anti-invariant |
 | INV-24 | reward/fee state strictly partitioned by `token`; non-registered `sync` reverts; `noteRaw` `onlyCollector` | invariant (rogue-token-as-adversary) |
-| INV-25 | **exact conservation:** `Σ_h rewards[h] + (epochAmount − vestedSoFar) + nextEpochAmount + creatorClaimable + hydeClaimable + Σ_asset rawFees(in-kind) == (Σ noteRaw'd in-kind) − (Σ LT settled) + (Σ settled WETH) − (Σ claimed)`, EXACTLY; **no rate-carry residue** (exact `mulDiv` vesting) | invariant (fuzz collect/settle/transfer/claim/roll/time-warp) |
-| INV-26 | `rewardPerTokenStored` monotonic; `mulDiv` never overflows across fuzzed supplies/amounts/`Δt`; `totalEligibleSupply==0` ⇒ the vest is **re-queued into `nextEpochAmount`** (no div-by-zero, none lost) | invariant + fuzz(supply crossing 0) |
-| INV-27 | **cross-namespace solvency + exact reclassification:** WETH-leg settle leaves total `accountedBalance[WETH]`/derived-`liability[WETH]` **unchanged** (reclassify only); LT-leg settle does `accountedBalance[LT]-=amountIn`, `accountedBalance[WETH]+=wethAmt`; `balanceOf(this) >= accountedBalance[asset] == Σ_token liability[token][asset]` after ANY interleaving | invariant (multi-namespace, **per-branch** settle + donation as adversary) |
+| INV-25 | **conservation + honest dust (audit-21268):** `liability[token][WETH] == rawFees[WETH] + creatorClaimable + hydeClaimable + (holderFunded − holderClaimed)` exactly; total WETH in == out + held; the epoch reaches `epochVested == epochAmount` at `epochFinish` (cumulative target); the un-claimable residue is a **bounded per-holder index dust** (< 1 wei × holders-per-checkpoint) that stays **reserved & solvent** (NOT "every wei claimable") | invariant (fuzz collect/settle/transfer/claim/roll/time-warp) + **spam-every-second, epochAmount not divisible by DURATION** |
+| INV-26 | `rewardPerTokenStored` monotonic; `mulDiv` never overflows across fuzzed supplies/amounts/`Δt`; `totalEligibleSupply==0` ⇒ vest re-queued into `nextEpochAmount`; the **global index-allocation remainder** (`newlyVested − allocated`) is also re-queued (none lost) | invariant + fuzz(supply crossing 0) |
+| INV-27 | **cross-namespace solvency + exact reclassification + direct holder reserve:** holder liability is `holderFunded − holderClaimed` (no under-count, no iteration); WETH-leg settle leaves total `accountedBalance[WETH]`/`liability[WETH]` **unchanged**; LT-leg does `accountedBalance[LT]-=amountIn`, `accountedBalance[WETH]+=wethAmt`; `balanceOf(this) >= accountedBalance[asset] == Σ_token liability[token][asset]` after ANY interleaving | invariant (multi-namespace, **per-branch** settle + donation + **uncheckpointed-holder** as adversary) |
 | INV-28 | excluded/infra addresses never accrue; `totalEligibleSupply` excludes them, tracks pool↔holder flows exactly | property + invariant |
 | INV-29 | **epoch JIT resistance:** a wallet holding `b` for `t ≤ DURATION` of an epoch `E` earns `≤ mulDiv(E, t, DURATION)·(b/eligibleSupply)`; buy-before-settle/sell-after not profitable vs V3 cost | property (fuzz JIT sequences) |
 | INV-30 | `VAULT.register` executes before the init mint; mint-`sync` succeeds; a mid-launch revert unwinds it | property (ordering + fail-injection) |
 | INV-31 | `settle` `asset ∈ {LT, WETH}` only; route is the fixed LT→WETH hop (no caller route); `amountIn==0`/over-rawFees/unregistered reverts | unit + property |
-| INV-32 | **terminal conservation:** with no further fees, once the current epoch ends `roll` starts the queued one and, after a `DURATION` warp, every settled wei is claimed or held in an explicit bucket/`nextEpochAmount`; supply 0-crossings never strand vest | property (terminal + supply-drain-then-return) |
+| INV-32 | **terminal reserve (honest):** with no further fees, once the current epoch ends `roll` starts the queued one; after a `DURATION` warp every settled wei is either claimed, held in an explicit bucket/`nextEpochAmount`, or in the **bounded reserved index-dust** — i.e. `Σ paid out + Σ still-reserved == Σ settled`, solvent; NOT a claim that the dust is individually claimable | property (terminal + supply-drain-then-return + dust-bound assertion) |
 | INV-33 | **Blockscout clone state honest:** verified ONLY via a Blockscout minimal-proxy association to the verified `IMPL` (impl-source-against-proxy is invalid); app ✓ only on recognized-proxy+verified-impl, else neutral/pending | real-explorer acceptance + app-state unit |
 | INV-34 | **LT/WETH lock + non-extendable epoch:** the factory constructs/seeds **only** LT/WETH pools and `COLLECTOR.register` rejects `numeraire != WETH`; a `settle` (or `roll`) spammed **every block** during an active epoch **never moves `epochFinish`** — the original epoch completes on schedule; `roll` reverts on an active epoch or zero queue | invariant (adversary spams settle/roll every block) + unit (numeraire reject) |
 
@@ -431,6 +476,12 @@ the Path-A "View holders on Bubblemaps ↗" secondary link. Not blocking the con
 ---
 
 ## 12. Changelog
+- **2026-07-14 rev6 (kami re-audit 21268):** (1) cumulative `epochVested` target so the epoch vests exactly
+  `epochAmount` at finish (per-update floor no longer accumulates a shortfall); (2) holder reserve tracked directly
+  via `holderFunded − holderClaimed` (the old derived form under-counted uncheckpointed index accrual); (3) honest
+  bounded per-holder index dust — carry the global remainder into `nextEpochAmount`, keep the residual reserved &
+  solvent, drop the "every wei claimable" overclaim. Added the spam-every-second (indivisible epoch) test; reframed
+  INV-25/26/27/32; §7.7.
 - **2026-07-14 rev5 (kami audit 21263):** (1) own-stack pools **LOCKED to LT/WETH** (reject other numéraire at
   construct/register); (2) `settle` = **exact liability reclassification** (WETH-leg net-zero; LT-leg LT−amountIn /
   WETH+measured-wethAmt) — INV-27 per-branch; (3) **non-extendable fixed epochs** (settle queues the next epoch,
