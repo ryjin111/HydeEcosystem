@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HydeERC20} from "../src/HydeERC20.sol";
 import {HydeFeeVault} from "../src/HydeFeeVault.sol";
-import {ISwapRouter} from "../src/interfaces/ISwapRouter.sol";
-import {IUniswapV3Factory} from "../src/interfaces/IUniswapV3Factory.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IHydeHook} from "../src/interfaces/IHydeHook.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 
 /// @notice DEX-AGNOSTIC accounting tests for HydeFeeVault against checkpoint 04f3f66 (kami 21296:
@@ -33,9 +33,9 @@ contract VaultAccountingTest is Test {
         vault = new HydeFeeVault(
             IERC20(address(weth)),
             address(this), // collector
-            ISwapRouter(address(0x1111)), // dummy — never called on the WETH leg
-            IUniswapV3Factory(address(0x2222)), // dummy — never called on the WETH leg
-            10000, // feeTier
+            IPoolManager(address(0x1111)), // dummy — never called on the WETH leg
+            IHydeHook(address(0x2222)), // dummy — never called on the WETH leg
+            int24(60), // tickSpacing
             TREASURY,
             500, // hydeBps
             500, // holderBps

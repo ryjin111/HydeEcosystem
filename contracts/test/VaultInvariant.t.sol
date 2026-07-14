@@ -5,8 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HydeERC20} from "../src/HydeERC20.sol";
 import {HydeFeeVault} from "../src/HydeFeeVault.sol";
-import {ISwapRouter} from "../src/interfaces/ISwapRouter.sol";
-import {IUniswapV3Factory} from "../src/interfaces/IUniswapV3Factory.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IHydeHook} from "../src/interfaces/IHydeHook.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 
 /// @notice Stateful INVARIANT campaign for HydeFeeVault's DEX-agnostic accounting (INV-24/27): the
@@ -122,9 +122,9 @@ contract VaultInvariantTest is Test {
         vault = new HydeFeeVault(
             IERC20(address(weth)),
             address(handler), // collector
-            ISwapRouter(address(0x1111)),
-            IUniswapV3Factory(address(0x2222)),
-            10000,
+            IPoolManager(address(0x1111)),
+            IHydeHook(address(0x2222)),
+            int24(60),
             address(0x7EA5),
             500,
             500,
