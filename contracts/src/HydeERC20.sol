@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IHydeVault} from "./interfaces/IHydeVault.sol";
+
 /// @title HydeERC20 — non-seizable fair-launch token (implementation, EIP-1167 cloned per launch)
-/// @notice CONTRACT_SPEC_L3.md §2. No owner. No mint-after-init. No blacklist. No pause.
-///         Time-boxed max-wallet anti-snipe (recipients only, never blocks selling; expiry immutable).
-///         EIP-2612 permit for holder UX. All economic fields set ONCE in `initialize` under an
-///         initializer + onlyFactory guard — no setters exist.
+/// @notice CONTRACT_SPEC_L3.md §2 (rev6). No owner. No mint-after-init. **No burn — supply is
+///         constant 1e9 forever (INV-5).** No blacklist. No pause. Time-boxed max-wallet anti-snipe
+///         (recipients only, never blocks selling; expiry immutable). EIP-2612 permit.
+///         Every balance change (mint + transfer) drives the vault's reward index via `sync`
+///         BEFORE balances move — pure arithmetic, non-reverting on the normal path (INV-23).
+///         All economic fields set ONCE in `initialize` under initializer + onlyFactory — no setters.
 contract HydeERC20 {
     /* ─────────────────────────── ERC-20 core state ─────────────────────────── */
     string public name;
     string public symbol;
     uint8 public constant decimals = 18;
 
-    /// @dev fair launch: 1B supply, 100% minted at init, no mint path after.
+    /// @dev fair launch: 1B supply, 100% minted at init, no mint AND no burn path after (INV-5).
     uint256 public constant TOTAL_SUPPLY = 1_000_000_000e18;
 
     uint256 public totalSupply;
@@ -20,28 +24,31 @@ contract HydeERC20 {
     mapping(address => mapping(address => uint256)) public allowance;
 
     /* ─────────────────────── anti-snipe (max-wallet) ───────────────────────── */
-    /// @notice max holder balance while the window is active (0 once expired-check passes).
+    /// @notice max holder balance while the window is active. Immutable after init.
     uint256 public maxWallet;
     /// @notice window is active while block.timestamp < maxWalletExpiry. Immutable after init.
     uint64 public maxWalletExpiry;
-    /// @notice fixed exemption set frozen at init (pool, positionManager, factory, collector, 0).
-    ///         No setExempt — no owner-addable whitelist (spec §2 / kami audit pt.4).
+    /// @notice fixed exemption set frozen at init (pool, positionManager, factory, collector, vault,
+    ///         swapRouter, 0). Serves BOTH max-wallet exemption AND reward-ineligibility (§2).
+    ///         No setExempt — no owner-addable whitelist.
     mapping(address => bool) public exempt;
-    /// @notice the fee collector; a transfer FROM the collector bypasses the cap (kami audit pt.8)
-    ///         so a fee payout to a non-exempt creator during the window can't revert `collect`.
-    address public collector;
+
+    /// @notice the shared HydeFeeVault; reward-index sink driven by every balance change (§4b).
+    ///         Set once at init. (rev6: replaces the old `collector` max-wallet bypass — the creator
+    ///         is paid in WETH now, so no from==collector bypass exists; §2 / INV-17.)
+    address public vault;
 
     /* ─────────────────────────── init guard ────────────────────────────────── */
     /// @notice recorded factory; zero until `initialize`. First & only caller becomes factory
-    ///         → doubles as the initializer once-guard (kami audit pt.2, §2).
+    ///         → doubles as the initializer once-guard (§2).
     address public factory;
 
     /* ─────────────────────────── EIP-2612 ──────────────────────────────────── */
     mapping(address => uint256) public nonces;
     bytes32 private constant PERMIT_TYPEHASH =
         keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
-    // Domain separator is chain- & address-dependent (and clones share bytecode), so cache it
-    // and recompute on a chain fork.
+    // Domain separator is chain- & address-dependent (clones share bytecode), so cache it and
+    // recompute on a chain fork.
     uint256 private _cachedChainId;
     bytes32 private _cachedDomainSeparator;
 
@@ -53,45 +60,52 @@ contract HydeERC20 {
         string name;
         string symbol;
         address poolRecipient; // receives 100% of supply (the V3 seeding flow / factory transient)
-        address collector; // HydeFeeCollector — sender-side cap bypass
+        address vault; // HydeFeeVault — the reward-index sink for `sync`
         uint256 maxWalletBps; // maxWallet = TOTAL_SUPPLY * maxWalletBps / 1e4
         uint64 maxWalletWindowSecs; // window length; expiry = now + this
-        address[] exemptAddrs; // pool, positionManager, factory, collector, address(0)
+        address[] exemptAddrs; // pool, positionManager, factory, collector, vault, swapRouter, 0
     }
 
     /// @notice One-time init. Callable exactly once, by the first caller, which is recorded as the
-    ///         factory. The factory clones + calls this atomically in one tx (§3 steps 2–3) so there
-    ///         is no front-run window on a fresh clone.
+    ///         factory. The factory clones + calls this atomically in one tx (§3 steps 2–4) so there
+    ///         is no front-run window on a fresh clone. The factory MUST have `VAULT.register`ed this
+    ///         token first (§3 step 3) so the mint-`sync` below is accepted (INV-30).
     function initialize(InitParams calldata p) external {
         require(factory == address(0), "INIT"); // initializer once-guard + onlyFactory (first caller)
-        // Config bounds (kami audit 21162.3): no zero recipients, sane cap/window.
+        // Config bounds (INV-22): no zero recipients, sane cap/window.
         require(p.poolRecipient != address(0), "ZERO_POOL");
-        require(p.collector != address(0), "ZERO_COLLECTOR");
-        // Anti-snipe is LOCKED (kami 8c64405): max-wallet 0.01%–3% of supply, window 1s–1h.
-        // Neither can be 0 (would disable the guard) nor unbounded (would trap holders). INV-22.
+        require(p.vault != address(0), "ZERO_VAULT");
+        // Anti-snipe LOCKED: max-wallet 0.01%–3% of supply, window 1s–1h. Neither 0 (disables the
+        // guard) nor unbounded (traps holders). INV-22.
         require(p.maxWalletBps > 0 && p.maxWalletBps <= 300, "BPS_RANGE");
         require(p.maxWalletWindowSecs > 0 && p.maxWalletWindowSecs <= 3600, "WINDOW_RANGE");
         factory = msg.sender;
 
         name = p.name;
         symbol = p.symbol;
-        collector = p.collector;
+        vault = p.vault;
 
         maxWallet = (TOTAL_SUPPLY * p.maxWalletBps) / 1e4;
         maxWalletExpiry = uint64(block.timestamp) + p.maxWalletWindowSecs;
 
+        // Frozen infra exempt set (max-wallet exemption AND reward-ineligibility).
         for (uint256 i; i < p.exemptAddrs.length; ++i) {
             exempt[p.exemptAddrs[i]] = true;
         }
-        exempt[address(0)] = true; // mint/burn sentinel always exempt
+        exempt[address(0)] = true; // mint sentinel always exempt
 
         // EIP-712 domain, now that `name` and this clone's address are known.
         _cachedChainId = block.chainid;
         _cachedDomainSeparator = _computeDomainSeparator();
 
-        // Mint 100% of supply into the seeding flow. poolRecipient must be in the exempt set
-        // (factory guarantees) so the mint itself is never blocked by the cap.
+        // Mint 100% of supply into the seeding flow. `poolRecipient` must be in the exempt set
+        // (factory guarantees) so neither the cap nor reward-eligibility is affected by the mint.
         _mint(p.poolRecipient, TOTAL_SUPPLY);
+    }
+
+    /// @notice reward-exclusion / infra flag (public view; read by the vault's callers and the app).
+    function isRewardExcluded(address a) external view returns (bool) {
+        return exempt[a];
     }
 
     /* ─────────────────────────── ERC-20 logic ──────────────────────────────── */
@@ -102,7 +116,7 @@ contract HydeERC20 {
     }
 
     function transfer(address to, uint256 amount) external returns (bool) {
-        _transfer(msg.sender, to, amount);
+        _update(msg.sender, to, amount);
         return true;
     }
 
@@ -112,20 +126,28 @@ contract HydeERC20 {
             require(allowed >= amount, "ALLOWANCE");
             allowance[from][msg.sender] = allowed - amount;
         }
-        _transfer(from, to, amount);
+        _update(from, to, amount);
         return true;
     }
 
-    function _transfer(address from, address to, uint256 amount) internal {
-        // Never allow transfers to the zero address — it would trap tokens without reducing
-        // totalSupply and break the burn/supply invariant (kami audit 21162.2). Burning is a
-        // distinct onlyCollector `burn` path that DOES decrement supply.
-        require(to != address(0), "ZERO_TO");
-        // Max-wallet: only caps *recipient accumulation*, only during the window, never blocks
-        // selling (`from` unrestricted), and lets fee distribution through (from == collector).
-        if (block.timestamp < maxWalletExpiry && !exempt[to] && from != collector) {
+    /// @dev The single transfer path (§2). Order: (1) `to==0` reverts (supply constant); (2) drive
+    ///      the vault index via `sync` on PRE-change balances; (3) time-boxed max-wallet on the
+    ///      RECIPIENT only — no from==collector bypass (rev6: creator is paid WETH, and the
+    ///      collector's only LT outflow is to the `to`-exempt vault, which skips the cap without a
+    ///      bypass, INV-17); (4) move balances + emit.
+    function _update(address from, address to, uint256 amount) internal {
+        require(to != address(0), "ZERO_TO"); // supply constant; no burn-to-zero
+
+        // (2) reward index — BEFORE balances change; pure arithmetic in the vault, non-reverting on
+        //     the normal path (INV-23). Reverts only if this token is not registered (anti-invariant).
+        IHydeVault(vault).sync(from, to, balanceOf[from], balanceOf[to], amount, exempt[from], exempt[to]);
+
+        // (3) max-wallet: caps recipient accumulation only, only during the window, never blocks
+        //     selling (`from` unrestricted), never blocks fee handling (vault is `to`-exempt).
+        if (block.timestamp < maxWalletExpiry && !exempt[to]) {
             require(balanceOf[to] + amount <= maxWallet, "MAX_WALLET");
         }
+
         uint256 bal = balanceOf[from];
         require(bal >= amount, "BALANCE");
         unchecked {
@@ -135,27 +157,15 @@ contract HydeERC20 {
         emit Transfer(from, to, amount);
     }
 
+    /// @dev Init-only mint (§2). Drives the vault index (mint-`sync`: from=0/to=pool, both exempt →
+    ///      no eligible-supply change) then adds supply. There is NO other supply mutation ever.
     function _mint(address to, uint256 amount) internal {
+        IHydeVault(vault).sync(address(0), to, 0, balanceOf[to], amount, true, exempt[to]);
         totalSupply += amount;
         unchecked {
             balanceOf[to] += amount;
         }
         emit Transfer(address(0), to, amount);
-    }
-
-    /// @notice The ONLY post-init supply mutation (spec §2 / §4 buyback&burn leg). Restricted to the
-    ///         collector; burns the collector's OWN accrued fee balance, decreasing totalSupply.
-    ///         One-directional (can never mint), no recipient, cannot burn a third party (INV-19).
-    ///         Supply is therefore monotonically non-increasing after launch (INV-5).
-    function burn(uint256 amount) external {
-        require(msg.sender == collector, "ONLY_COLLECTOR");
-        uint256 bal = balanceOf[msg.sender];
-        require(bal >= amount, "BALANCE");
-        unchecked {
-            balanceOf[msg.sender] = bal - amount;
-            totalSupply -= amount;
-        }
-        emit Transfer(msg.sender, address(0), amount);
     }
 
     /* ─────────────────────────── EIP-2612 permit ───────────────────────────── */
