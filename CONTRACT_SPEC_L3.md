@@ -1,8 +1,28 @@
-# Hydeout Own-Stack — Level-3 Contract Spec & Threat Model (rev7 · Uniswap V4)
+# Hydeout Own-Stack — Level-3 Contract Spec & Threat Model (rev8 · Uniswap V4 · in-kind auto-compound)
 
-**Status:** BUILD SPEC — Reviewer spec-clearance granted (kami 21296); **not** Builder/code clearance. kuro builds only
-after this rev7 passes Reviewer audit.
-**Author:** gojo (senior protocol) · **Reviewer:** kami · **Builder:** kuro · **Date:** 2026-07-14 (rev7.3: V4 + kami audit-21307 seed-dust fix)
+**Status:** BUILD SPEC — draft pending Reviewer audit (casper, acting while kami is out; clearance 21453). **Not**
+Builder/code clearance. kuro builds the compound leg only after this rev8 passes Reviewer audit.
+**Author:** gojo (senior protocol) · **Reviewer:** casper (acting) · **Builder:** kuro · **Date:** 2026-07-15 (rev8: holder-reward removal → 5% in-kind auto-compound)
+
+> **rev8 change (clint 21422/21428/21440 · casper ruling 21453 · Arch A):** the **holder-reward (5%) leg is REMOVED
+> in full** and replaced by a **5% in-kind auto-compound into the ONE permanently-locked position** (Option 3). Fee
+> split becomes **90% creator / 5% Hyde / 5% locked-liquidity**, no USDG/holder machinery. **Nobody — not the creator,
+> not the Hyde treasury, not any owner — can ever withdraw the compounded liquidity** (it lands in the collector's
+> custody-locked NFT; add-only, no decrease path).
+> **Arch A (split at the collector):** `collect` retains 5% of each harvested asset (LT + WETH) **in-kind** into
+> `pendingLiqLT`/`pendingLiqWETH`, `noteRaw`s the remaining 95% of each to the vault; the vault splits that 95% into
+> **creator + Hyde only** (denominator `NET_BPS = 9500`, so Hyde = `500/9500` = 5% of the original notional, creator =
+> the 90% remainder). A **new permissionless `compound(token)`** on the collector adds the pending LT+WETH into its own
+> locked NFT — **so the liquidity assets never leave the NFT-owner (zero cross-contract transfer).**
+> **The ONE settle swap (LT→WETH, oracle-floored) SURVIVES** — it just sizes to the 95% creator+Hyde legs instead of
+> 100%; there is **no second swap** (this is why in-kind beats paired auto-LP on MEV surface). **Removed:** the entire
+> epoch/vesting/reward-index machinery (`epoch*`, `nextEpochAmount`, `rewardPerToken*`, `totalEligibleSupply`,
+> `userRewardPerTokenPaid`, `rewards`, `holderFunded`/`holderClaimed`, `_checkpoint`/`_updateReward`/`_maybeRoll`/
+> `_queueReward`/`roll`, the holder `claim`), **and the token→vault `sync` hook entirely** (it existed only for
+> reward-eligibility; **max-wallet enforcement STAYS — it lives in the token's `_update`, independent of `sync`**).
+> INV-23..30 (holder/epoch set) retired → replaced by the compound invariant set INV-C1..C8 (§8). Everything else
+> (V4 topology, seed, hook oracle/anti-snipe, settle swap mechanics, custody-lock, INV-40..52) is **unchanged** from
+> rev7.3 below.
 
 > **rev7.3 fix (kami audit 21307, final seed-arithmetic correction):** the `dust < 2 wei` claim was wrong — V4
 > `LiquidityAmounts` exposes no `getAmount…ForLiquidity` inverse, and core charges principal with **round-UP**
@@ -41,14 +61,18 @@ after this rev7 passes Reviewer audit.
 ## 0. Locked decisions
 - **DEX = Uniswap V4 on Robinhood 4663** (singleton PoolManager + hooks + `unlock`/`take`/`settle` flash-accounting).
   Verified addresses in the manifest; official V4Quoter `0x8dc178ef…` is the only quoter in required deps.
-- **Fee split: 90% creator / 5% Hyde / 5% holders, settled in WETH.** Split executes in `HydeFeeVault` (unchanged).
+- **Fee split (rev8): 90% creator / 5% Hyde / 5% locked-liquidity.** Creator + Hyde legs settle in WETH via
+  `HydeFeeVault`; the **5% liquidity leg is retained IN-KIND (LT + WETH)** at the collector and auto-compounded into
+  the permanently-locked position (no second swap). Holder-reward leg removed.
 - **Launch fee: $1 USDG** (6-dec ⇒ 1e6), atomic, before pool creation. Not part of 90/5/5.
 - **Pool: LT/WETH only, DYNAMIC-FEE**, `HydeHook` attached. WETH = `wrappedNative`; USDG = launch fee only.
 - **Anti-snipe:** hook time-decay dynamic fee (economic) + token time-boxed max-wallet (accumulation cap).
 - **Graduation:** hook **swap-only gross WETH volume** counter; label-only (no unlock); threshold clint-pinned; stubbed
   until pinned.
 - **LP-lock:** custody-only on Hyde's seeded v4 position NFT; **no** hook removal-revert (would brick fee-collect + trap
-  external LPs). **Supply constant 1e9** (no mint/burn).
+  external LPs). **Supply constant 1e9** (no mint/burn). **(rev8) The 5% auto-compound adds INTO this same NFT** — it
+  grows the locked position, `add-only`, with **no decrease/transfer/burn path** → the compounded depth is
+  un-ruggable by construction (same custody surface, no new NFT, no range-roll).
 
 ---
 
@@ -56,27 +80,32 @@ after this rev7 passes Reviewer audit.
 | contract | role | status vs `04f3f66` |
 |---|---|---|
 | **`HydeERC20`** | cloned launch token; EIP-2612; time-boxed max-wallet; `sync` → vault | **UNCHANGED** |
-| **`HydeFeeVault`** | per-token WETH accounting: raw-fee custody, `settle`→WETH+90/5/5, creator/Hyde claim buckets, holder epoch vesting, `accountedBalance` solvency, `sync` | **ACCOUNTING PRESERVED; `settle` body + V4 immutables + oracle read REWRITTEN** |
-| **`HydeFeeCollector`** | custodies Hyde's v4 position NFT (custody-lock); permissionless `collect` = zero-liq fee-take → vault | **MATERIALLY REWRITTEN (V4 collection)** |
+| **`HydeFeeVault`** | per-token WETH accounting: raw-fee custody, `settle`→WETH + **creator/Hyde split (NET_BPS 9500)**, creator/Hyde claim buckets, `accountedBalance` solvency | **(rev8) HOLDER/EPOCH MACHINERY + `sync` REMOVED; split is creator/Hyde only; settle swap + oracle UNCHANGED** |
+| **`HydeFeeCollector`** | custodies Hyde's v4 position NFT (custody-lock); permissionless `collect` = zero-liq fee-take → **retains 5% in-kind** → 95% to vault; permissionless **`compound`** adds pending LT+WETH into the locked NFT | **(rev8) EXTENDED: in-kind liqBps carve in `collect` + new `compound` + `pendingLiq*` custody** |
 | **`HydeTokenFactory`** | permissionless `launch`: $1 USDG, clone, hook pending-config, V4 `initialize`, single-sided seed, register | **REWRITTEN (V4)** |
 | **`HydeHook` (NEW)** | per-pool V4 hook: `beforeInitialize` factory-auth · `afterInitialize` · `beforeSwap` dynamic fee · `afterSwap` oracle+volume | **NEW** |
 
-Flow: `launch` seeds an LT/WETH dynamic-fee pool with `HydeHook` → users trade (hook meters volume + oracle, charges
-decaying anti-snipe fee) → permissionless `collect` sweeps accrued fees to the vault → permissionless `settle` swaps
-the LT leg→WETH (direct vault→PoolManager, hook-authenticated) and splits 90/5/5 → creator/Hyde `claim`, holders vest.
+Flow (rev8): `launch` seeds an LT/WETH dynamic-fee pool with `HydeHook` → users trade (hook meters volume + oracle,
+charges decaying anti-snipe fee) → permissionless `collect` sweeps accrued fees, **retains 5% of each asset in-kind
+(`pendingLiqLT`/`pendingLiqWETH`)** and forwards 95% to the vault → permissionless `settle` swaps the 95%-LT leg→WETH
+(direct vault→PoolManager, hook-authenticated) and splits **creator/Hyde (90/5 of notional via NET_BPS 9500)** →
+creator/Hyde `claim` → permissionless **`compound`** adds the pending LT+WETH into the custody-locked position
+(TWAP-gated, sort-aware, residual-conserving). No holder vesting; no second swap.
 
 ---
 
-## 2. `HydeERC20` (UNCHANGED — carried from rev6)
+## 2. `HydeERC20` (rev8: SIMPLIFIED — `sync` hook removed)
 Cloned (EIP-1167) minimal ERC-20 + EIP-2612; **no owner/mint/burn/blacklist/pause; supply constant 1e9**. Frozen
-`exempt` infra set used for max-wallet exemption + reward-ineligibility (**blocker 1 — V4 has no per-pool token
-address; the pooled LT lives at the singleton PoolManager, so the exempt holder is `POOL_MANAGER`, not a "pool"**):
+`exempt` infra set used for max-wallet exemption (**blocker 1 — V4 has no per-pool token address; the pooled LT lives
+at the singleton PoolManager, so the exempt holder is `POOL_MANAGER`, not a "pool"**):
 `{POOL_MANAGER, POSITION_MANAGER, FACTORY, COLLECTOR, VAULT, UNIVERSAL_ROUTER, address(0)}`. `_update`: `to==0` revert;
-call `VAULT.sync(from,to,balFrom,balTo,amount,exempt[from],exempt[to])` (onlyToken, pure, non-revert); time-boxed
-max-wallet on recipients (`!exempt[to]`); `Transfer`. `isRewardExcluded(a)=exempt[a]`. **`initialize` (onlyFactory,
-once): set exempt+VAULT, then mint the full 1B to the `FACTORY` (the exempt seeder)** — NOT to any "pool" address. The
-factory then deposits it single-sided via the V4 seed flow (§3), so the LT ends up custodied inside `POOL_MANAGER` as
-the position's reserves. **Invariants INV-5/6/21/23 unchanged.**
+time-boxed max-wallet on recipients (`!exempt[to]`); `Transfer`. **(rev8) The `VAULT.sync(...)` call is REMOVED** — it
+existed only to maintain holder reward-eligibility (`totalEligibleSupply`), which no longer exists. **Max-wallet
+enforcement is UNCHANGED** — it lives entirely in `_update` and never depended on `sync`. `isRewardExcluded` is dropped
+(no reward system). **`initialize` (onlyFactory, once): set exempt+VAULT, then mint the full 1B to the `FACTORY` (the
+exempt seeder)** — NOT to any "pool" address. The factory then deposits it single-sided via the V4 seed flow (§3), so
+the LT ends up custodied inside `POOL_MANAGER` as the position's reserves. **Invariants INV-5/6/21 unchanged; INV-23
+(sync-can't-brick) retired — `sync` no longer exists.**
 
 ## 3. `HydeTokenFactory` (V4)
 **Immutables:** `IMPL`, `COLLECTOR`, `VAULT`, `HOOK`, `POOL_MANAGER`, `POSITION_MANAGER`, `PERMIT2`, `stablecoin`(USDG),
@@ -134,9 +163,18 @@ both sort branches) — only validated tuples are launchable. Owner (multisig): 
 8. `COLLECTOR.register(token, creator, tokenId, WETH, graduationThreshold)`.
 9. Emit `LaunchFeePaid`, `LaunchCreated(token, creator, poolId, tokenId, preset)`.
 
-## 4. `HydeFeeCollector` (V4)
-**Immutables:** `FACTORY`, `VAULT`, `POSITION_MANAGER`, `POOL_MANAGER`. Custodies Hyde's seeded position NFT forever.
+## 4. `HydeFeeCollector` (V4 · rev8: in-kind liqBps carve + `compound`)
+**Immutables:** `FACTORY`, `VAULT`, `POSITION_MANAGER`, `POOL_MANAGER`, **(rev8) `WETH`, `HOOK`, `PERMIT2`, `STATE_VIEW`
+(V4 StateView, for spot `slot0`/tick reads), `tickSpacing`, `liqBps`(500, immutable), `NET_BPS`(9500 = `BPS_DENOM −
+liqBps`, passed to the vault), `MIN_ADD_LIQUIDITY` (min liquidityΔ per add; below → accumulate), `MAX_ADD_DEV_TICKS`
+(TWAP add-gate band), `TWAP_WINDOW`**. Custodies Hyde's seeded position NFT forever.
 **Deployment cycle (CREATE2, §9)** resolves factory↔collector↔vault↔hook.
+
+**(rev8) Position range recorded at `register`:** the `Position` struct gains `int24 tickLower, int24 tickUpper`
+(the seed range, passed by the factory) so `compound` computes add-amounts without an external position read.
+**(rev8) Per-token pending-liquidity custody:** `mapping(address ⇒ uint256) pendingLiqLT; pendingLiqWETH;` — assets
+held IN-KIND awaiting a compound. There is **NO** owner sweep/drain/withdraw selector for these balances (custody-locked
+exactly like the NFT). `totalCompounded0[token]/totalCompounded1[token]` (lifetime added, for the frontend meter).
 
 **Custody-lock (constraint/blocker 1):** the collector owns the v4 position ERC-721 and exposes **no** transfer /
 approve / setApprovalForAll / decreaseLiquidity / burn / generic-call / `onERC721Received`-forward path → locked-by-
@@ -148,35 +186,76 @@ freely removable (INV-EXT).
   amount0Max=MAX, amount1Max=MAX, hookData=""), TAKE_PAIR(currency0, currency1, recipient=address(this))]), deadline)`**
   — the zero-liquidity change credits the position's owed fees; `TAKE_PAIR` sweeps both currencies to the collector.
   PositionManager owns the `unlock`.
-- **Measure** the collector's before/after {LT, WETH} balance deltas; for each asset `>0`: `forceApprove(asset, VAULT,
-  d); VAULT.noteRaw(token, asset, d); forceApprove(asset, VAULT, 0)` (vault pull-measures — donation-proof).
+- **Measure** the collector's before/after {LT, WETH} balance deltas `dLT`, `dWETH`.
+- **(rev8) In-kind liqBps carve — retain 5% of EACH harvested asset:** `liqLT = mulDiv(dLT, liqBps, BPS_DENOM);
+  liqWETH = mulDiv(dWETH, liqBps, BPS_DENOM); pendingLiqLT[token] += liqLT; pendingLiqWETH[token] += liqWETH;` — these
+  stay HELD at the collector (never sent to the vault, never swapped). Forward only the remainder to the vault: for each
+  of `(LT, dLT − liqLT)` and `(WETH, dWETH − liqWETH)` with amount `>0`: `forceApprove(asset, VAULT, amt);
+  VAULT.noteRaw(token, asset, amt); forceApprove(asset, VAULT, 0)` (vault pull-measures — donation-proof). **Conservation
+  (INV-C7):** `dLT = liqLT + noted_LT` and `dWETH = liqWETH + noted_WETH`, exact; nothing is created or dropped, the
+  entire harvest is either queued for liquidity or noted to the vault.
 - `graduationProgress` is **not** touched here (it lives in the hook, meters swaps only). Emits `FeesCollected`.
 - `graduate(token)` — permissionless; `require(!graduated && HOOK.swapVolume(poolId) ≥ graduationThreshold)`; label
   only. **Stubbed `GRADUATION_PENDING` until clint pins the threshold.**
 
-## 4b. `HydeFeeVault` (accounting PRESERVED; settle REWRITTEN for V4)
-**Immutables (V4):** `SETTLEMENT_TOKEN`(WETH), `COLLECTOR`, `FACTORY`, `POOL_MANAGER`, `HOOK`, `hydeBps`(500),
-`holderBps`(500), `DURATION`(7d), `MAX_SLIPPAGE_BPS`(300), `TWAP_WINDOW`(1800s), `PRECISION`(1e30). **`PERMIT2` is NOT
-a vault immutable/dependency (constraint 3)** — the direct settlement path settles ERC-20 via PoolManager
-`sync`/`transfer`/`settle`. Per-token PoolKey/poolId recorded at `register`.
+**(rev8) `compound(address token) external nonReentrant` — permissionless, trigger (A) continuous auto-compound:**
+Adds the pending in-kind LT+WETH into the collector's own custody-locked position. Hands-off, no operator, no button.
+1. `pos = positionOf[token]; require(pos.registered); (l0, l1) = _pendingSorted(token)` — map `pendingLiqLT/WETH` onto
+   currency0/1 **by the same address sort as everywhere** (`token < WETH ? (LT, WETH) : (WETH, LT)`), so both sort
+   branches are handled by one code path (INV-C1).
+2. **TWAP add-gate (INV-C4):** read spot tick `spot = STATE_VIEW.getSlot0(poolId).tick`; `twap = HOOK.consult(poolId,
+   TWAP_WINDOW)` (reverts `ORACLE_NOT_READY` until the window is spanned — inherited); `require(absDiff(spot, twap) ≤
+   MAX_ADD_DEV_TICKS, "TWAP_DEVIATION")`. **No add at a manipulated spot** — this is the ONLY manipulation vector (there
+   is no swap here to sandwich), and it can at worst force extra residual, never extract value.
+3. **Compute the addable liquidity (INV-C1/C3, all three range states):** `sqrtP = getSqrtRatioAtTick(spot);
+   sqrtA = getSqrtRatioAtTick(pos.tickLower); sqrtB = getSqrtRatioAtTick(pos.tickUpper);` `liq =
+   LiquidityAmounts.getLiquidityForAmounts(sqrtP, sqrtA, sqrtB, l0, l1)` — this **single V4 library call** returns the
+   max liquidity supportable without exceeding EITHER pending side, and inherently handles **below-range** (`spot ≤
+   tickLower` ⇒ token0-only), **above-range** (`spot ≥ tickUpper` ⇒ token1-only), and **in-range** (both, min-binding).
+   A wrong-side-only pending yields `liq = 0`.
+4. **Min-add / dust gate (INV-C5):** `require(liq ≥ MIN_ADD_LIQUIDITY, "DUST_ACCUMULATE")` — below the floor the add is
+   skipped and the pending stays queued (honest liveness: conserved + locked, **not yet liquidity**). No revert-with-
+   state-change; a skip leaves `pendingLiq*` untouched.
+5. **Approve exactly the consumed amounts via Permit2 → PositionManager**, then add into the SAME NFT:
+   `POSITION_MANAGER.modifyLiquidities( abi.encode([INCREASE_LIQUIDITY(pos.tokenId, liq, amount0Max = l0, amount1Max =
+   l1, hookData=""), SETTLE_PAIR(currency0, currency1)]), deadline)`. `amount{0,1}Max = l{0,1}` **hard-caps** the pull to
+   the pending — the position can NEVER consume more than what's queued (INV-C3).
+6. **Measure actual consumption + conserve residual (INV-C2):** `used0 = balBefore0 − balAfter0; used1 = balBefore1 −
+   balAfter1` (measured, not assumed); decrement `pendingLiq*` by the **measured** `used0/used1` mapped back off the
+   sort; the un-consumed remainder **stays** in `pendingLiq*` (locked, re-attempted next `compound`). `totalCompounded0
+   += used0; totalCompounded1 += used1`. Reset Permit2 allowances to 0. Emits `LiquidityCompounded(token, liq, used0,
+   used1)`.
+- **Add-only / custody (INV-C6/C8):** the liquidity lands in the custody-locked NFT — **no decrease/transfer/burn path
+  exists** (§4 custody-lock), so it is permanently locked the instant it's added; the position's liquidity is
+  monotonic-nondecreasing under every protocol path. Pending LT/WETH likewise have **no** owner exit.
+- **Frontend reads (shiro):** hero `lockedLiquidity` = the position's live liquidity (add-only); lifetime tick =
+  `totalCompounded0/1`; honest queued line = `pendingLiqLT/pendingLiqWETH` (labeled "queued — not yet liquidity", never
+  folded into the hero number). No-exit badge = codehash proof that no decrease/transfer/burn selector exists.
 
-**PRESERVED verbatim (kuro `04f3f66` accounting):** `noteRaw` pull-measure; per-token `rawFees`, `creatorClaimable`,
-`hydeClaimable`, `holderFunded`/`holderClaimed`, `accountedBalance[asset]`; the **non-extendable fixed epoch** model
-(`epochAmount`/`epochStart`/`epochFinish`/`epochVested` cumulative-target vesting, `nextEpochAmount`, `_maybeRoll`,
-`roll`, `_updateReward`); `claim`/`claimCreator`/`claimHyde`; `sync`; `Multicall`; the split math + solvency
-(INV-1/2/3/13/23/24/25/26/27/28/29/30/31/32). **`sync`/epoch/claim are DEX-agnostic and do not change.**
-> **`roll()` ordering refinement (kami 21300, applies to the preserved vault):** `roll()` must **checkpoint the
-> terminal epoch (vest/requeue) BEFORE its queue guard** — required order: `_updateReward` (checkpoint vest → requeue a
-> fully-elapsed zero-supply epoch's funds into `nextEpochAmount`) → `require(now ≥ epochFinish)` (current epoch ended)
-> → `require(nextEpochAmount > 0)` → open the next fixed epoch. This makes a permissionless `roll()` **self-sufficient**
-> (a fully-elapsed zero-supply epoch can be rolled without waiting for an unrelated transfer/settle to poke it), while
-> preserving **no active-epoch reset** and **no empty-epoch spin**. (Fixes kuro's `3059d8b` edge; carries to V4
-> unchanged — DEX-agnostic.)
+## 4b. `HydeFeeVault` (rev8: HOLDER/EPOCH MACHINERY + `sync` REMOVED; settle splits creator/Hyde only)
+**Immutables (V4, rev8):** `SETTLEMENT_TOKEN`(WETH), `COLLECTOR`, `FACTORY`, `POOL_MANAGER`, `HOOK`, `hydeBps`(500),
+**`NET_BPS`(9500 = the collector-forwarded remainder after the 5% in-kind carve)**, `MAX_SLIPPAGE_BPS`(300),
+`TWAP_WINDOW`(1800s). **REMOVED:** `holderBps`, `DURATION`, `PRECISION` (holder/epoch only). **`PERMIT2` is NOT a vault
+immutable/dependency (constraint 3)** — the direct settlement path settles ERC-20 via PoolManager `sync`/`transfer`/
+`settle`. Per-token PoolKey/poolId recorded at `register`.
+
+**PRESERVED (kuro `04f3f66` accounting, minus holders):** `noteRaw` pull-measure; per-token `rawFees`,
+`creatorClaimable`, `hydeClaimable`, `accountedBalance[asset]`; `claimCreator`/`claimHyde`; `Multicall`; the split math
++ solvency (INV-1/2/3/13/27/31/32).
+**REMOVED IN FULL (rev8 — holder-reward machinery):** `holderFunded`/`holderClaimed`; the **non-extendable fixed epoch**
+model (`epochAmount`/`epochStart`/`epochFinish`/`epochVested`, `nextEpochAmount`, `_checkpoint`/`_updateReward`/
+`_maybeRoll`/`_queueReward`, `roll`); `rewardPerTokenStored`/`userRewardPerTokenPaid`/`rewards`/`totalEligibleSupply`/
+`lastUpdateTime`; the holder `claim(token[,holder])`; and **`sync`** (the token no longer calls it — §2). INV-23..30
+retired (holder/epoch). No holder loops ever existed; now no holder state does either.
+> **Simplification note:** removing the epoch system deletes the entire vesting-index surface (the `roll()` ordering
+> edge from kami 21300, JIT resistance, zero-supply requeue, dust-carry) — none of it applies once the 5% no longer
+> routes to holders. The vault's only remaining job is: custody raw fees → settle the creator/Hyde legs to WETH → pay
+> the two fixed recipients. Smaller attack surface, exactly the point of the holder-reward removal.
 
 **REWRITTEN — `settle(address token, address asset, uint256 amountIn, uint256 callerMinOut, uint256 deadline) external
 nonReentrant` (blockers 1/4/5) — TWO BRANCHES, `asset ∈ {token(LT), WETH}`:**
 - Common: `require(registered[token] && amountIn>0 && (asset==LT || asset==WETH) && amountIn ≤ rawFees[token][asset] &&
-  now ≤ deadline)`; `_updateReward(token,0,…)`.
+  now ≤ deadline)`. **(rev8) No `_updateReward` — the reward index is gone.**
 - **WETH raw-leg branch (`asset == WETH`) — reclassify-only (blocker 1; restored):** `rawFees[token][WETH] -= amountIn;
   wethAmt = amountIn;` **no oracle, no `unlock`, no swap, and do NOT change `accountedBalance[WETH]`** — the WETH is
   already accounted; this only moves `amountIn` from the `rawFees` component into the buckets (net-zero on total
@@ -204,11 +283,17 @@ nonReentrant` (blockers 1/4/5) — TWO BRANCHES, `asset ∈ {token(LT), WETH}`:*
      wethOut = WETH.balanceOf(this) − before;` — credit the **measured** balance increase, not the raw delta. All
      currency deltas must be zero before the callback returns.
     - **LT branch only:** `require(wethOut ≥ minOut); accountedBalance[WETH] += wethOut;` (new WETH entered the vault).
-- **Shared split on `wethAmt`/`wethOut` (both branches):** `w = (asset==WETH) ? wethAmt : wethOut;` `hydeCut=mulDiv(w,500,
-  1e4); holderCut=mulDiv(w,500,1e4); creatorCut=w−hydeCut−holderCut;` `creatorClaimable+=creatorCut; hydeClaimable+=
-  hydeCut; holderFunded+=holderCut; _queueReward(token, holderCut)`. **INV-27 per-branch:** WETH branch —
-  `accountedBalance[WETH]` **unchanged**, `rawFees[WETH]` −`amountIn`, buckets +`amountIn` (net-zero); LT branch —
-  `accountedBalance[LT]` −`amountIn`, `accountedBalance[WETH]` +`wethOut` (measured), buckets +`wethOut`. Emits `Settled`.
+- **(rev8) Shared split on `wethAmt`/`wethOut` (both branches) — creator/Hyde ONLY:** `w = (asset==WETH) ? wethAmt :
+  wethOut;` **`hydeCut = mulDiv(w, hydeBps=500, NET_BPS=9500); creatorCut = w − hydeCut;`** — because `w` is already the
+  post-carve 95% remainder, `500/9500` makes Hyde exactly **5% of the original notional** and creator the **90%**
+  remainder (no holder leg). `creatorClaimable += creatorCut; hydeClaimable += hydeCut;`. **No `holderFunded`/
+  `_queueReward`.** **INV-27 per-branch:** WETH branch — `accountedBalance[WETH]` **unchanged**, `rawFees[WETH]`
+  −`amountIn`, buckets +`amountIn` (net-zero); LT branch — `accountedBalance[LT]` −`amountIn`, `accountedBalance[WETH]`
+  +`wethOut` (measured), buckets +`wethOut`. Emits `Settled(token, asset, amountIn, w, creatorCut, hydeCut)`.
+> **90/5/5 conservation across the two contracts (INV-C7):** liqBps(5, carved in-kind at the collector) + Hyde(5, via
+> `500/9500` in the vault) + creator(90, remainder) = 100% of every collected fee. The collector's 5% is the liquidity
+> leg; the vault never sees it, so the vault's own solvency (INV-27) is over the 95% it holds — exact and unchanged in
+> form.
 
 ## 4c. `HydeHook` (NEW — non-fund-bearing; holds no user funds, takes no fee delta)
 **Permissions (mined into the address via CREATE2, §9):** `BEFORE_INITIALIZE | AFTER_INITIALIZE | BEFORE_SWAP |
@@ -275,18 +360,22 @@ int56 tickCumulative}` + `ringIndex[poolId]` (`cardinality` = a **manifest floor
 ## 5. Authority & immutability boundary
 | Actor | CAN | CANNOT |
 |---|---|---|
-| **Anyone** | `launch`($1 USDG), `collect`(zero-liq fee-take→vault), `settle`(TWAP-floored LT→WETH via vault), `roll`, `claim*`, `graduate`, **be an external LP (add/remove freely)** | change recipients/bps/schedule/threshold; move Hyde's LP; mint/burn; extend an epoch; brick trading; count a system swap as volume; front-run pool init |
+| **Anyone** | `launch`($1 USDG), `collect`(zero-liq fee-take + 5% in-kind carve→vault), `settle`(TWAP-floored LT→WETH via vault), **`compound`(TWAP-gated in-kind add→locked NFT)**, `claimCreator`/`claimHyde`, `graduate`, **be an external LP (add/remove freely)** | change recipients/bps/schedule/threshold; move Hyde's LP; **withdraw the compounded liquidity or the pending in-kind balances**; mint/burn; brick trading; count a system swap as volume; front-run pool init; add liquidity at a TWAP-deviating spot |
 | **Factory owner** | pause/unpause NEW launches | anything on a live token/LP/fees/hook/vault |
-| **Creator / Hyde / Holder** | claim 90% / 5% / vested-5% WETH (fixed recipients) | exceed share; touch others' buckets |
+| **Creator / Hyde** | claim 90% / 5% WETH (fixed recipients) | exceed share; touch the other's bucket; touch the 5% liquidity leg |
 | **`HydeHook`** | set dynamic fee, meter volume, record oracle | hold funds, take a swap delta, block liquidity removal, authorize a non-factory init |
-| **`HydeFeeVault`** | settle→WETH, split, pay fixed recipients, run the one system swap | move funds except to the rightful recipient; mutate bps/epoch; hold < liabilities (INV-27) |
+| **`HydeFeeVault`** | settle→WETH, split creator/Hyde, pay fixed recipients, run the one system swap | move funds except to the rightful recipient; mutate bps; hold < liabilities (INV-27) |
+| **`HydeFeeCollector`** | custody NFT, `collect`, carve 5% in-kind, `compound` (add-only into own NFT) | remove/transfer/burn the position or its liquidity; sweep/withdraw `pendingLiq*`; add above the pending cap; add off-TWAP |
 
 ## 6. Failure-mode / revert catalog
 USDG fee fail / not-constructible; permit fail; `initialize` non-factory or twice or stale/foreign config
-(`beforeInitialize`); `collect`/`noteRaw` non-collector or shortfall; `sync` non-registered (and **must not** revert on
-the normal path); `settle` deadline/`amountIn==0`/over-rawFees/`ORACLE_NOT_READY`/`wethOut<minOut`/unsettled-delta;
-`roll` active-epoch or empty; `claim*` nothing-owed; `graduate` <threshold/twice (currently always `GRADUATION_PENDING`);
-paused ⇒ `launch` reverts, live pools unaffected. **A donation does NOT revert/brick `collect` or advance graduation.**
+(`beforeInitialize`); `collect`/`noteRaw` non-collector or shortfall; `settle` deadline/`amountIn==0`/over-rawFees/
+`ORACLE_NOT_READY`/`wethOut<minOut`/unsettled-delta; **(rev8) `compound` `ORACLE_NOT_READY` (window not spanned) /
+`TWAP_DEVIATION` (spot off TWAP) / `DUST_ACCUMULATE` (liquidityΔ < `MIN_ADD_LIQUIDITY` — a benign skip, not a fund
+loss; pending stays queued) / unsettled-delta**; `claimCreator`/`claimHyde` nothing-owed; `graduate` <threshold/twice
+(currently always `GRADUATION_PENDING`); paused ⇒ `launch` reverts, live pools unaffected. **A donation does NOT
+revert/brick `collect` or advance graduation. `compound` is permissionless and side-effect-bounded — a revert never
+strands or loses the pending in-kind funds (they remain conserved + locked, re-attemptable).**
 
 ## 7. Threat model (V4)
 1. **Unauthorized/stale pool init** → `beforeInitialize` requires `sender==factory` + validates & **consumes** the
@@ -308,13 +397,28 @@ paused ⇒ `launch` reverts, live pools unaffected. **A donation does NOT revert
 10. **Protocol fee** → V4 governance-settable protocol fee; record + monitor per pool at deploy (manifest).
 11. **Custody-lock** → no path moves Hyde's NFT or removes its liquidity; selector-enumerated. INV-4.
 12. **90/5/5 solvency + creator paid in WETH** → unchanged vault invariants; creator never paid in LT. INV-17/27.
+13. **(rev8) Compound manipulation / griefing** → `compound` performs **no swap**, so there is nothing to sandwich for
+    value. The only vector is skewing spot before the add to force extra residual; neutralized by the **TWAP-deviation
+    gate** (`|spot−twap| ≤ MAX_ADD_DEV_TICKS`) + the **`amount{0,1}Max = pending` hard cap** (an add can never consume
+    more than what's queued) + the **measured-consumption residual carry** (no over-decrement). A permissionless caller
+    can at worst waste their own gas on a `DUST_ACCUMULATE`/`TWAP_DEVIATION` revert; they cannot extract value, strand
+    funds, or force a bad add. INV-C1..C6.
+14. **(rev8) Pending in-kind custody** → `pendingLiqLT`/`pendingLiqWETH` have **no** owner sweep/withdraw/transfer
+    selector (custody-locked like the NFT); the compounded liquidity lands in the add-only NFT and can never be
+    decreased/removed → the 5% liquidity leg is un-ruggable end-to-end. INV-C6/C8.
+15. **(rev8) Liveness of an unflushable pending** → if spot sits wrong-side of the range with only wrong-side pending,
+    `getLiquidityForAmounts` returns 0 → `DUST_ACCUMULATE` skip; the pending stays **conserved + locked**, honestly
+    surfaced as "queued — not yet liquidity" (never counted in the hero `lockedLiquidity`). Bounded only by cumulative
+    fees; disclosed, not hidden. INV-C5.
 
 ## 8. Invariant matrix (old→new mapping)
-**Carried unchanged (vault/token accounting, DEX-agnostic):** INV-1 (split sums), INV-2 (bps), INV-3 (immutable
-recipients), INV-5 (supply constant), INV-6 (max-wallet), INV-13 (pull-measure donation-proof), INV-23 (sync can't
-brick), INV-24 (namespace partition), INV-25 (exact epoch conservation), INV-26 (vest math / supply-0 requeue),
-INV-27 (cross-namespace solvency + branch-exact settle reclassification), INV-28 (excluded never accrue), INV-29
-(epoch JIT resistance), INV-30 (register-before-mint), INV-32 (terminal conservation).
+**Carried unchanged (vault/token accounting, DEX-agnostic):** INV-1 (split sums — now creator+Hyde), INV-2 (bps), INV-3
+(immutable recipients), INV-5 (supply constant), INV-6 (max-wallet — still enforced in the token `_update`, independent
+of the removed `sync`), INV-13 (pull-measure donation-proof), INV-27 (cross-namespace solvency + branch-exact settle
+reclassification — now over the 95% the vault holds), INV-30 (register-before-mint), INV-32 (terminal conservation).
+**RETIRED (rev8 — holder/epoch machinery removed):** INV-23 (sync-can't-brick — `sync` deleted), INV-24 (namespace
+partition — holder rewards), INV-25 (epoch conservation), INV-26 (vest math / supply-0 requeue), INV-28 (excluded never
+accrue), INV-29 (epoch JIT resistance). None have a referent after the holder-reward removal.
 **Re-homed V3→V4:** INV-4 (LP-lock: was NFT-custody+no-path → **now custody-only, no hook-revert**), INV-14 (`collect`
 reaches no swap router → **now `collect` = PositionManager fee-take only, no swap**), INV-18 (only the vault swaps →
 **now the direct vault→PoolManager unlock swap, sender==vault**), INV-15 (**post-seed: factory & vault hold 0 LT; position holds `dep`; collector holds only the MEASURED residual `dust ≤ MAX_SEED_DUST`, inert**), INV-17 (creator WETH), **INV-27 (settle now branch-exact for BOTH the WETH reclassify leg and the LT swap leg)**.
@@ -330,6 +434,26 @@ through PositionManager's delta; direct transfer to PoolManager is uncredited); 
 `now ≥ window` guard; INV-52 **seed token-order/tick/amount encoding** (both sort branches) + **`ownerOf(tokenId) ==
 COLLECTOR`** + WETH-side == 0 + **MEASURED residual `≤ MAX_SEED_DUST`** (round-up core math, constructor-validated
 presets) swept to the exempt collector — the bound is enforced/measured, never asserted from a made-up inverse.
+**NEW (rev8 — in-kind auto-compound, replaces the retired holder set):**
+- **INV-C1 sort-correct add:** `compound` maps `pendingLiqLT/WETH` onto currency0/1 by the same address sort as the
+  seed/collect/settle paths; both LT-as-c0 and LT-as-c1 branches add via one `getLiquidityForAmounts`/`SETTLE_PAIR`
+  path with the correct currency assignment.
+- **INV-C2 residual conservation:** `pendingLiq*` decrements by the **measured** `used0/used1` only; the un-consumed
+  remainder stays queued; nothing is minted, lost, or double-counted. `Σ collected·liqBps = Σ compounded + Σ pending`.
+- **INV-C3 no over-add:** `amount{0,1}Max = pending` hard-caps every add — the position can never pull more than the
+  queued in-kind balance on either side; `liq` derives from `getLiquidityForAmounts` (binding side), never assumed.
+- **INV-C4 TWAP add-gate:** `compound` reverts unless `|spot − twap| ≤ MAX_ADD_DEV_TICKS` (oracle window-ready);
+  no add executes at a manipulated spot.
+- **INV-C5 min-add / dust bound + honest liveness:** no add below `MIN_ADD_LIQUIDITY`; a skip leaves `pendingLiq*`
+  untouched (conserved + locked); a permanently wrong-side pending is bounded, accounted, and surfaced as "queued —
+  not yet liquidity" (never folded into `lockedLiquidity`).
+- **INV-C6 terminal custody of pending + added:** `pendingLiqLT/WETH` have no owner sweep/withdraw/transfer path;
+  compounded liquidity lands only in the custody-locked NFT.
+- **INV-C7 90/5/5 in-kind conservation:** collector liqBps(5, in-kind) + vault Hyde(5, via `500/9500`) + creator(90,
+  remainder) = 100% of every collected fee; `collect` splits each harvested asset exactly into (queued liq | noted to
+  vault) with no remainder.
+- **INV-C8 add-only / position-monotonic:** the position's liquidity is non-decreasing under every protocol path — no
+  decrease/transfer/burn selector exists on the collector; `compound` only ever `INCREASE_LIQUIDITY`.
 
 ## 9. Deployment / CREATE2 cycle + manifest
 - **Cycle:** predict factory address (CREATE2); deploy vault (predicted factory + collector), collector (predicted
@@ -343,8 +467,9 @@ presets) swept to the exempt collector — the bound is enforced/measured, never
   `feeProtocol` recorded + monitored; treasuries + owner multisig (clint). gojo/kami co-sign.
 
 ## 10. Test / threat matrix (Foundry, fork of 4663 V4)
-Carry all preserved vault/token tests (epochs/vest-exactness/solvency/sync/claims/JIT). **New V4 tests (incl. the six
-kami 21299 named):**
+Carry the preserved vault/token tests (solvency/`accountedBalance`/creator+Hyde claims/`noteRaw` donation-proof).
+**(rev8) DROP the holder/epoch/vest/JIT/`sync` suites** (no referent). **New V4 tests (incl. the six kami 21299
+named):**
 - **Preloaded-PoolManager seed failure (INV-49):** transferring LT directly to `POOL_MANAGER` before `MINT_POSITION`
   does NOT credit the position (uncredited donation) and the seed still requires the real delta → the shortcut reverts;
   the correct mint-to-factory→Permit2→`MINT_POSITION` path succeeds single-sided (LT only, **WETH settle == 0**), and
@@ -363,8 +488,21 @@ kami 21299 named):**
 - **Fee decay at/after the window (INV-42, blocker 5):** `elapsed == 0`→`startFee`; `0<elapsed<window`→interpolated,
   never underflows; `elapsed >= window`→exactly `baseFee`; `sender==vault`→`baseFee` at any time; all clamped
   `[baseFee, MAX_LP_FEE_CAP]`.
-- **`settle` BOTH branches, branch-exact INV-27 (blocker 1):** WETH raw-leg = reclassify-only (no oracle/unlock,
-  `accountedBalance[WETH]` unchanged, buckets +=`amountIn`); LT-leg = swap path; assert solvency after each.
+- **`settle` BOTH branches, branch-exact INV-27 (blocker 1) — rev8 split:** WETH raw-leg = reclassify-only (no
+  oracle/unlock, `accountedBalance[WETH]` unchanged); LT-leg = swap path; **assert Hyde == `mulDiv(w,500,9500)` and
+  creator == `w − hydeCut`** (i.e. 5% / 90% of the ORIGINAL notional once the collector's 5% is included), no holder
+  bucket exists, solvency after each.
+- **(rev8) In-kind carve conservation at `collect` (INV-C7):** for fuzzed `(dLT, dWETH)`, assert `liqLT+noted_LT==dLT`
+  and `liqWETH+noted_WETH==dWETH` exactly; `pendingLiq*` credited by the carve; vault receives only the 95% remainder.
+- **(rev8) `compound` all three range states × both sort branches (INV-C1/C3):** with spot below / in / above the
+  position range, and LT-as-c0 and LT-as-c1, assert `getLiquidityForAmounts` binds the correct side, `amount{0,1}Max`
+  caps the pull to pending, the add lands in the SAME `tokenId`, and the position's liquidity strictly increases by
+  `liq` (add-only, INV-C8). Wrong-side-only pending ⇒ `liq==0` ⇒ `DUST_ACCUMULATE`, pending untouched (INV-C5).
+- **(rev8) `compound` TWAP add-gate (INV-C4):** manipulate spot away from the TWAP ⇒ `TWAP_DEVIATION` revert, no add,
+  pending intact; within-band ⇒ add proceeds; pre-window ⇒ `ORACLE_NOT_READY`.
+- **(rev8) `compound` residual conservation + custody (INV-C2/C6):** measured `used0/used1` decrement pending exactly;
+  remainder stays queued and re-adds on a later `compound`; **fuzz for any caller/args that reduce the position
+  liquidity or move `pendingLiq*` to a non-position destination ⇒ none exists** (selector-enumerate the no-exit surface).
 - **Oracle idle-pool + signed rounding (INV-51, blocker 2):** no swap for > window (`target ≥ lastObsTs`) ⇒ extrapolate
   `cumTarget` at `lastTick` (synthetic bracket), TWAP still readable; a **negative-tick remainder** rounds toward −∞
   (assert vs a reference `OracleLibrary` computation); `now < window` ⇒ `ORACLE_NOT_READY`/guarded.
@@ -379,11 +517,22 @@ kami 21299 named):**
   (INV-44); volume exact-in/out both directions, one increment, int128-boundary (INV-47); **same-block coalesce** (spam
   N swaps/block ⇒ ≤1 slot consumed, history intact, no forced `ORACLE_NOT_READY`; INV-45); dynamic-fee bounds;
   hook-can't-brick (fuzz swaps); custody-lock selector enumeration (INV-4); protocol-fee monitor.
-**Fork lifecycle:** launch LT/WETH dynamic-fee+hook → user swaps (fee decays, volume+oracle meter) → `collect` →
-`settle` (sender==vault base-fee, TWAP floor) → `claim*` over epochs → threshold → `graduate`. Slither triage; gas
-snapshot incl. per-swap `afterSwap` + per-transfer `sync`; **hook address-mining rehearsed**.
+**Fork lifecycle (rev8):** launch LT/WETH dynamic-fee+hook → user swaps (fee decays, volume+oracle meter) → `collect`
+(5% in-kind carved, 95% noted) → `settle` (sender==vault base-fee, TWAP floor) → `claimCreator`/`claimHyde` →
+**`compound` (TWAP-gated in-kind add → locked NFT grows, add-only)** → threshold → `graduate`. Slither triage; gas
+snapshot incl. per-swap `afterSwap` + per-`compound` add (no per-transfer `sync` — removed); **hook address-mining
+rehearsed**.
 
 ## 11. Changelog
+- **2026-07-15 rev8 (in-kind auto-compound):** holder-reward (5%) leg REMOVED in full → replaced by a **5% in-kind
+  auto-compound into the ONE permanently-locked position** (Option 3, trigger A = permissionless `compound()`), per
+  clint 21422/21428/21440 + casper ruling 21453/21475 (acting Reviewer while kami out). Fee split → **90 creator / 5
+  Hyde / 5 locked-liquidity**. Arch A (split at the collector): `collect` carves 5% in-kind, forwards 95% to the vault;
+  vault splits creator/Hyde only via `NET_BPS=9500`; new collector `compound()` adds pending LT+WETH into its own
+  custody-locked NFT (TWAP-gated, sort-aware, residual-conserving, add-only). Removed the entire epoch/vesting/reward-
+  index machinery AND the token→vault `sync` hook (max-wallet enforcement stays in the token). INV-23..30 retired →
+  INV-C1..C8 added. Settle swap, oracle, seed, custody-lock, INV-40..52 unchanged from rev7.3. `(B)` afterSwap variant
+  NOT taken (clint picked A). Builder handoff gated on casper's audit of this SHA.
 - **2026-07-14 rev7 (V4):** full re-architecture to Uniswap V4 per clint 21289 / kami 21290–21296. Own `HydeHook`
   (dynamic anti-snipe fee + swap-only WETH volume graduation + real-tick observation-ring oracle) feeding an unchanged
   `HydeFeeVault`; custody-only LP-lock; V4 `collect`/`settle`; factory pool init + one-shot hook auth. Folds kami 21296
