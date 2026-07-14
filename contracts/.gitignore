@@ -2,3 +2,4 @@ cache/
 out/
 broadcast/
 lib/openzeppelin-contracts/
+lib/v4-periphery/
