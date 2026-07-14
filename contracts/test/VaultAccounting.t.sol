@@ -176,8 +176,8 @@ contract VaultAccountingTest is Test {
         for (uint256 i = 0; i < 50; i++) {
             vm.warp(block.timestamp + 12);
             vault.settle(address(token), address(weth), 1e18, 0, block.timestamp); // queues nextEpoch, not extend
-            vm.expectRevert(bytes("NOT_ROLLABLE"));
-            vault.roll(address(token)); // active epoch → must revert
+            vm.expectRevert(bytes("ACTIVE_EPOCH"));
+            vault.roll(address(token)); // active epoch → must revert (no reset)
             assertEq(vault.epochFinish(address(token)), finish, "epochFinish NEVER moves (INV-34)");
         }
 
@@ -234,23 +234,30 @@ contract VaultAccountingTest is Test {
         uint256 holderLeg = 1_000e18 * 500 / 10000; // 50e18
         assertEq(vault.epochAmount(address(token)), holderLeg, "epoch 1 funded with holder leg");
 
+        uint256 finish1 = vault.epochFinish(address(token));
         // The whole epoch elapses with zero eligible supply — the leg vests to nobody.
-        vm.warp(vault.epochFinish(address(token)) + 1);
-        // Per spec, roll needs the re-queue to have happened first; with no activity it hasn't yet.
-        vm.expectRevert(bytes("NOT_ROLLABLE"));
-        vault.roll(address(token));
-        _assertSolvent(); // but the 50e18 is still fully reserved (holderFunded − holderClaimed)
+        vm.warp(finish1 + 1);
 
-        // A holder finally buys in — this pokes _updateReward: the zero-supply vest is re-queued (never
-        // lost) and _maybeRoll starts epoch 2 funded with it, now that Alice is eligible.
-        _buy(ALICE, 10_000_000e18);
-        assertEq(vault.epochAmount(address(token)), holderLeg, "re-queued vest funds epoch 2");
+        // ONE-CALL roll() now self-checkpoints the terminal epoch (kami 21300): it re-queues the
+        // zero-supply vest and opens epoch 2 with it — no unrelated poke needed.
+        vault.roll(address(token));
+        assertEq(vault.epochAmount(address(token)), holderLeg, "epoch 2 funded by the re-queued vest");
+        assertGt(vault.epochFinish(address(token)), finish1, "epoch 2 opened by roll() alone");
         _assertSolvent();
 
-        // Over epoch 2 the re-queued 50 WETH vests to Alice — proving it was never lost (INV-26/32).
+        // A holder buys into epoch 2 and it vests to them in full — nothing was lost (INV-26/32).
+        _buy(ALICE, 10_000_000e18);
         vm.warp(vault.epochFinish(address(token)) + 1);
         vault.claim(address(token), ALICE);
         assertApproxEqAbs(weth.balanceOf(ALICE), holderLeg, 1_000, "re-queued holder leg vests to Alice");
         _assertSolvent();
+    }
+
+    /* ─────────────── roll() no empty-epoch spin (kami 21300) ─────────────────── */
+    function test_rollRevertsOnEmptyQueue() public {
+        // Registered token, never settled → checkpoint finds nothing to re-queue → roll must revert
+        // (no empty-epoch spin), even though the (zero) epoch is trivially "ended".
+        vm.expectRevert(bytes("EMPTY_QUEUE"));
+        vault.roll(address(token));
     }
 }

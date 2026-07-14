@@ -279,9 +279,11 @@ contract HydeFeeVault is IHydeVault, ReentrancyGuard, Multicall {
     }
 
     /* ─────────────────────────── epoch machinery ───────────────────────────── */
-    /// @dev Vest against a CUMULATIVE target so per-update flooring can't accumulate a shortfall
-    ///      (rev6 pt.1); carry the global index-allocation remainder into nextEpochAmount (pt.3).
-    function _updateReward(address token, address acct, uint256 bal, bool excl) internal {
+    /// @dev CHECKPOINT ONLY (no roll): vest the current epoch against a CUMULATIVE target so per-update
+    ///      flooring can't accumulate a shortfall (rev6 pt.1); carry the global index-allocation
+    ///      remainder / the zero-supply vest into nextEpochAmount (pt.3 / INV-26). Separated from the
+    ///      roll so `roll()` can checkpoint-then-decide in the exact order kami 21300 requires.
+    function _checkpoint(address token) internal {
         uint256 finish = epochFinish[token];
         uint256 t1 = block.timestamp < finish ? block.timestamp : finish;
         uint256 start = epochStart[token];
@@ -304,7 +306,12 @@ contract HydeFeeVault is IHydeVault, ReentrancyGuard, Multicall {
             }
             lastUpdateTime[token] = t1;
         }
+    }
 
+    /// @dev Full update: checkpoint → roll (if the current epoch ended + a queue exists) → crystallize
+    ///      `acct`'s rewards at the resulting index. Called before every balance change + claim/settle.
+    function _updateReward(address token, address acct, uint256 bal, bool excl) internal {
+        _checkpoint(token);
         _maybeRoll(token);
 
         if (acct != address(0)) {
@@ -338,12 +345,16 @@ contract HydeFeeVault is IHydeVault, ReentrancyGuard, Multicall {
         _maybeRoll(token);
     }
 
-    /// @notice Permissionless. Start the next epoch once the current ends. Guarded so it can neither
-    ///         reset an active epoch (now ≥ epochFinish) nor spin an empty one (nextEpochAmount > 0) —
-    ///         the fix for the flush/extension grief (INV-34).
+    /// @notice Permissionless. Start the next epoch once the current ends. Order (kami 21300): (1)
+    ///         checkpoint — vest the ended epoch + re-queue any zero-supply vest into nextEpochAmount,
+    ///         so a fully-elapsed zero-supply epoch's funds are visible to this same call (no unrelated
+    ///         poke needed); (2) require the current epoch ended (no active-epoch reset); (3) require
+    ///         the resulting queue is non-empty (no empty-epoch spin); (4) open the next fixed epoch.
     function roll(address token) external {
-        require(block.timestamp >= epochFinish[token] && nextEpochAmount[token] > 0, "NOT_ROLLABLE");
-        _updateReward(token, address(0), 0, false); // _maybeRoll inside
+        _checkpoint(token); // 1
+        require(block.timestamp >= epochFinish[token], "ACTIVE_EPOCH"); // 2
+        require(nextEpochAmount[token] > 0, "EMPTY_QUEUE"); // 3
+        _maybeRoll(token); // 4
     }
 
     /* ─────────────────────────── claims (pull) ─────────────────────────────── */
