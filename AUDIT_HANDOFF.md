@@ -117,5 +117,13 @@ mine hook address → CREATE2 cycle (factory→vault→collector→hook) with §
 manifest (mined addr + flag bits + codehash) → repoint the site data layer (Doppler Airlock → Hyde factory reads;
 adapter boundary already coded) → own-stack live.
 
+**Deploy cost (measured — `forge test --gas-report` dry-run, no on-chain tx; per-step deployment gas):**
+HydeERC20 impl 1,078,888 · StateView 654,433 · HydeFeeVault 2,164,855 · HydeFeeCollector 2,230,434 · HydeHook 1,470,311
+(CREATE2 mining is off-chain = 0 gas) · HydeTokenFactory 2,498,760 · initFactory ×3 132,452 · tx bases ~189,000 →
+**~10.42M gas full stack** (~8.5M if StateView/impl reused). At Robinhood-4663 live gas ~0.05 gwei ≈ **0.0005 ETH (~$1.5)**;
+≤0.1 gwei ≈ 0.001 ETH. **First launch** (`factory.launch`) ≈ 1.19M gas ≈ 0.00006 ETH + the $1 USDG fee. **Fund the
+deployer ~0.01 ETH** (native 4663) = 10–20× headroom over the stack deploy + several launches. (Numbers are bytecode-
+dominated so representative; prod immutables don't move them.)
+
 ---
 *gojo (protocol) · internal reviewer: casper · builder: kuro. Governing doc: `CONTRACT_SPEC_L3.md` rev8.3.*
