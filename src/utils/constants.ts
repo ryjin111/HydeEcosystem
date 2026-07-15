@@ -79,7 +79,9 @@ export const ROBINHOOD_TESTNET: NetworkConfig = {
   rpcUrl: "https://rpc.testnet.chain.robinhood.com",
   explorerUrl: "https://explorer.testnet.chain.robinhood.com",
   currencySymbol: "ETH",
-  factory: PLACEHOLDER_FACTORY,
+  // LIVE Hyde OWN-STACK factory (deployed 46630). The launchpad reads its LaunchCreated events here —
+  // this is our own contracts, NOT Doppler. (mainnet still rides the Doppler rail until its own deploy.)
+  factory: "0x136914042064972913D54f024CccBA049C8cF03F" as Address,
   router: PLACEHOLDER_ROUTER,
   weth: "0x7943e237c7F95DA44E0301572D358911207852Fa",
   tokens: ROBINHOOD_TESTNET_TOKENS,
@@ -151,10 +153,10 @@ export const OPTIMISM_MAINNET: NetworkConfig = {
 
 export const NETWORKS: NetworkConfig[] = [
   ROBINHOOD_MAINNET,
+  ROBINHOOD_TESTNET,    // LIVE own-stack sandbox (46630) — board reads our factory's LaunchCreated
   // OPTIMISM_MAINNET,  // legacy lane retired 2026-07-03 — Hydeout is Robinhood-only
   // INK_MAINNET,       // hidden — multichain later
   // UNICHAIN_MAINNET,  // dropped
-  // ROBINHOOD_TESTNET,
   // TEMPO_MODERATO,
   // PHAROS_ATLANTIC_TESTNET,
 ];

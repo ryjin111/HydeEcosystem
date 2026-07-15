@@ -150,13 +150,17 @@ export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr:
 
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 
-export function LaunchpadPage() {
+const RH_TESTNET_ID = 46630;
+
+export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
   // Tab is URL-driven (?tab=launch|explore) so the sidebar "Launch a Token" reliably lands on the
   // form even when the user is already on /launchpad viewing Explore. Default = launch.
   const [searchParams, setSearchParams] = useSearchParams();
   const tab: "explore" | "launch" = searchParams.get("tab") === "explore" ? "explore" : "launch";
   const setTab = (t: "explore" | "launch") => setSearchParams({ tab: t });
-  const { pools, loading, refetch } = useHydeLaunches();
+  // Network-aware: on Robinhood Testnet this reads the LIVE own-stack factory; else the Doppler rail.
+  const isTestnet = chainId === RH_TESTNET_ID;
+  const { pools, loading, refetch } = useHydeLaunches(chainId);
   const navigate = useNavigate();
 
   const handleTrade = (tokenAddress: string, chainId: number) => {
@@ -168,11 +172,27 @@ export function LaunchpadPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 w-full">
+      {/* Testnet indicator — unmistakable; nothing can read as mainnet/real money (shiro #1). */}
+      {isTestnet && (
+        <div
+          className="mb-4 flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-sm"
+          style={{ background: "rgba(224,163,46,0.10)", border: "1px solid rgba(224,163,46,0.35)", color: "#E0A32E" }}
+        >
+          <span className="text-base">🧪</span>
+          <span>
+            <span className="font-semibold">TESTNET — Robinhood 46630.</span> The LIVE Hyde own-stack sandbox
+            (our own contracts · custody-locked LP). Play money only — no real funds.
+          </span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-8">
         <h1 className="font-display text-2xl font-semibold text-pcs-text">Launchpad</h1>
         <p className="text-sm text-pcs-textSub mt-1">
-          Live token launches on Robinhood Chain — Hyde own-stack launching soon.
+          {isTestnet
+            ? "Live launches on the Hyde own-stack (Robinhood Testnet) — your factory, your custody-locked liquidity."
+            : "Live token launches on Robinhood Chain — Hyde own-stack launching soon."}
         </p>
       </div>
 
@@ -202,11 +222,15 @@ export function LaunchpadPage() {
           <div className="flex items-start justify-between mb-4">
             <div>
               <p className="text-sm text-pcs-textDim">
-                {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Robinhood Chain`}
+                {loading
+                  ? "Loading…"
+                  : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched ${isTestnet ? "on the Hyde own-stack" : "on Robinhood Chain"}`}
               </p>
-              {/* Source attribution — the headline $ figures (MCAP/liquidity/volume) are third-party
-                  priced, so name the source (gojo honesty note). */}
-              <p className="text-[11px] text-pcs-textDim/70 mt-0.5">Market data via DEXScreener</p>
+              {/* Source attribution. Mainnet $ figures are DEXScreener-priced; testnet isn't third-party
+                  indexed, so it's pure on-chain reads (curve % live; no fabricated price). */}
+              <p className="text-[11px] text-pcs-textDim/70 mt-0.5">
+                {isTestnet ? "Live on-chain reads · own-stack factory (not third-party indexed)" : "Market data via DEXScreener"}
+              </p>
             </div>
             <button
               onClick={refetch}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPublicClient, http, defineChain, parseAbiItem } from "viem";
 import type { TokenInfo } from "../utils/constants";
-import { ROBINHOOD_MAINNET, DOPPLER_CONTRACTS_BY_CHAIN } from "../utils/constants";
+import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, DOPPLER_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
 const ROBINHOOD_CHAIN_ID = 4663;
@@ -325,8 +325,116 @@ export function useHydeToken(address?: string): { pool: DopplerPool | null; load
   return { pool, loading };
 }
 
-/** Full pool objects for the Launchpad explore tab and trending carousel. */
-export function useHydeLaunches(): {
+/* ─── Testnet OWN-STACK (46630) — reads OUR HydeTokenFactory, not Doppler ───────────────
+ * The launchpad is network-aware: on Robinhood Testnet the board enumerates launches from our
+ * live-deployed factory's `LaunchCreated` events (our own contracts) instead of the Doppler Airlock.
+ * DEXScreener/GeckoTerminal don't index 46630 testnet → MCAP/liquidity stay null (honest "not
+ * indexed"); the real on-chain curve % still reads. Config-enforced boundary: only a network whose
+ * `factory` is set reads own-stack data (mainnet's is unset → own-stack tiles stay "coming"). */
+export const RH_TESTNET_ID = 46630;
+const HYDE_TESTNET_FACTORY = ROBINHOOD_TESTNET.factory as `0x${string}`;
+const LAUNCH_CREATED = parseAbiItem(
+  "event LaunchCreated(address indexed token, address indexed creator, bytes32 indexed poolId, uint256 tokenId, uint256 presetId)"
+);
+const rhTestnetChain = defineChain({
+  id: RH_TESTNET_ID,
+  name: "Robinhood Testnet",
+  nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: [ROBINHOOD_TESTNET.rpcUrl] } },
+  contracts: { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } },
+});
+const testnetClient = createPublicClient({ chain: rhTestnetChain, transport: http() });
+
+type LaunchLog = { args: { token: `0x${string}` }; blockNumber: bigint | null };
+
+/** Own-stack launches on 46630 — from `LaunchCreated` off our factory. Same enrichment shape as the
+ *  Doppler board (name/symbol/curve %), minus third-party price data (testnet isn't indexed → null). */
+async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
+  const latest = await testnetClient.getBlockNumber();
+  const collected: LaunchLog[] = [];
+  let toB = latest;
+  // The own-stack factory is recently deployed → all launches are in recent blocks. Bounded scan
+  // (not the mainnet 80-chunk walk): stop once we've found launches and then hit an older empty chunk,
+  // hard-capped at 20 chunks so a near-empty testnet resolves fast (no 80-chunk timeout).
+  for (let guard = 0; guard < 20 && collected.length < MAX_SHOWN && toB > 0n; guard++) {
+    const fromB = toB > RANGE ? toB - RANGE + 1n : 0n;
+    const chunk = await testnetClient.getLogs({ address: HYDE_TESTNET_FACTORY, event: LAUNCH_CREATED, fromBlock: fromB, toBlock: toB });
+    collected.unshift(...(chunk as unknown as LaunchLog[]));
+    if (fromB === 0n) break;
+    if (chunk.length === 0 && collected.length > 0) break; // passed the factory's active range
+    toB = fromB - 1n;
+  }
+  const logs = collected.slice(-MAX_SHOWN).reverse();
+  if (logs.length === 0) return [];
+  const tokens = logs.map((l) => l.args.token);
+  const createBlockOf = new Map(logs.map((l) => [l.args.token.toLowerCase(), l.blockNumber ?? 0n]));
+  const fromB = logs.map((l) => l.blockNumber ?? latest).reduce((a, b) => (a < b ? a : b), latest);
+
+  // curve baseline: tokens transferred INTO the PoolManager in each token's create block
+  const seedTransfers = await getLogsChunked(
+    (f, t) => testnetClient.getLogs({ address: tokens, event: TRANSFER_EVENT, args: { to: POOL_MANAGER }, fromBlock: f, toBlock: t }),
+    fromB, latest
+  );
+  const initialCurve = new Map<string, bigint>();
+  for (const t of seedTransfers) {
+    const asset = t.address.toLowerCase();
+    if ((t.blockNumber ?? 0n) !== createBlockOf.get(asset)) continue;
+    initialCurve.set(asset, (initialCurve.get(asset) ?? 0n) + (t.args.value as bigint));
+  }
+
+  const meta = await testnetClient.multicall({
+    contracts: tokens.flatMap((token) => [
+      { address: token, abi: ERC20_META_ABI, functionName: "name" } as const,
+      { address: token, abi: ERC20_META_ABI, functionName: "symbol" } as const,
+      { address: token, abi: ERC20_META_ABI, functionName: "balanceOf", args: [POOL_MANAGER] } as const,
+    ]),
+  });
+  const uniqueBlocks = [...new Set(logs.map((l) => l.blockNumber ?? 0n))];
+  const blockTimes = new Map(
+    (await Promise.all(uniqueBlocks.map((bn) => testnetClient.getBlock({ blockNumber: bn })))).map((b) => [b.number, Number(b.timestamp)])
+  );
+
+  const pools = logs.map((log, i): DopplerPool | null => {
+    const token = log.args.token;
+    const key = token.toLowerCase();
+    const name = meta[i * 3].result as string | undefined;
+    const symbol = meta[i * 3 + 1].result as string | undefined;
+    const pmBalance = meta[i * 3 + 2].result as bigint | undefined;
+    if (!name || !symbol) return null;
+    const initial = initialCurve.get(key);
+    let progress: number | null = null;
+    if (initial && initial > 0n && pmBalance !== undefined) {
+      const sold = initial > pmBalance ? initial - pmBalance : 0n;
+      progress = Math.min(100, Number((sold * 10000n) / initial) / 100);
+    }
+    const ts = blockTimes.get(log.blockNumber ?? 0n);
+    return {
+      address: token,
+      chainId: RH_TESTNET_ID,
+      baseToken: { address: token, name, symbol, decimals: 18 },
+      quoteToken: { address: ROBINHOOD_TESTNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+      type: "v4",
+      dollarLiquidity: null,
+      volumeUsd: null,
+      marketCapUsd: null,
+      priceUsd: null,
+      createdAt: new Date((ts ?? 0) * 1000).toISOString(),
+      progress,
+    };
+  });
+  const nonNull = pools.filter((p): p is DopplerPool => p !== null);
+  const seen = new Set<string>();
+  return nonNull.filter((p) => {
+    const k = p.address.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** Full pool objects for the Launchpad explore tab and trending carousel. Network-aware: Robinhood
+ *  Testnet reads the live own-stack factory; mainnet reads the Doppler rail. */
+export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
   pools: DopplerPool[];
   loading: boolean;
   refetch: () => void;
@@ -340,7 +448,8 @@ export function useHydeLaunches(): {
     let cancelled = false;
     setLoading(true);
 
-    fetchHydePools()
+    const fetcher = chainId === RH_TESTNET_ID ? fetchHydeFactoryPools : fetchHydePools;
+    fetcher()
       .then((items) => {
         if (!cancelled) setPools(items);
       })
@@ -354,7 +463,7 @@ export function useHydeLaunches(): {
     return () => {
       cancelled = true;
     };
-  }, [tick]);
+  }, [tick, chainId]);
 
   return { pools, loading, refetch };
 }

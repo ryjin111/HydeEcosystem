@@ -162,14 +162,14 @@ function App() {
               {/* Stats/transparency page — restored as a real aggregate (shiro mock 21675), not a board-relist. */}
               <Route path="/stats" element={<StatsPage />} />
               {/* Landing (UI_CONSOLIDATION step 4) — hero + trending strip, not a 4th board copy. */}
-              <Route path="/" element={<LandingPage />} />
+              <Route path="/" element={<LandingPage chainId={selectedNetwork.id} />} />
               {/* The board lives ONLY at /launchpad — collapse the duplicate board routes. */}
               <Route path="/discover" element={<Navigate to="/launchpad" replace />} />
               <Route path="/launches" element={<Navigate to="/launchpad" replace />} />
               <Route path="/token/:address" element={<TokenPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/profile/:address" element={<ProfilePage />} />
-              <Route path="/launchpad" element={<LaunchpadPage />} />
+              <Route path="/launchpad" element={<LaunchpadPage chainId={selectedNetwork.id} />} />
               {/* /_ui (internal dev kit) is REMOVED from prod entirely — the catch-all handles a typed URL. */}
               <Route path="/remove-liquidity" element={<Navigate to="/add-liquidity" replace />} />
               <Route path="*" element={<Navigate to="/launchpad" replace />} />

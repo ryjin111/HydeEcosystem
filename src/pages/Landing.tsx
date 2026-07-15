@@ -8,8 +8,8 @@ const TRENDING_COUNT = 4;
 /** Landing (`/`) — hero + trending strip (a subset), NOT a 4th copy of the board (UI_CONSOLIDATION §4).
  *  Honest two-register copy (shiro): live on Robinhood Chain today; the own-stack 90/5-locked model is
  *  presented as COMING, not live, until deploy. */
-export function LandingPage() {
-  const { pools } = useHydeLaunches();
+export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
+  const { pools } = useHydeLaunches(chainId);
   const navigate = useNavigate();
   const trending = pools.slice(0, TRENDING_COUNT);
 
