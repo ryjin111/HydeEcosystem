@@ -63,11 +63,22 @@ export function StatsPage() {
   const trackedN = pools.length;
   const trackedVol = pools.reduce((sum, p) => sum + (p.volumeUsd != null ? parseFloat(p.volumeUsd) : 0), 0);
 
-  // Trending: rank the in-view set by real curve % (not all-time). Only tokens with a real %.
-  const trending = pools
-    .filter((p) => p.progress != null)
-    .sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))
-    .slice(0, 8);
+  // Trending: rank the in-view set by real curve % (not all-time). Collapse by ticker so the same
+  // symbol never shows twice — a permissionless launchpad has many distinct tokens sharing a ticker
+  // (e.g. two different "$IT5" at different addresses); the top-list keeps the highest-curve one per
+  // ticker (casper 21689). The full board (Launchpad) still lists every distinct address.
+  const trending = (() => {
+    const seen = new Set<string>();
+    const out: DopplerPool[] = [];
+    for (const p of pools.filter((p) => p.progress != null).sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))) {
+      const key = p.baseToken.symbol.toUpperCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(p);
+      if (out.length >= 8) break;
+    }
+    return out;
+  })();
 
   const openToken = (p: DopplerPool) => {
     if (p.chainId === ROBINHOOD_CHAIN_ID) navigate(`/token/${p.address}`);
