@@ -18,18 +18,20 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {TickMath as V4TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 import {IHydeVault} from "./interfaces/IHydeVault.sol";
-import {IHydeToken} from "./interfaces/IHydeToken.sol";
 import {IHydeHook} from "./interfaces/IHydeHook.sol";
 import {OracleLib} from "./libraries/OracleLib.sol";
 
-/// @title HydeFeeVault — WETH fee settlement + pull claims + NON-EXTENDABLE-EPOCH holder vesting
-/// @notice CONTRACT_SPEC_L3.md §4b (rev6). Shared singleton, per-token accounting. `collect` sends
-///         raw V3 fees here (swap-free); permissionless `settle` converts them to WETH (the ONLY
-///         swap — TWAP-floored + oracle-gated) and splits 90/5/5 into the creator/Hyde pull buckets
-///         and the holder epoch. Holders vest over non-extendable fixed epochs of length `DURATION`
-///         against a cumulative `epochVested` target (exact 100% at finish); holder reserve is
-///         tracked directly as `holderFunded − holderClaimed`. O(1), no holder loops.
-///         Invariants: INV-2/3/13/18/23/24/25/26/27/28/29/31/32/34.
+/// @title HydeFeeVault — WETH fee settlement + creator/Hyde pull claims (rev8: holder machinery removed)
+/// @notice CONTRACT_SPEC_L3.md §4b (rev8). Shared singleton, per-token accounting. `collect` sends raw
+///         V4 fees here (swap-free) AFTER the collector retains its 5% in-kind liquidity carve; the
+///         permissionless `settle` converts a raw leg to WETH (the ONLY swap — TWAP-floored + oracle-
+///         gated) and splits it into the creator/Hyde pull buckets via `NET_BPS` (9500): Hyde =
+///         `hydeBps/NET_BPS` = 500/9500 = exactly 5% of the original notional, creator = the 90%
+///         remainder. O(1), no loops. **(rev8) The holder/epoch/reward machinery + the token `sync`
+///         hook are REMOVED IN FULL** — the 5% liquidity leg never reaches the vault (carved + auto-
+///         compounded at the collector, §4).
+///         Invariants: INV-1/2/3/13/27/31/32/34. Retired (holder/epoch/reward): INV-23/24/25/26/28/29.
+///         RETAINED (not holder-specific): INV-27 (solvency), INV-30 (register-before-mint).
 contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall {
     using SafeERC20 for IERC20;
     using BalanceDeltaLibrary for BalanceDelta;
@@ -42,12 +44,14 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
     int24 public immutable tickSpacing; // LT/WETH dynamic-fee pool tickSpacing
     address public immutable hydeoutTreasury;
     uint16 public immutable hydeBps; // == 500
-    uint16 public immutable holderBps; // == 500
-    uint32 public immutable DURATION; // epoch length (default 7 days)
+    /// @notice the collector-forwarded remainder after the 5% in-kind carve (== BPS_DENOM − liqBps).
+    ///         Split denominator so `hydeBps/NET_BPS` of the forwarded 95% == exactly 5% of the
+    ///         original notional (INV-C7). The factory cross-checks `NET_BPS + collector.liqBps() ==
+    ///         BPS_DENOM` at deploy (INV-C7b), so silent config-drift can't break 90/5/5.
+    uint16 public immutable NET_BPS; // == 9500
     uint16 public immutable MAX_SLIPPAGE_BPS; // default 300
     uint32 public immutable TWAP_WINDOW; // default 1800s
 
-    uint256 private constant PRECISION = 1e30;
     uint16 private constant BPS_DENOM = 10_000;
     uint24 private constant DYNAMIC_FEE_FLAG = 0x800000; // LPFeeLibrary.DYNAMIC_FEE_FLAG
 
@@ -64,31 +68,12 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
     mapping(address => bool) public registered;
     mapping(address => address) public creator;
 
-    /// @notice un-settled raw V3 fees, keyed token→asset (asset ∈ {launch token (LT), WETH}).
+    /// @notice un-settled raw V4 fees, keyed token→asset (asset ∈ {launch token (LT), WETH}).
     mapping(address => mapping(address => uint256)) public rawFees;
 
     /// @notice WETH owed to the creator / Hyde, claimable any time (pull-based).
     mapping(address => uint256) public creatorClaimable;
     mapping(address => uint256) public hydeClaimable;
-
-    /// @notice the current holder epoch (epochFinish = epochStart + DURATION).
-    mapping(address => uint256) public epochAmount;
-    mapping(address => uint256) public epochStart;
-    mapping(address => uint256) public epochFinish;
-    mapping(address => uint256) public epochVested; // cumulative WETH vested from this epoch (rev6 pt.1)
-    /// @notice WETH queued for the NEXT epoch (active-epoch settles + zero-supply re-queue + index dust).
-    mapping(address => uint256) public nextEpochAmount;
-
-    /// @notice holder claim-index checkpoint.
-    mapping(address => uint256) public lastUpdateTime;
-    mapping(address => uint256) public rewardPerTokenStored;
-    mapping(address => uint256) public totalEligibleSupply;
-    mapping(address => mapping(address => uint256)) public userRewardPerTokenPaid;
-    mapping(address => mapping(address => uint256)) public rewards;
-
-    /// @notice DIRECT holder reserve (rev6 pt.2): holder WETH liability = holderFunded − holderClaimed.
-    mapping(address => uint256) public holderFunded;
-    mapping(address => uint256) public holderClaimed;
 
     /// @notice the sole explicitly-tracked custody ledger, keyed by asset (global across tokens).
     mapping(address => uint256) public accountedBalance;
@@ -102,11 +87,8 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         uint256 amountIn,
         uint256 wethAmt,
         uint256 creatorCut,
-        uint256 hydeCut,
-        uint256 holderCut
+        uint256 hydeCut
     );
-    event EpochRolled(address indexed token, uint256 amount, uint256 start, uint256 finish);
-    event HolderClaimed(address indexed token, address indexed holder, uint256 amount);
     event CreatorClaimed(address indexed token, address indexed creator, uint256 amount);
     event HydeClaimed(address indexed token, uint256 amount);
 
@@ -119,8 +101,7 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         int24 _tickSpacing,
         address _hydeoutTreasury,
         uint16 _hydeBps,
-        uint16 _holderBps,
-        uint32 _duration,
+        uint16 _netBps,
         uint16 _maxSlippageBps,
         uint32 _twapWindow
     ) {
@@ -130,9 +111,10 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         require(address(hook) != address(0), "ZERO_HOOK");
         require(_tickSpacing > 0, "ZERO_TICK_SPACING");
         require(_hydeoutTreasury != address(0), "ZERO_TREASURY");
-        require(_hydeBps == 500 && _holderBps == 500, "BPS"); // hard-capped, immutable (INV-2)
-        require(_hydeBps + _holderBps < BPS_DENOM, "BPS_SUM"); // creator remainder stays majority
-        require(_duration != 0, "ZERO_DURATION");
+        require(_hydeBps == 500, "HYDE_BPS"); // hard-capped, immutable (INV-2)
+        // NET_BPS is the collector-forwarded remainder; sanity bounds here, EXACT cross-check
+        // (`NET_BPS + collector.liqBps() == BPS_DENOM`) is enforced in the factory constructor (INV-C7b).
+        require(_netBps > _hydeBps && _netBps < BPS_DENOM, "NET_BPS");
         require(_maxSlippageBps < BPS_DENOM, "SLIPPAGE"); // floor can't be zeroed (INV-18)
         require(_twapWindow != 0, "ZERO_TWAP");
 
@@ -143,8 +125,7 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         tickSpacing = _tickSpacing;
         hydeoutTreasury = _hydeoutTreasury;
         hydeBps = _hydeBps;
-        holderBps = _holderBps;
-        DURATION = _duration;
+        NET_BPS = _netBps;
         MAX_SLIPPAGE_BPS = _maxSlippageBps;
         TWAP_WINDOW = _twapWindow;
         _deployer = msg.sender;
@@ -194,37 +175,9 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         emit RawNoted(token, asset, received);
     }
 
-    /* ─────────────────────────── token-driven sync ─────────────────────────── */
-    /// @inheritdoc IHydeVault
-    /// @dev `onlyToken` (registered caller). Pure arithmetic, no external calls, non-reverting on the
-    ///      normal path (INV-23). Crystallizes both accounts at the pre-change index/balances, then
-    ///      applies the eligible-supply delta.
-    function sync(
-        address from,
-        address to,
-        uint256 balFrom,
-        uint256 balTo,
-        uint256 amount,
-        bool fromExcl,
-        bool toExcl
-    ) external {
-        address token = msg.sender;
-        require(registered[token], "NOT_REGISTERED"); // anti-invariant: only for a rogue caller
-
-        // First call advances the global index; the second sees lastUpdateTime==now → advances 0
-        // (no double vest), and each crystallizes its own account at the shared index.
-        _updateReward(token, from, balFrom, fromExcl);
-        _updateReward(token, to, balTo, toExcl);
-
-        // Eligible supply = Σ non-excluded balances. `from`'s whole balance is eligible iff !fromExcl,
-        // so it can never underflow (totalEligibleSupply ≥ balFrom ≥ amount when !fromExcl).
-        if (!fromExcl && from != address(0)) totalEligibleSupply[token] -= amount;
-        if (!toExcl && to != address(0)) totalEligibleSupply[token] += amount;
-    }
-
     /* ─────────────────────────── settle (the ONLY swap) ────────────────────── */
-    /// @notice Permissionless. Converts a raw fee leg to WETH and splits it 90/5/5. TWAP-floor +
-    ///         `ORACLE_NOT_READY` guarded; `minOut = max(TWAP-floor, callerMinOut)` (tighten-only).
+    /// @notice Permissionless. Converts a raw fee leg to WETH and splits it creator/Hyde via NET_BPS.
+    ///         TWAP-floor + `ORACLE_NOT_READY` guarded; `minOut = max(TWAP-floor, callerMinOut)`.
     /// @param asset the raw leg to settle: WETH (no swap) or the launch token itself (LT→WETH swap).
     function settle(address token, address asset, uint256 amountIn, uint256 callerMinOut, uint256 deadline)
         external
@@ -236,13 +189,10 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         require(asset == address(SETTLEMENT_TOKEN) || asset == token, "BAD_ASSET"); // {WETH, LT}
         require(block.timestamp <= deadline, "DEADLINE");
 
-        _updateReward(token, address(0), 0, false); // advance index before mutating
-
         uint256 wethAmt;
         if (asset == address(SETTLEMENT_TOKEN)) {
-            // WETH leg — PURE reclassification (rev6 pt.2): move existing WETH from the rawFees
-            // component of the derived liability into the buckets; total accountedBalance[WETH]
-            // and liability[WETH] UNCHANGED.
+            // WETH leg — PURE reclassification: move existing WETH from the rawFees component of the
+            // derived liability into the buckets; total accountedBalance[WETH] UNCHANGED (INV-27).
             rawFees[token][asset] -= amountIn;
             wethAmt = amountIn;
         } else {
@@ -266,17 +216,16 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
             accountedBalance[address(SETTLEMENT_TOKEN)] += wethAmt; // new WETH entered the vault
         }
 
-        // Split wethAmt 90/5/5 — creator = remainder (exact 5% legs, all rounding to creator ≥ 90%).
-        uint256 hydeCut = Math.mulDiv(wethAmt, hydeBps, BPS_DENOM);
-        uint256 holderCut = Math.mulDiv(wethAmt, holderBps, BPS_DENOM);
-        uint256 creatorCut = wethAmt - hydeCut - holderCut;
+        // (rev8) Split creator/Hyde ONLY (no holder leg). `wethAmt` is already the post-carve 95%
+        // remainder, so `hydeBps/NET_BPS` = 500/9500 makes Hyde exactly 5% of the original notional and
+        // creator the 90% remainder. Rounding favors the creator (creatorCut = wethAmt − hydeCut, exact).
+        uint256 hydeCut = Math.mulDiv(wethAmt, hydeBps, NET_BPS);
+        uint256 creatorCut = wethAmt - hydeCut;
 
         creatorClaimable[token] += creatorCut;
         hydeClaimable[token] += hydeCut;
-        holderFunded[token] += holderCut; // ONLY here — keeps (holderFunded − holderClaimed) exact
-        _queueReward(token, holderCut);
 
-        emit Settled(token, asset, amountIn, wethAmt, creatorCut, hydeCut, holderCut);
+        emit Settled(token, asset, amountIn, wethAmt, creatorCut, hydeCut);
     }
 
     /// @notice PoolManager unlock callback — runs the LT→WETH swap for `settle` and settles every
@@ -339,107 +288,7 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         return _poolKey(token).toId();
     }
 
-    /* ─────────────────────────── epoch machinery ───────────────────────────── */
-    /// @dev CHECKPOINT ONLY (no roll): vest the current epoch against a CUMULATIVE target so per-update
-    ///      flooring can't accumulate a shortfall (rev6 pt.1); carry the global index-allocation
-    ///      remainder / the zero-supply vest into nextEpochAmount (pt.3 / INV-26). Separated from the
-    ///      roll so `roll()` can checkpoint-then-decide in the exact order kami 21300 requires.
-    function _checkpoint(address token) internal {
-        uint256 finish = epochFinish[token];
-        uint256 t1 = block.timestamp < finish ? block.timestamp : finish;
-        uint256 start = epochStart[token];
-
-        if (t1 > start) {
-            uint256 vestedTarget = Math.mulDiv(epochAmount[token], t1 - start, DURATION); // cumulative
-            uint256 newlyVested = vestedTarget - epochVested[token];
-            epochVested[token] = vestedTarget;
-
-            if (newlyVested > 0) {
-                uint256 supply = totalEligibleSupply[token];
-                if (supply > 0) {
-                    uint256 indexDelta = Math.mulDiv(newlyVested, PRECISION, supply);
-                    rewardPerTokenStored[token] += indexDelta;
-                    uint256 allocated = Math.mulDiv(indexDelta, supply, PRECISION);
-                    if (newlyVested > allocated) nextEpochAmount[token] += (newlyVested - allocated); // dust carry
-                } else {
-                    nextEpochAmount[token] += newlyVested; // zero-supply vest re-queued, never lost
-                }
-            }
-            lastUpdateTime[token] = t1;
-        }
-    }
-
-    /// @dev Full update: checkpoint → roll (if the current epoch ended + a queue exists) → crystallize
-    ///      `acct`'s rewards at the resulting index. Called before every balance change + claim/settle.
-    function _updateReward(address token, address acct, uint256 bal, bool excl) internal {
-        _checkpoint(token);
-        _maybeRoll(token);
-
-        if (acct != address(0)) {
-            if (!excl) {
-                rewards[token][acct] +=
-                    Math.mulDiv(bal, rewardPerTokenStored[token] - userRewardPerTokenPaid[token][acct], PRECISION);
-            }
-            userRewardPerTokenPaid[token][acct] = rewardPerTokenStored[token];
-        }
-    }
-
-    /// @dev Rolls a fresh epoch ONLY after the current one ends (never resets an active clock).
-    function _maybeRoll(address token) internal {
-        if (block.timestamp >= epochFinish[token] && nextEpochAmount[token] > 0) {
-            uint256 amt = nextEpochAmount[token];
-            nextEpochAmount[token] = 0;
-            epochAmount[token] = amt;
-            epochStart[token] = block.timestamp;
-            uint256 finish = block.timestamp + DURATION;
-            epochFinish[token] = finish;
-            epochVested[token] = 0;
-            lastUpdateTime[token] = block.timestamp;
-            emit EpochRolled(token, amt, block.timestamp, finish);
-        }
-    }
-
-    /// @dev From settle: an active-epoch settle just accumulates nextEpochAmount (never moves
-    ///      epochFinish); the FIRST settle (no active epoch) rolls immediately and starts epoch 1.
-    function _queueReward(address token, uint256 amt) internal {
-        nextEpochAmount[token] += amt;
-        _maybeRoll(token);
-    }
-
-    /// @notice Permissionless. Start the next epoch once the current ends. Order (kami 21300): (1)
-    ///         checkpoint — vest the ended epoch + re-queue any zero-supply vest into nextEpochAmount,
-    ///         so a fully-elapsed zero-supply epoch's funds are visible to this same call (no unrelated
-    ///         poke needed); (2) require the current epoch ended (no active-epoch reset); (3) require
-    ///         the resulting queue is non-empty (no empty-epoch spin); (4) open the next fixed epoch.
-    function roll(address token) external {
-        _checkpoint(token); // 1
-        require(block.timestamp >= epochFinish[token], "ACTIVE_EPOCH"); // 2
-        require(nextEpochAmount[token] > 0, "EMPTY_QUEUE"); // 3
-        _maybeRoll(token); // 4
-    }
-
     /* ─────────────────────────── claims (pull) ─────────────────────────────── */
-    /// @notice Holder vested WETH. Third party may trigger; funds go to `holder`. CEI, O(1).
-    function claim(address token, address holder) external nonReentrant {
-        _claim(token, holder);
-    }
-
-    function claim(address token) external nonReentrant {
-        _claim(token, msg.sender);
-    }
-
-    function _claim(address token, address holder) internal {
-        require(registered[token], "UNKNOWN");
-        _updateReward(token, holder, IHydeToken(token).balanceOf(holder), IHydeToken(token).isRewardExcluded(holder));
-        uint256 owed = rewards[token][holder];
-        require(owed > 0, "NOTHING");
-        rewards[token][holder] = 0;
-        holderClaimed[token] += owed; // keeps (holderFunded − holderClaimed) exact (INV-27)
-        accountedBalance[address(SETTLEMENT_TOKEN)] -= owed;
-        SETTLEMENT_TOKEN.safeTransfer(holder, owed);
-        emit HolderClaimed(token, holder, owed);
-    }
-
     /// @notice WETH to the immutable creator. Anyone triggers; funds go to the fixed recipient.
     function claimCreator(address token) external nonReentrant {
         uint256 owed = creatorClaimable[token];
@@ -461,9 +310,8 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
     }
 
     /* ─────────────────────────── views ─────────────────────────────────────── */
-    /// @notice Derived per-token WETH liability (INV-25/27): rawFees + creator + Hyde + holder reserve.
+    /// @notice Derived per-token WETH liability (INV-25/27): rawFees + creator + Hyde (rev8: no holder).
     function wethLiability(address token) external view returns (uint256) {
-        return rawFees[token][address(SETTLEMENT_TOKEN)] + creatorClaimable[token] + hydeClaimable[token]
-            + (holderFunded[token] - holderClaimed[token]);
+        return rawFees[token][address(SETTLEMENT_TOKEN)] + creatorClaimable[token] + hydeClaimable[token];
     }
 }

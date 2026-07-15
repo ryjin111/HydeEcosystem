@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IHydeVault} from "./interfaces/IHydeVault.sol";
-
 /// @title HydeERC20 — non-seizable fair-launch token (implementation, EIP-1167 cloned per launch)
-/// @notice CONTRACT_SPEC_L3.md §2 (rev6). No owner. No mint-after-init. **No burn — supply is
+/// @notice CONTRACT_SPEC_L3.md §2 (rev8). No owner. No mint-after-init. **No burn — supply is
 ///         constant 1e9 forever (INV-5).** No blacklist. No pause. Time-boxed max-wallet anti-snipe
 ///         (recipients only, never blocks selling; expiry immutable). EIP-2612 permit.
-///         Every balance change (mint + transfer) drives the vault's reward index via `sync`
-///         BEFORE balances move — pure arithmetic, non-reverting on the normal path (INV-23).
-///         All economic fields set ONCE in `initialize` under initializer + onlyFactory — no setters.
+///         (rev8) The vault reward `sync` hook is REMOVED — max-wallet is fully self-contained in
+///         `_update` and never depended on it. All economic fields set ONCE in `initialize` under
+///         initializer + onlyFactory — no setters.
 contract HydeERC20 {
     /* ─────────────────────────── ERC-20 core state ─────────────────────────── */
     string public name;
@@ -33,9 +31,9 @@ contract HydeERC20 {
     ///         No setExempt — no owner-addable whitelist.
     mapping(address => bool) public exempt;
 
-    /// @notice the shared HydeFeeVault; reward-index sink driven by every balance change (§4b).
-    ///         Set once at init. (rev6: replaces the old `collector` max-wallet bypass — the creator
-    ///         is paid in WETH now, so no from==collector bypass exists; §2 / INV-17.)
+    /// @notice the shared HydeFeeVault address (§4b); part of the exempt infra set. Set once at init.
+    ///         (rev8: the reward-index `sync` hook is removed — this is now just a recorded address.
+    ///         The creator is paid in WETH, so no from==collector max-wallet bypass exists; INV-17.)
     address public vault;
 
     /* ─────────────────────────── init guard ────────────────────────────────── */
@@ -60,7 +58,7 @@ contract HydeERC20 {
         string name;
         string symbol;
         address poolRecipient; // receives 100% of supply (the V3 seeding flow / factory transient)
-        address vault; // HydeFeeVault — the reward-index sink for `sync`
+        address vault; // HydeFeeVault address (recorded; exempt infra member)
         uint256 maxWalletBps; // maxWallet = TOTAL_SUPPLY * maxWalletBps / 1e4
         uint64 maxWalletWindowSecs; // window length; expiry = now + this
         address[] exemptAddrs; // pool, positionManager, factory, collector, vault, swapRouter, 0
@@ -103,11 +101,6 @@ contract HydeERC20 {
         _mint(p.poolRecipient, TOTAL_SUPPLY);
     }
 
-    /// @notice reward-exclusion / infra flag (public view; read by the vault's callers and the app).
-    function isRewardExcluded(address a) external view returns (bool) {
-        return exempt[a];
-    }
-
     /* ─────────────────────────── ERC-20 logic ──────────────────────────────── */
     function approve(address spender, uint256 amount) external returns (bool) {
         allowance[msg.sender][spender] = amount;
@@ -130,20 +123,16 @@ contract HydeERC20 {
         return true;
     }
 
-    /// @dev The single transfer path (§2). Order: (1) `to==0` reverts (supply constant); (2) drive
-    ///      the vault index via `sync` on PRE-change balances; (3) time-boxed max-wallet on the
-    ///      RECIPIENT only — no from==collector bypass (rev6: creator is paid WETH, and the
-    ///      collector's only LT outflow is to the `to`-exempt vault, which skips the cap without a
-    ///      bypass, INV-17); (4) move balances + emit.
+    /// @dev The single transfer path (§2 · rev8). Order: (1) `to==0` reverts (supply constant);
+    ///      (2) time-boxed max-wallet on the RECIPIENT only — no from==collector bypass (creator is
+    ///      paid WETH, and the collector's only LT outflow is to the `to`-exempt vault, which skips
+    ///      the cap without a bypass, INV-17); (3) move balances + emit. (rev8) The vault `sync`
+    ///      that preceded max-wallet is REMOVED — enforcement here is byte-for-byte unchanged.
     function _update(address from, address to, uint256 amount) internal {
         require(to != address(0), "ZERO_TO"); // supply constant; no burn-to-zero
 
-        // (2) reward index — BEFORE balances change; pure arithmetic in the vault, non-reverting on
-        //     the normal path (INV-23). Reverts only if this token is not registered (anti-invariant).
-        IHydeVault(vault).sync(from, to, balanceOf[from], balanceOf[to], amount, exempt[from], exempt[to]);
-
-        // (3) max-wallet: caps recipient accumulation only, only during the window, never blocks
-        //     selling (`from` unrestricted), never blocks fee handling (vault is `to`-exempt).
+        // max-wallet: caps recipient accumulation only, only during the window, never blocks selling
+        // (`from` unrestricted), never blocks fee handling (vault is `to`-exempt). Self-contained.
         if (block.timestamp < maxWalletExpiry && !exempt[to]) {
             require(balanceOf[to] + amount <= maxWallet, "MAX_WALLET");
         }
@@ -157,10 +146,9 @@ contract HydeERC20 {
         emit Transfer(from, to, amount);
     }
 
-    /// @dev Init-only mint (§2). Drives the vault index (mint-`sync`: from=0/to=pool, both exempt →
-    ///      no eligible-supply change) then adds supply. There is NO other supply mutation ever.
+    /// @dev Init-only mint (§2 · rev8). Adds the full supply to the exempt seeder. No vault `sync`
+    ///      (the reward system is gone). There is NO other supply mutation ever (INV-5).
     function _mint(address to, uint256 amount) internal {
-        IHydeVault(vault).sync(address(0), to, 0, balanceOf[to], amount, true, exempt[to]);
         totalSupply += amount;
         unchecked {
             balanceOf[to] += amount;

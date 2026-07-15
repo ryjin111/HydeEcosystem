@@ -13,6 +13,7 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
+import {StateView} from "v4-periphery/src/lens/StateView.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 
 import {HydeERC20} from "../../src/HydeERC20.sol";
@@ -38,10 +39,12 @@ abstract contract HydeStackSetup is PosmTestSetup {
     uint32 internal constant ANTI_SNIPE_WINDOW = 300;
     uint16 internal constant CARDINALITY = 64;
     uint16 internal constant HYDE_BPS = 500;
-    uint16 internal constant HOLDER_BPS = 500;
-    uint32 internal constant DURATION = 7 days;
+    uint16 internal constant LIQ_BPS = 500; // (rev8) collector in-kind liquidity carve
+    uint16 internal constant NET_BPS = 9500; // (rev8) vault-forwarded remainder (BPS_DENOM − LIQ_BPS)
     uint16 internal constant MAX_SLIPPAGE = 300;
     uint32 internal constant TWAP_WINDOW = 120; // short for test oracle warmup (prod = 1800)
+    uint128 internal constant MIN_ADD_LIQUIDITY = 1e6; // (rev8) min liquidityΔ per compound add
+    int24 internal constant MAX_ADD_DEV_TICKS = 200; // (rev8) TWAP add-gate band
     uint256 internal constant MAX_SEED_DUST = 1e18; // 1 whole token out of 1e9
     uint256 internal constant GRAD_THRESHOLD = 0; // label-only; graduate is stubbed
     uint16 internal constant MAX_WALLET_BPS = 100; // 1%
@@ -68,6 +71,7 @@ abstract contract HydeStackSetup is PosmTestSetup {
     HydeFeeCollector internal collector;
     HydeHook internal hydeHook;
     HydeTokenFactory internal factory;
+    StateView internal stateView;
 
     function setUp() public virtual {
         // A large timestamp so the oracle's `now >= TWAP_WINDOW` guard holds from block one.
@@ -93,6 +97,10 @@ abstract contract HydeStackSetup is PosmTestSetup {
             weth = MockERC20(forcedWeth);
         }
 
+        // V4 lens for spot slot0/tick reads — deploy BEFORE the nonce capture so the vault/collector
+        // CREATE-address prediction below is unaffected.
+        stateView = new StateView(manager);
+
         address deployer = address(this);
         uint256 nonce = vm.getNonce(deployer);
         address vaultAddr = vm.computeCreateAddress(deployer, nonce); // vault deploys next (CREATE)
@@ -116,15 +124,28 @@ abstract contract HydeStackSetup is PosmTestSetup {
             TICK_SPACING,
             HYDE_TREASURY,
             HYDE_BPS,
-            HOLDER_BPS,
-            DURATION,
+            NET_BPS,
             MAX_SLIPPAGE,
             TWAP_WINDOW
         );
         require(address(vault) == vaultAddr, "VAULT_ADDR");
 
         // collector (nonce+1) → collectorAddr
-        collector = new HydeFeeCollector(lpm, manager, IHydeVault(address(vault)), address(weth));
+        collector = new HydeFeeCollector(
+            lpm,
+            manager,
+            IHydeVault(address(vault)),
+            address(weth),
+            IHydeHook(hookAddr),
+            permit2,
+            stateView,
+            TICK_SPACING,
+            LIQ_BPS,
+            NET_BPS,
+            MIN_ADD_LIQUIDITY,
+            MAX_ADD_DEV_TICKS,
+            TWAP_WINDOW
+        );
         require(address(collector) == collectorAddr, "COLLECTOR_ADDR");
 
         // hook (CREATE2 mined) → hookAddr

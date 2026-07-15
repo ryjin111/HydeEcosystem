@@ -27,8 +27,24 @@ import {HydeERC20} from "./HydeERC20.sol";
 
 /// @notice Cross-contract slice of `HydeFeeCollector.register` the factory calls once per launch.
 interface IHydeCollectorRegister {
-    function register(address token, address creator, uint256 tokenId, address numeraire, uint256 graduationThreshold)
-        external;
+    function register(
+        address token,
+        address creator,
+        uint256 tokenId,
+        address numeraire,
+        uint256 graduationThreshold,
+        int24 tickLower,
+        int24 tickUpper
+    ) external;
+}
+
+/// @notice Minimal split-config views for the deploy-time 90/5/5 consistency assert (INV-C7b).
+interface IHydeVaultBps {
+    function NET_BPS() external view returns (uint16);
+}
+
+interface IHydeCollectorBps {
+    function liqBps() external view returns (uint16);
 }
 
 /// @title HydeTokenFactory — permissionless fair-launch orchestrator (CONTRACT_SPEC_L3.md §3 · V4)
@@ -50,6 +66,9 @@ contract HydeTokenFactory is ReentrancyGuard {
 
     /// @dev fair launch supply — MUST equal `HydeERC20.TOTAL_SUPPLY` (constructor drift-guarded).
     uint256 public constant SUPPLY = 1_000_000_000e18;
+
+    /// @dev bps denominator for the deploy-time 90/5/5 split-consistency assert (INV-C7b).
+    uint16 private constant BPS_DENOM_F = 10_000;
 
     /* ─────────────────────────── immutables ────────────────────────────────── */
     address public immutable IMPL; // HydeERC20 implementation, cloned per launch
@@ -159,6 +178,12 @@ contract HydeTokenFactory is ReentrancyGuard {
         require(p.owner != address(0), "ZERO_OWNER");
         // Drift-guard: the seed supply MUST match the token implementation's constant (INV-5).
         require(SUPPLY == HydeERC20(p.impl).TOTAL_SUPPLY(), "SUPPLY_DRIFT");
+        // (rev8) Cross-contract 90/5/5 consistency (INV-C7b): the vault's forwarded remainder (NET_BPS)
+        // and the collector's in-kind carve (liqBps) MUST sum to 100% — else the split silently drifts.
+        // Both are independent immutables set before the factory in the deploy cycle; abort on mismatch.
+        require(
+            IHydeVaultBps(p.vault).NET_BPS() + IHydeCollectorBps(p.collector).liqBps() == BPS_DENOM_F, "BPS_SPLIT"
+        );
 
         IMPL = p.impl;
         COLLECTOR = p.collector;
@@ -283,7 +308,9 @@ contract HydeTokenFactory is ReentrancyGuard {
         tokenId = _seed(token, key, leg, ltIsCurrency0);
 
         // 8. record the launch's immutable custody facts in the collector.
-        IHydeCollectorRegister(COLLECTOR).register(token, creator, tokenId, WETH, graduationThreshold);
+        IHydeCollectorRegister(COLLECTOR).register(
+            token, creator, tokenId, WETH, graduationThreshold, leg.tickLower, leg.tickUpper
+        );
 
         // 9. done.
         emit LaunchCreated(token, creator, key.toId(), tokenId, lp.presetId);
