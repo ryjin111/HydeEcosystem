@@ -1,8 +1,9 @@
-# Hydeout Own-Stack — Level-3 Contract Spec & Threat Model (rev8 · Uniswap V4 · in-kind auto-compound)
+# Hydeout Own-Stack — Level-3 Contract Spec & Threat Model (rev8.1 · Uniswap V4 · in-kind auto-compound)
 
-**Status:** BUILD SPEC — draft pending Reviewer audit (casper, acting while kami is out; clearance 21453). **Not**
-Builder/code clearance. kuro builds the compound leg only after this rev8 passes Reviewer audit.
-**Author:** gojo (senior protocol) · **Reviewer:** casper (acting) · **Builder:** kuro · **Date:** 2026-07-15 (rev8: holder-reward removal → 5% in-kind auto-compound)
+**Status:** BUILD SPEC — **rev8 DESIGN PASS (casper audit 21489); rev8.1 folds the 2 required edits.** Builder cleared
+to build the compound leg + collect-carve (casper 21489); **code-level .sol audit still gates push** (spec-pass ≠
+push clearance).
+**Author:** gojo (senior protocol) · **Reviewer:** casper (acting) · **Builder:** kuro · **Date:** 2026-07-15 (rev8.1: + casper audit edits 1/2 on rev8)
 
 > **rev8 change (clint 21422/21428/21440 · casper ruling 21453 · Arch A):** the **holder-reward (5%) leg is REMOVED
 > in full** and replaced by a **5% in-kind auto-compound into the ONE permanently-locked position** (Option 3). Fee
@@ -20,7 +21,8 @@ Builder/code clearance. kuro builds the compound leg only after this rev8 passes
 > `userRewardPerTokenPaid`, `rewards`, `holderFunded`/`holderClaimed`, `_checkpoint`/`_updateReward`/`_maybeRoll`/
 > `_queueReward`/`roll`, the holder `claim`), **and the token→vault `sync` hook entirely** (it existed only for
 > reward-eligibility; **max-wallet enforcement STAYS — it lives in the token's `_update`, independent of `sync`**).
-> INV-23..30 (holder/epoch set) retired → replaced by the compound invariant set INV-C1..C8 (§8). Everything else
+> **INV-23/24/25/26/28/29 retired** (holder/epoch/reward set); **INV-27 (solvency) & INV-30 (register-before-mint) are
+> RETAINED/re-homed** (they are NOT holder-specific — see §8) → the compound invariant set INV-C1..C8 (§8) is added. Everything else
 > (V4 topology, seed, hook oracle/anti-snipe, settle swap mechanics, custody-lock, INV-40..52) is **unchanged** from
 > rev7.3 below.
 
@@ -245,8 +247,9 @@ immutable/dependency (constraint 3)** — the direct settlement path settles ERC
 **REMOVED IN FULL (rev8 — holder-reward machinery):** `holderFunded`/`holderClaimed`; the **non-extendable fixed epoch**
 model (`epochAmount`/`epochStart`/`epochFinish`/`epochVested`, `nextEpochAmount`, `_checkpoint`/`_updateReward`/
 `_maybeRoll`/`_queueReward`, `roll`); `rewardPerTokenStored`/`userRewardPerTokenPaid`/`rewards`/`totalEligibleSupply`/
-`lastUpdateTime`; the holder `claim(token[,holder])`; and **`sync`** (the token no longer calls it — §2). INV-23..30
-retired (holder/epoch). No holder loops ever existed; now no holder state does either.
+`lastUpdateTime`; the holder `claim(token[,holder])`; and **`sync`** (the token no longer calls it — §2).
+**INV-23/24/25/26/28/29 retired (holder/epoch/reward); INV-27 (solvency) & INV-30 (register-before-mint) RETAINED** —
+they are not holder-specific. No holder loops ever existed; now no holder state does either.
 > **Simplification note:** removing the epoch system deletes the entire vesting-index surface (the `roll()` ordering
 > edge from kami 21300, JIT resistance, zero-supply requeue, dust-carry) — none of it applies once the 5% no longer
 > routes to holders. The vault's only remaining job is: custody raw fees → settle the creator/Hyde legs to WETH → pay
@@ -452,6 +455,10 @@ presets) swept to the exempt collector — the bound is enforced/measured, never
 - **INV-C7 90/5/5 in-kind conservation:** collector liqBps(5, in-kind) + vault Hyde(5, via `500/9500`) + creator(90,
   remainder) = 100% of every collected fee; `collect` splits each harvested asset exactly into (queued liq | noted to
   vault) with no remainder.
+- **INV-C7b cross-contract split consistency (casper edit 1):** `collector.liqBps` and `vault.NET_BPS` are *independent*
+  immutables set in separate contracts deployed at different points of the CREATE2 cycle — nothing runtime-reconciles
+  them, so a drift silently breaks INV-C7. **The deploy cycle MUST assert `vault.NET_BPS() + collector.liqBps() ==
+  BPS_DENOM` (§9) and abort on mismatch.** No launch is possible unless the two contracts' split constants sum to 100%.
 - **INV-C8 add-only / position-monotonic:** the position's liquidity is non-decreasing under every protocol path — no
   decrease/transfer/burn selector exists on the collector; `compound` only ever `INCREASE_LIQUIDITY`.
 
@@ -460,7 +467,10 @@ presets) swept to the exempt collector — the bound is enforced/measured, never
   factory + vault), **mine the `HydeHook` salt** so its address bits == the §4c permission flags then deploy it
   (needs factory/vault/PoolManager — resolve via the same predicted-address pattern or a one-shot `initFactory` on
   hook+vault+collector, deployer-only, then locked); deploy factory to the predicted address (with collector/vault/hook).
-  Abort on any address mismatch (no init-seizure).
+  Abort on any address mismatch (no init-seizure). **(rev8.1 edit 1) After both vault and collector exist, assert
+  `vault.NET_BPS() + collector.liqBps() == BPS_DENOM` and ABORT deployment on mismatch (INV-C7b)** — the two split
+  constants live in separate contracts and are never runtime-reconciled, so this deploy gate is the only thing that
+  prevents a silent 90/5/5 break.
 - **Manifest (V4 refresh of `DEPLOY_MANIFEST_4663.md`):** PoolManager/PositionManager/UniversalRouter/Permit2/StateView
   + **official V4Quoter `0x8dc178ef…`** (+ hashes); the **mined HydeHook address + codehash + flag bits**; WETH/USDG +
   decimals; anti-snipe schedule; `graduationThreshold`; `TWAP_WINDOW`/ring cardinality/`MAX_SLIPPAGE_BPS`; per-pool
@@ -503,6 +513,12 @@ named):**
 - **(rev8) `compound` residual conservation + custody (INV-C2/C6):** measured `used0/used1` decrement pending exactly;
   remainder stays queued and re-adds on a later `compound`; **fuzz for any caller/args that reduce the position
   liquidity or move `pendingLiq*` to a non-position destination ⇒ none exists** (selector-enumerate the no-exit surface).
+  **(build-note 4)** with inert seed dust (≤ `MAX_SEED_DUST`, INV-15) also sitting in the collector's LT balance, assert
+  a `compound` pulls ONLY `≤ pendingLiqLT` (the `amount0Max=pending` cap keeps the dust put — never a `balance==pending`
+  equality).
+- **(rev8.1 edit 1) Deploy split-consistency (INV-C7b):** a deploy with `vault.NET_BPS() + collector.liqBps() ≠
+  BPS_DENOM` (e.g. a mistyped `NET_BPS=9400`) **ABORTS**; the matched pair (`9500 + 500`) deploys; assert no `launch`
+  path exists on a mismatched pair.
 - **Oracle idle-pool + signed rounding (INV-51, blocker 2):** no swap for > window (`target ≥ lastObsTs`) ⇒ extrapolate
   `cumTarget` at `lastTick` (synthetic bracket), TWAP still readable; a **negative-tick remainder** rounds toward −∞
   (assert vs a reference `OracleLibrary` computation); `now < window` ⇒ `ORACLE_NOT_READY`/guarded.
@@ -530,9 +546,15 @@ rehearsed**.
   Hyde / 5 locked-liquidity**. Arch A (split at the collector): `collect` carves 5% in-kind, forwards 95% to the vault;
   vault splits creator/Hyde only via `NET_BPS=9500`; new collector `compound()` adds pending LT+WETH into its own
   custody-locked NFT (TWAP-gated, sort-aware, residual-conserving, add-only). Removed the entire epoch/vesting/reward-
-  index machinery AND the token→vault `sync` hook (max-wallet enforcement stays in the token). INV-23..30 retired →
-  INV-C1..C8 added. Settle swap, oracle, seed, custody-lock, INV-40..52 unchanged from rev7.3. `(B)` afterSwap variant
-  NOT taken (clint picked A). Builder handoff gated on casper's audit of this SHA.
+  index machinery AND the token→vault `sync` hook (max-wallet enforcement stays in the token). INV-23/24/25/26/28/29
+  retired; **INV-27 (solvency) & INV-30 (register-before-mint) RETAINED**; INV-C1..C8 added. Settle swap, oracle, seed,
+  custody-lock, INV-40..52 unchanged from rev7.3. `(B)` afterSwap variant NOT taken (clint picked A). Builder handoff
+  gated on casper's audit of this SHA.
+- **2026-07-15 rev8.1 (casper audit `38521e2` — DESIGN PASS + 2 edits):** (edit 1) added **INV-C7b cross-contract
+  split-consistency** — a deploy-time assert `vault.NET_BPS() + collector.liqBps() == BPS_DENOM` (§9) so the two
+  independent immutables can't silently drift and break 90/5/5 conservation, + matching test (§10). (edit 2) replaced
+  the imprecise "INV-23..30 retired" shorthand everywhere with the exact set — **27 & 30 are RETAINED**, only
+  23/24/25/26/28/29 retire. Build-notes 3/4/5 for kuro recorded (§4/§2). No re-architecture; logic unchanged from rev8.
 - **2026-07-14 rev7 (V4):** full re-architecture to Uniswap V4 per clint 21289 / kami 21290–21296. Own `HydeHook`
   (dynamic anti-snipe fee + swap-only WETH volume graduation + real-tick observation-ring oracle) feeding an unchanged
   `HydeFeeVault`; custody-only LP-lock; V4 `collect`/`settle`; factory pool init + one-shot hook auth. Folds kami 21296
