@@ -1,9 +1,9 @@
-# Hydeout Own-Stack — Level-3 Contract Spec & Threat Model (rev8.2 · Uniswap V4 · in-kind auto-compound)
+# Hydeout Own-Stack — Level-3 Contract Spec & Threat Model (rev8.3 · Uniswap V4 · in-kind auto-compound)
 
-**Status:** BUILD SPEC — **rev8 DESIGN PASS (casper 21489); rev8.1 folded edits 1/2; rev8.2 closes the Cork
-hook-callback-auth gap (casper 21516).** Builder cleared to build the compound leg + collect-carve; **code-level .sol
-audit still gates push** (spec-pass ≠ push clearance).
-**Author:** gojo (senior protocol) · **Reviewer:** casper (acting) · **Builder:** kuro · **Date:** 2026-07-15 (rev8.2: + `msg.sender==POOL_MANAGER` on all 4 hook callbacks — Cork $11M vector)
+**Status:** BUILD SPEC — **`.sol` CODE AUDIT PASS (casper 21525) on `4f7f07e`+`696edba`.** rev8.3 folds casper's 2
+post-audit findings (spec==code). **Push/deploy gates on:** (1) FINDING-1 hook-address-bits deploy-assert + test (kuro),
+(2) committing the cosmetic NatSpec nit, (3) gate-then-push `git log origin/main..HEAD`. Spec-pass + code-pass ≠ push.
+**Author:** gojo (senior protocol) · **Reviewer:** casper (acting) · **Builder:** kuro · **Date:** 2026-07-15 (rev8.3: + FINDING-1 hook-permission-bits deploy-assert · FINDING-2 global-schedule spec-sync · keeper ops-framing)
 
 > **rev8 change (clint 21422/21428/21440 · casper ruling 21453 · Arch A):** the **holder-reward (5%) leg is REMOVED
 > in full** and replaced by a **5% in-kind auto-compound into the ONE permanently-locked position** (Option 3). Fee
@@ -318,9 +318,15 @@ AFTER_SWAP` = `(1<<13)|(1<<12)|(1<<7)|(1<<6)`. **No** remove-liquidity / donate 
 > `require(sender == X)` below is `require(msg.sender == POOL_MANAGER)` FIRST, then the param check.** (The `consult`
 > view is read-only → no auth needed.)
 
-**Per-poolId state (blocker 2 — 3-stage one-shot init):** `pending[poolId]{configured, token, schedule, expectedKey}`
-(set by the factory) → `staging[poolId]{token, schedule}` (moved in `beforeInitialize`) → `active[poolId]{token,
-launchTime, schedule}` (in `afterInitialize`). `swapVolume[poolId]` (WETH, monotonic); a **running** `lastTick[poolId]`
+**Per-poolId state (blocker 2 — 3-stage one-shot init):** `pending[poolId]{configured, token, expectedKey}`
+(set by the factory) → `staging[poolId]{token}` (moved in `beforeInitialize`) → `active[poolId]{token, launchTime}`
+(in `afterInitialize`). `swapVolume[poolId]` (WETH, monotonic); a **running** `lastTick[poolId]`
+> **(FINDING-2 spec-sync, casper 21525 — spec==code):** the anti-snipe `schedule` (`startFee`/`baseFee`/`antiSnipeWindow`)
+> is a **GLOBAL hook immutable**, NOT per-pool state — every launch runs the identical uniform anti-snipe policy. The
+> **security-relevant per-pool value is `launchTime`** (stamped per-pool at `afterInitialize`), which is what makes the
+> decay clock correct per launch. So the schedule is read from the global immutables, not from `active[poolId]`. (Earlier
+> revs modeled `schedule` inside the per-pool records; the implementation correctly hoisted it to a global immutable —
+> uniform policy, smaller per-pool storage, same behavior. INV-42 unaffected.)
 + `lastObsTs[poolId]` + `lastCumulative[poolId]`; observation ring `obs[poolId][cardinality]{uint32 blockTimestamp,
 int56 tickCumulative}` + `ringIndex[poolId]` (`cardinality` = a **manifest floor ≥ enough slots to cover
 `TWAP_WINDOW` at the chain's block cadence** — 4663 ~1s blocks ⇒ ≥ ~2048 to safely span 1800s of one-slot-per-block).
@@ -496,10 +502,25 @@ presets) swept to the exempt collector — the bound is enforced/measured, never
   `vault.NET_BPS() + collector.liqBps() == BPS_DENOM` and ABORT deployment on mismatch (INV-C7b)** — the two split
   constants live in separate contracts and are never runtime-reconciled, so this deploy gate is the only thing that
   prevents a silent 90/5/5 break.
+- 🔴 **(rev8.3 FINDING-1, casper 21525 — deploy-critical, INV-EXT):** the hook's `beforeRemoveLiquidity`/
+  `afterRemoveLiquidity`/`beforeAddLiquidity`/`afterAddLiquidity`/`beforeDonate`/`afterDonate`/returns-delta functions are
+  `revert HookNotImplemented()` stubs — **safe ONLY because V4 calls a hook callback iff the matching permission BIT in
+  the hook ADDRESS is set.** A mis-mined address with (e.g.) the `BEFORE_REMOVE_LIQUIDITY` bit set makes **every external
+  LP removal revert → LPs TRAPPED = a honeypot-for-LPs (violates INV-EXT).** **The deploy MUST assert the mined hook
+  address decodes to EXACTLY the §4c permission set `{BEFORE_INITIALIZE, AFTER_INITIALIZE, BEFORE_SWAP, AFTER_SWAP}` and
+  NONE of `{*_ADD_LIQUIDITY, *_REMOVE_LIQUIDITY, *_DONATE, *_RETURNS_DELTA, BEFORE_SWAP_RETURNS_DELTA, ...}`, and ABORT
+  otherwise** (a matching Foundry test asserts the address→flags decode). This is the single most important deploy check
+  — record the mined address + exact flag bits + codehash in the manifest.
 - **Manifest (V4 refresh of `DEPLOY_MANIFEST_4663.md`):** PoolManager/PositionManager/UniversalRouter/Permit2/StateView
-  + **official V4Quoter `0x8dc178ef…`** (+ hashes); the **mined HydeHook address + codehash + flag bits**; WETH/USDG +
-  decimals; anti-snipe schedule; `graduationThreshold`; `TWAP_WINDOW`/ring cardinality/`MAX_SLIPPAGE_BPS`; per-pool
-  `feeProtocol` recorded + monitored; treasuries + owner multisig (clint). gojo/kami co-sign.
+  + **official V4Quoter `0x8dc178ef…`** (+ hashes); the **mined HydeHook address + codehash + EXACT flag bits (FINDING-1
+  decode asserted)**; WETH/USDG + decimals; anti-snipe schedule; `graduationThreshold`; `TWAP_WINDOW`/ring cardinality/
+  `MAX_SLIPPAGE_BPS`; per-pool `feeProtocol` recorded + monitored; treasuries + owner multisig (clint). gojo/kami co-sign.
+- **(rev8.3) Settle-keeper — OPS DEPENDENCY, honest framing (casper 21523):** a keeper that calls `settle` with a tight,
+  live-computed `callerMinOut` (`minOut = max(TWAP-floor, callerMinOut)`, tighten-only) minimizes fee-leg MEV. **The
+  contract is SAFE WITHOUT it** — the immutable `MAX_SLIPPAGE_BPS=3%` floor is the permissionless backstop and ANYONE can
+  poke `settle`; the keeper makes it OPTIMAL (near-zero slippage). **Keeper-down = degraded (up to 3% fee-leg slippage),
+  NOT broken.** This is explicitly **NOT** a hidden liveness or centralization assumption — `settle`/`compound`/`collect`
+  are all permissionless; document it as such so it can't read as a trust dependency.
 
 ## 10. Test / threat matrix (Foundry, fork of 4663 V4)
 Carry the preserved vault/token tests (solvency/`accountedBalance`/creator+Hyde claims/`noteRaw` donation-proof).
@@ -548,6 +569,11 @@ named):**
 - **(rev8.1 edit 1) Deploy split-consistency (INV-C7b):** a deploy with `vault.NET_BPS() + collector.liqBps() ≠
   BPS_DENOM` (e.g. a mistyped `NET_BPS=9400`) **ABORTS**; the matched pair (`9500 + 500`) deploys; assert no `launch`
   path exists on a mismatched pair.
+- **(rev8.3 FINDING-1) Hook-address permission-bits decode — deploy-critical (INV-EXT):** assert the deployed hook
+  address decodes to EXACTLY `{BEFORE_INITIALIZE, AFTER_INITIALIZE, BEFORE_SWAP, AFTER_SWAP}` and **zero** of the
+  add/remove/donate/returns-delta bits; a hook mined/deployed with any remove-liquidity bit set **traps external LP
+  removal** → the deploy assert must ABORT (prove: with the remove bit set, an external LP's `decreaseLiquidity` reverts
+  = the honeypot-for-LPs case INV-EXT forbids; with the correct 4-bit address it succeeds).
 - **Oracle idle-pool + signed rounding (INV-51, blocker 2):** no swap for > window (`target ≥ lastObsTs`) ⇒ extrapolate
   `cumTarget` at `lastTick` (synthetic bracket), TWAP still readable; a **negative-tick remainder** rounds toward −∞
   (assert vs a reference `OracleLibrary` computation); `now < window` ⇒ `ORACLE_NOT_READY`/guarded.
@@ -579,6 +605,14 @@ rehearsed**.
   retired; **INV-27 (solvency) & INV-30 (register-before-mint) RETAINED**; INV-C1..C8 added. Settle swap, oracle, seed,
   custody-lock, INV-40..52 unchanged from rev7.3. `(B)` afterSwap variant NOT taken (clint picked A). Builder handoff
   gated on casper's audit of this SHA.
+- **2026-07-15 rev8.3 (post `.sol`-audit spec-sync — casper 21525 findings):** the code audit PASSED; folding the 2
+  findings so spec==code. **FINDING-1 (deploy-critical):** §9 now mandates a deploy-time assertion that the mined hook
+  address decodes to EXACTLY `{beforeInitialize, afterInitialize, beforeSwap, afterSwap}` and NONE of the add/remove/
+  donate/returns-delta bits (else external LP removal is trapped = honeypot-for-LPs, INV-EXT) + a §10 decode test +
+  manifest record. **FINDING-2 (spec-sync):** §4c notes the anti-snipe `schedule` is a GLOBAL immutable (uniform policy),
+  not per-pool state; per-pool `launchTime` is the security-relevant value (INV-42 unaffected). **Keeper:** §9 documents
+  the settle-keeper as an OPS dependency with honest framing — SAFE without it (3% permissionless backstop), OPTIMAL with
+  it, keeper-down = degraded not broken, explicitly NOT a liveness/centralization assumption. No contract change.
 - **2026-07-15 rev8.2 (incident research → casper 21516 — Cork hook-callback-auth gap CLOSED):** the launchpad-incident
   research (gojo, sourced) surfaced the Cork Protocol $11M V4-hook hack (unauthenticated `beforeSwap`); chasing it against
   our own spec found the same gap — the four hook callbacks validated only the attacker-controlled `sender` PARAMETER,
