@@ -1,9 +1,9 @@
-# Hydeout Own-Stack — Level-3 Contract Spec & Threat Model (rev8.1 · Uniswap V4 · in-kind auto-compound)
+# Hydeout Own-Stack — Level-3 Contract Spec & Threat Model (rev8.2 · Uniswap V4 · in-kind auto-compound)
 
-**Status:** BUILD SPEC — **rev8 DESIGN PASS (casper audit 21489); rev8.1 folds the 2 required edits.** Builder cleared
-to build the compound leg + collect-carve (casper 21489); **code-level .sol audit still gates push** (spec-pass ≠
-push clearance).
-**Author:** gojo (senior protocol) · **Reviewer:** casper (acting) · **Builder:** kuro · **Date:** 2026-07-15 (rev8.1: + casper audit edits 1/2 on rev8)
+**Status:** BUILD SPEC — **rev8 DESIGN PASS (casper 21489); rev8.1 folded edits 1/2; rev8.2 closes the Cork
+hook-callback-auth gap (casper 21516).** Builder cleared to build the compound leg + collect-carve; **code-level .sol
+audit still gates push** (spec-pass ≠ push clearance).
+**Author:** gojo (senior protocol) · **Reviewer:** casper (acting) · **Builder:** kuro · **Date:** 2026-07-15 (rev8.2: + `msg.sender==POOL_MANAGER` on all 4 hook callbacks — Cork $11M vector)
 
 > **rev8 change (clint 21422/21428/21440 · casper ruling 21453 · Arch A):** the **holder-reward (5%) leg is REMOVED
 > in full** and replaced by a **5% in-kind auto-compound into the ONE permanently-locked position** (Option 3). Fee
@@ -303,6 +303,17 @@ nonReentrant` (blockers 1/4/5) — TWO BRANCHES, `asset ∈ {token(LT), WETH}`:*
 AFTER_SWAP` = `(1<<13)|(1<<12)|(1<<7)|(1<<6)`. **No** remove-liquidity / donate / returns-delta flags. Immutables:
 `FACTORY`, `VAULT`, `POOL_MANAGER`.
 
+> 🔴 **rev8.2 REQUIRED (casper 21516 — the Cork $11M vector, INV-40):** ALL FOUR hook entrypoints
+> (`beforeInitialize`/`afterInitialize`/`beforeSwap`/`afterSwap`) **MUST enforce `msg.sender == POOL_MANAGER`
+> (`onlyPoolManager`) as their first statement.** The `sender` PARAMETER is the address that called PoolManager and is
+> **attacker-controlled** — it is NOT `msg.sender`. Without the `msg.sender == POOL_MANAGER` guard, an attacker calls a
+> hook function **directly**, spoofs `sender = FACTORY`/`sender = VAULT`, and bypasses every param-based check —
+> activating a fake pool, poisoning the oracle ring, or inflating `swapVolume`. **This is exactly how Cork Protocol lost
+> $11M (May 2025): its `beforeSwap` lacked the manager check.** Even if the impl inherits `BaseHook` (which provides
+> `onlyPoolManager` for free), the spec MANDATES it explicitly on every entrypoint so it can never be dropped. **Every
+> `require(sender == X)` below is `require(msg.sender == POOL_MANAGER)` FIRST, then the param check.** (The `consult`
+> view is read-only → no auth needed.)
+
 **Per-poolId state (blocker 2 — 3-stage one-shot init):** `pending[poolId]{configured, token, schedule, expectedKey}`
 (set by the factory) → `staging[poolId]{token, schedule}` (moved in `beforeInitialize`) → `active[poolId]{token,
 launchTime, schedule}` (in `afterInitialize`). `swapVolume[poolId]` (WETH, monotonic); a **running** `lastTick[poolId]`
@@ -310,22 +321,28 @@ launchTime, schedule}` (in `afterInitialize`). `swapVolume[poolId]` (WETH, monot
 int56 tickCumulative}` + `ringIndex[poolId]` (`cardinality` = a **manifest floor ≥ enough slots to cover
 `TWAP_WINDOW` at the chain's block cadence** — 4663 ~1s blocks ⇒ ≥ ~2048 to safely span 1800s of one-slot-per-block).
 
-- **`beforeInitialize(sender, key, sqrtPrice) → selector` (blocker 2/4):** `require(sender == FACTORY)`;
+- **`beforeInitialize(sender, key, sqrtPrice) → selector` (blocker 2/4):** **`require(msg.sender == POOL_MANAGER)` (rev8.2,
+  FIRST)** then `require(sender == FACTORY)`;
   `p = pending[poolId(key)]; require(p.configured && key == p.expectedKey && key.hooks == this && currencies == sort(LT,
   WETH) && key.fee == DYNAMIC_FEE_FLAG)`; **stage it:** `staging[poolId] = {p.token, p.schedule}; delete pending[poolId]`.
-  (A second/stale/foreign init has no `pending` ⇒ reverts. Tx rollback restores neither ⇒ no stale auth, INV-40.)
-- **`afterInitialize(sender, key, tick) → selector`:** `s = staging[poolId]; require(s exists);` activate
+  (A second/stale/foreign init has no `pending` ⇒ reverts. Tx rollback restores neither ⇒ no stale auth, INV-40. A
+  DIRECT call by a non-PoolManager reverts on the `msg.sender` guard before `sender` is ever trusted.)
+- **`afterInitialize(sender, key, tick) → selector`:** **`require(msg.sender == POOL_MANAGER)` (rev8.2, FIRST)**;
+  `s = staging[poolId]; require(s exists);` activate
   `active[poolId] = {s.token, launchTime = now, s.schedule}; delete staging[poolId]` (consume the staged record — the
   data `afterInitialize` needs is read from `staging`, not from the deleted `pending`); seed the ring:
   `obs[poolId][0] = {now, 0}; lastCumulative = 0; lastTick = tick; lastObsTs = now; ringIndex = 0`.
-- **`beforeSwap(sender, key, params, hookData) → (selector, BeforeSwapDelta ZERO, uint24 feeOverride)`:** if `sender ==
-  VAULT` ⇒ `feeOverride = baseFee | OVERRIDE_FEE_FLAG`. Else compute the decaying anti-snipe fee with a **branch that
+- **`beforeSwap(sender, key, params, hookData) → (selector, BeforeSwapDelta ZERO, uint24 feeOverride)`:** **`require(
+  msg.sender == POOL_MANAGER)` (rev8.2, FIRST — the exact Cork vector; without it an attacker calls this directly,
+  spoofs `sender==VAULT` to force baseFee + skip volume).** Then: if `sender == VAULT` ⇒ `feeOverride = baseFee |
+  OVERRIDE_FEE_FLAG`. Else compute the decaying anti-snipe fee with a **branch that
   cannot underflow (blocker 5):** `elapsed = now − launchTime; fee = elapsed >= antiSnipeWindow ? baseFee : baseFee +
   (startFee − baseFee) · (antiSnipeWindow − elapsed) / antiSnipeWindow;` `feeOverride = clamp(fee, baseFee,
   MAX_LP_FEE_CAP) | OVERRIDE_FEE_FLAG`. (Immutable-validated at deploy: `baseFee ≤ startFee ≤ MAX_LP_FEE_CAP`,
   `antiSnipeWindow > 0`; slope is *derived* from `(startFee−baseFee)/antiSnipeWindow`, so no separate slope rounding.)
   Returns ZERO swap-delta (non-fund-bearing).
-- **`afterSwap(sender, key, params, BalanceDelta delta, hookData) → (selector, int128 ZERO)`:**
+- **`afterSwap(sender, key, params, BalanceDelta delta, hookData) → (selector, int128 ZERO)`:** **`require(msg.sender ==
+  POOL_MANAGER)` (rev8.2, FIRST — else an attacker calls this directly to poison the oracle ring / inflate `swapVolume`).**
   1. **Oracle update — ALWAYS, incl. `sender == VAULT` (constraint 1):** `dt = now − lastObsTs[poolId];`
      - **if `dt == 0` (same-block, blocker 3/constraint 2): update `lastTick[poolId] = postSwapTick` ONLY** — the ring
        stores `{timestamp, cumulative}` (there is **no** per-slot "tick" field to update), and the cumulative for this
@@ -381,8 +398,10 @@ revert/brick `collect` or advance graduation. `compound` is permissionless and s
 strands or loses the pending in-kind funds (they remain conserved + locked, re-attemptable).**
 
 ## 7. Threat model (V4)
-1. **Unauthorized/stale pool init** → `beforeInitialize` requires `sender==factory` + validates & **consumes** the
-   one-shot pending config; predictable CREATE2 pool can't be front-run or re-init'd. INV-40.
+1. **Unauthorized/stale/DIRECT-call pool init or hook spoof (Cork $11M class)** → **every hook entrypoint requires
+   `msg.sender == POOL_MANAGER` FIRST (rev8.2)**, so a direct call by an attacker reverts before the (attacker-supplied)
+   `sender` param is ever trusted; `beforeInitialize` then also requires `sender==factory` + validates & **consumes** the
+   one-shot pending config; predictable CREATE2 pool can't be front-run, re-init'd, or hook-spoofed. INV-40.
 2. **Zero-liquidity fee-collect must not brick + external LPs not trapped** → no hook remove-revert; collection is
    `modifyLiquidities(INCREASE 0 + TAKE_PAIR)`. INV-EXT, INV-41.
 3. **System-swap authentication** → `sender==vault` ⇒ baseFee + volume-skip **but oracle still updated**; users/router
@@ -425,7 +444,9 @@ accrue), INV-29 (epoch JIT resistance). None have a referent after the holder-re
 **Re-homed V3→V4:** INV-4 (LP-lock: was NFT-custody+no-path → **now custody-only, no hook-revert**), INV-14 (`collect`
 reaches no swap router → **now `collect` = PositionManager fee-take only, no swap**), INV-18 (only the vault swaps →
 **now the direct vault→PoolManager unlock swap, sender==vault**), INV-15 (**post-seed: factory & vault hold 0 LT; position holds `dep`; collector holds only the MEASURED residual `dust ≤ MAX_SEED_DUST`, inert**), INV-17 (creator WETH), **INV-27 (settle now branch-exact for BOTH the WETH reclassify leg and the LT swap leg)**.
-**NEW (V4):** INV-40 init-auth **pending→staging→active one-shot, rollback leaves no stale auth**; INV-41
+**NEW (V4):** INV-40 init-auth **every hook entrypoint requires `msg.sender == POOL_MANAGER` FIRST (rev8.2, Cork
+$11M vector — the `sender` param is attacker-controlled, not `msg.sender`) + pending→staging→active one-shot, rollback
+leaves no stale auth**; INV-41
 zero-liq-collect-not-bricked; INV-EXT external-LP add→remove; INV-42 system-swap baseFee; INV-43 system-swap
 oracle-still-updated; INV-44 donation/settle no-graduation-advance; INV-45 same-block coalesce (**only `lastTick`
 updated; no ring-slot consumption / history-flush**); INV-46 ring **interpolate-at-target** wraparound/maturity;
@@ -487,6 +508,10 @@ named):**
 - **pending→staging→active rollback:** valid init consumes `pending`→`staging`→`active`; a **reverting** launch (fail
   after `beforeInitialize`) leaves **no** `pending`/`staging`/`active` (no stale auth); a second/foreign/replayed init
   reverts (INV-40).
+- **(rev8.2, Cork $11M) Direct hook-callback call reverts — BLOCKING:** call EACH of `beforeInitialize`/`afterInitialize`/
+  `beforeSwap`/`afterSwap` **directly from a non-PoolManager EOA/contract**, incl. one that spoofs `sender = FACTORY` and
+  one that spoofs `sender = VAULT` → **every case reverts on `msg.sender != POOL_MANAGER`** before any param is trusted
+  (no fake-pool activation, no oracle-ring poison, no `swapVolume` inflation, no baseFee/volume-skip spoof). INV-40.
 - **Off-grid TWAP interpolation (INV-46):** with observations not aligned to `now−TWAP_WINDOW`, `consult` interpolates
   `cumTarget` at the exact target between the bracketing obs; result matches a reference TWAP within rounding; wraparound
   across the ring boundary; `ORACLE_NOT_READY` before the window is spanned.
@@ -550,6 +575,15 @@ rehearsed**.
   retired; **INV-27 (solvency) & INV-30 (register-before-mint) RETAINED**; INV-C1..C8 added. Settle swap, oracle, seed,
   custody-lock, INV-40..52 unchanged from rev7.3. `(B)` afterSwap variant NOT taken (clint picked A). Builder handoff
   gated on casper's audit of this SHA.
+- **2026-07-15 rev8.2 (incident research → casper 21516 — Cork hook-callback-auth gap CLOSED):** the launchpad-incident
+  research (gojo, sourced) surfaced the Cork Protocol $11M V4-hook hack (unauthenticated `beforeSwap`); chasing it against
+  our own spec found the same gap — the four hook callbacks validated only the attacker-controlled `sender` PARAMETER,
+  not `msg.sender`. **Fix: every hook entrypoint (`beforeInitialize`/`afterInitialize`/`beforeSwap`/`afterSwap`) now MUST
+  `require(msg.sender == POOL_MANAGER)` as its FIRST statement** (§4c), INV-40 extended, §7 threat-1 rewritten, a BLOCKING
+  direct-call-reverts test added (§10). Also locked 3 incident-derived BLOCKING .sol audit gates (AUDIT-1 Cork callback-
+  auth/delta-zero · AUDIT-2 Bunni compound-rounding-in-protocol-favor · AUDIT-3 100%-supply-to-locked-position/no-pre-
+  allocation) + honeypot/SafeMoon checks (no public burn = INV-5; max-wallet receive-only + no owner setter; clone impl
+  immutable). No re-architecture.
 - **2026-07-15 rev8.1 (casper audit `38521e2` — DESIGN PASS + 2 edits):** (edit 1) added **INV-C7b cross-contract
   split-consistency** — a deploy-time assert `vault.NET_BPS() + collector.liqBps() == BPS_DENOM` (§9) so the two
   independent immutables can't silently drift and break 90/5/5 conservation, + matching test (§10). (edit 2) replaced
