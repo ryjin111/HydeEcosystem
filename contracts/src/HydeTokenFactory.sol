@@ -302,7 +302,7 @@ contract HydeTokenFactory is ReentrancyGuard {
         PoolKey memory key = _poolKey(token);
         HOOK.registerPendingPool(key, token);
 
-        // 5. initialize the token — mint the full 1B to the FACTORY (the exempt seeder; §2 blocker 1).
+        // 5. initialize the token — mint the full 1B to the FACTORY (the exempt seeder).
         HydeERC20(token).initialize(
             HydeERC20.InitParams({
                 name: lp.name,

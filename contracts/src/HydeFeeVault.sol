@@ -55,7 +55,7 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
     uint16 private constant BPS_DENOM = 10_000;
     uint24 private constant DYNAMIC_FEE_FLAG = 0x800000; // LPFeeLibrary.DYNAMIC_FEE_FLAG
 
-    /// @notice one-shot `unlockCallback` authorization (blocker 5): a callback is valid only during
+    /// @notice one-shot `unlockCallback` authorization: a callback is valid only during
     ///         our own `settle` unlock, matching the exact job hash, consumed once.
     bytes32 private _activeJob;
     uint256 private _jobNonce;
@@ -197,7 +197,7 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
             wethAmt = amountIn;
         } else {
             // LT leg — the system's ONLY swap (direct vault→PoolManager). CEI pre-debit BEFORE the
-            // external unlock so a callback revert unwinds via the tx revert (blocker 5).
+            // external unlock so a callback revert unwinds via the tx revert.
             rawFees[token][asset] -= amountIn;
             accountedBalance[asset] -= amountIn;
 
@@ -208,7 +208,7 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
             uint256 floor = Math.mulDiv(twapQuote, BPS_DENOM - MAX_SLIPPAGE_BPS, BPS_DENOM);
             uint256 minOut = floor > callerMinOut ? floor : callerMinOut; // tighten-only
 
-            // One-shot callback authorization: bind this unlock to an exact job hash (blocker 5).
+            // One-shot callback authorization: bind this unlock to an exact job hash.
             bytes32 job = keccak256(abi.encode(token, amountIn, minOut, _jobNonce++));
             _activeJob = job;
             bytes memory ret = POOL_MANAGER.unlock(abi.encode(token, amountIn, minOut, job));
@@ -249,7 +249,7 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
             ""
         );
 
-        // Reject partial fills (blocker 4): the input delta must consume EXACTLY amountIn, else the
+        // Reject partial fills: the input delta must consume EXACTLY amountIn, else the
         // swap clipped on the price limit / thin liquidity → revert (no mismatched transfer/credit).
         int128 inDelta = zeroForOne ? d.amount0() : d.amount1();
         require(inDelta == -int128(int256(amountIn)), "PARTIAL_FILL");
@@ -261,7 +261,7 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         IERC20(token).safeTransfer(address(POOL_MANAGER), amountIn);
         require(POOL_MANAGER.settle() == amountIn, "SETTLE_MISMATCH");
 
-        // Take the output, crediting the MEASURED WETH balance increase (blocker 4), not the raw delta.
+        // Take the output, crediting the MEASURED WETH balance increase, not the raw delta.
         uint256 beforeWeth = SETTLEMENT_TOKEN.balanceOf(address(this));
         POOL_MANAGER.take(Currency.wrap(address(SETTLEMENT_TOKEN)), address(this), uint256(uint128(outDelta)));
         uint256 wethOut = SETTLEMENT_TOKEN.balanceOf(address(this)) - beforeWeth;

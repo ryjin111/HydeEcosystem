@@ -46,7 +46,7 @@ contract HydeHook is IHooks, IHydeHook {
     uint24 private constant OVERRIDE_FEE_FLAG = 0x400000; // LPFeeLibrary.OVERRIDE_FEE_FLAG
     uint24 private constant DYNAMIC_FEE_FLAG = 0x800000; // LPFeeLibrary.DYNAMIC_FEE_FLAG
 
-    // one-shot init state (blocker 2): pending → staging → active
+    // one-shot init state: pending → staging → active
     struct Pending {
         bool configured;
         address token;
@@ -108,7 +108,7 @@ contract HydeHook is IHooks, IHydeHook {
         uint32 _antiSnipeWindow,
         uint16 _cardinality
     ) {
-        // (casper FINDING-1) DEPLOY-TIME address-bits self-check: the deployed hook MUST carry EXACTLY
+        // DEPLOY-TIME address-bits self-check: the deployed hook MUST carry EXACTLY
         // the four permission bits it implements and NONE of add/remove/donate/returns-delta. If the
         // CREATE2 salt were mis-mined so (e.g.) the remove bit were set, V4 would route liquidity
         // removals to this hook's `revert HookNotImplemented()` stub → external LPs would be TRAPPED

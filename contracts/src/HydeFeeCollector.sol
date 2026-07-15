@@ -338,7 +338,7 @@ contract HydeFeeCollector {
     }
 
     /* ─────────────────────────── graduate (STUBBED) ────────────────────────── */
-    /// @notice DISABLED pending the clint-pinned threshold + policy on the (label-only) hook
+    /// @notice DISABLED pending the configured threshold + policy on the (label-only) hook
     ///         `swapVolume` milestone. No liquidity ever moves.
     function graduate(address /*token*/ ) external pure {
         revert("GRADUATION_PENDING");
