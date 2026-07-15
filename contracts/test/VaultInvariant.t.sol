@@ -9,11 +9,11 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IHydeHook} from "../src/interfaces/IHydeHook.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 
-/// @notice Stateful INVARIANT campaign for HydeFeeVault's DEX-agnostic accounting (INV-24/27): the
-///         global WETH ledger stays exactly equal to the sum of per-token derived liabilities, and the
-///         vault is never insolvent, after ANY interleaving of noteRaw/settle(WETH)/transfer/claim/
-///         roll/time-warp across ≥3 launch namespaces. WETH-leg settles only (no V3 swap/oracle) →
-///         this is the accepted `9042a11` accounting base and carries to V4 verbatim.
+/// @notice Stateful INVARIANT campaign for HydeFeeVault's DEX-agnostic accounting (rev8 · INV-27): the
+///         global WETH ledger stays exactly equal to the sum of per-token derived liabilities (creator +
+///         Hyde + rawFees — NO holder leg), and the vault is never insolvent, after ANY interleaving of
+///         noteRaw/settle(WETH)/transfer/claim/time-warp/donation across ≥3 launch namespaces. WETH-leg
+///         settles only (no swap/oracle) → pure accounting.
 contract VaultHandler is Test {
     HydeFeeVault public vault;
     MockERC20 public weth;
@@ -81,12 +81,6 @@ contract VaultHandler is Test {
         t.transfer(to, amt);
     }
 
-    function claimHolder(uint256 tSeed, uint256 aSeed) external {
-        HydeERC20 t = tokens[tSeed % tokens.length];
-        address a = actors[aSeed % actors.length];
-        try vault.claim(address(t), a) {} catch {}
-    }
-
     function claimCreatorOrHyde(uint256 tSeed, bool creator) external {
         HydeERC20 t = tokens[tSeed % tokens.length];
         if (creator) {
@@ -94,11 +88,6 @@ contract VaultHandler is Test {
         } else {
             try vault.claimHyde(address(t)) {} catch {}
         }
-    }
-
-    function rollEpoch(uint256 tSeed) external {
-        HydeERC20 t = tokens[tSeed % tokens.length];
-        try vault.roll(address(t)) {} catch {}
     }
 
     function warp(uint256 dt) external {
@@ -126,9 +115,8 @@ contract VaultInvariantTest is Test {
             IHydeHook(address(0x2222)),
             int24(60),
             address(0x7EA5),
-            500,
-            500,
-            7 days,
+            500, // hydeBps
+            9500, // NET_BPS (BPS_DENOM − liqBps)
             300,
             1800
         );
@@ -145,8 +133,7 @@ contract VaultInvariantTest is Test {
         uint256 n = handler.tokenCount();
         for (uint256 i; i < n; i++) {
             address t = address(handler.tokens(i));
-            sumLiab += vault.rawFees(t, address(weth)) + vault.creatorClaimable(t) + vault.hydeClaimable(t)
-                + (vault.holderFunded(t) - vault.holderClaimed(t));
+            sumLiab += vault.rawFees(t, address(weth)) + vault.creatorClaimable(t) + vault.hydeClaimable(t);
         }
         assertEq(accounted, sumLiab, "accountedBalance == Sigma liabilities (INV-27)");
         assertGe(weth.balanceOf(address(vault)), accounted, "vault solvent: balance >= accounted (INV-27)");

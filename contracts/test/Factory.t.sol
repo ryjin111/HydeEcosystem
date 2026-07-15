@@ -65,14 +65,14 @@ contract FactoryTest is HydeStackSetup {
     function test_exempt_set_is_the_frozen_infra_set() public {
         (address token,) = _launch(creator, "Ex", "EX");
         HydeERC20 t = HydeERC20(token);
-        assertTrue(t.isRewardExcluded(address(manager)), "pool/PoolManager exempt");
-        assertTrue(t.isRewardExcluded(address(lpm)), "positionManager exempt");
-        assertTrue(t.isRewardExcluded(address(factory)), "factory exempt");
-        assertTrue(t.isRewardExcluded(address(collector)), "collector exempt");
-        assertTrue(t.isRewardExcluded(address(vault)), "vault exempt");
-        assertTrue(t.isRewardExcluded(address(swapRouter)), "router exempt");
-        assertTrue(t.isRewardExcluded(address(0)), "zero exempt");
-        assertFalse(t.isRewardExcluded(creator), "creator NOT exempt");
+        assertTrue(t.exempt(address(manager)), "pool/PoolManager exempt");
+        assertTrue(t.exempt(address(lpm)), "positionManager exempt");
+        assertTrue(t.exempt(address(factory)), "factory exempt");
+        assertTrue(t.exempt(address(collector)), "collector exempt");
+        assertTrue(t.exempt(address(vault)), "vault exempt");
+        assertTrue(t.exempt(address(swapRouter)), "router exempt");
+        assertTrue(t.exempt(address(0)), "zero exempt");
+        assertFalse(t.exempt(creator), "creator NOT exempt");
     }
 
     // ── constructor preset validation (INV-52) ──────────────────────────────

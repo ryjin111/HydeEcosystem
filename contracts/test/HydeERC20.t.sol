@@ -5,9 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {HydeERC20} from "../src/HydeERC20.sol";
 import {MockVault} from "./mocks/MockVault.sol";
 
-/// @notice DEX-agnostic unit tests for HydeERC20 (rev7 §2 — unchanged across the V3→V4 pivot).
-///         Covers supply-constant/no-burn (INV-5), to==0 revert (INV-21), max-wallet (INV-6),
-///         initialize once/bounds (INV-10/22), sync-drives-vault + can't-brick (INV-23), permit.
+/// @notice DEX-agnostic unit tests for HydeERC20 (rev8 §2). Covers supply-constant/no-burn (INV-5),
+///         to==0 revert (INV-21), max-wallet (INV-6), initialize once/bounds (INV-10/22), the exempt
+///         infra set, and permit. (rev8) The vault `sync` hook is removed — no sync tests.
 contract HydeERC20Test is Test {
     HydeERC20 internal token;
     MockVault internal vault;
@@ -136,36 +136,22 @@ contract HydeERC20Test is Test {
         t.initialize(HydeERC20.InitParams("H", "H", pool, v, bps, window, ex));
     }
 
-    /* ─────────────────────────── sync drive + can't brick (INV-23) ─────────── */
-    function test_syncCalledOnTransferWithPrechangeArgs() public {
+    /* ─────────────────────── (rev8) no vault sync on transfer ───────────────── */
+    /// (rev8) The token no longer calls the vault at all — max-wallet is self-contained. Prove a
+    /// transfer succeeds against a vault that has NO `sync` entrypoint (MockVault = register+noteRaw only).
+    function test_transfer_doesNotCallVault() public {
         vm.warp(block.timestamp + 3601);
-        uint256 n = vault.syncCount();
         vm.prank(POOL);
-        token.transfer(ALICE, 123e18);
-        assertEq(vault.syncCount(), n + 1, "sync fired");
-        assertEq(vault.lastFrom(), POOL);
-        assertEq(vault.lastTo(), ALICE);
-        assertEq(vault.lastAmount(), 123e18);
-        assertTrue(vault.lastFromExcl(), "POOL exempt");
-        assertFalse(vault.lastToExcl(), "ALICE not exempt");
+        token.transfer(ALICE, 123e18); // would revert if the token still tried to call vault.sync(...)
+        assertEq(token.balanceOf(ALICE), 123e18, "transfer succeeds with no vault call");
     }
 
-    function test_revertingVaultBricksTransfer_provesSyncIsLoadBearing() public {
-        // If the vault's sync reverts, the transfer reverts — which is WHY the real vault's sync must be
-        // non-reverting on the normal path (INV-23). Here we assert the token faithfully surfaces it.
-        vm.warp(block.timestamp + 3601);
-        vault.setReverts(true);
-        vm.prank(POOL);
-        vm.expectRevert(bytes("VAULT_REVERT"));
-        token.transfer(ALICE, 1);
-    }
-
-    /* ─────────────────────────── isRewardExcluded ──────────────────────────── */
-    function test_isRewardExcluded() public view {
-        assertTrue(token.isRewardExcluded(POOL));
-        assertTrue(token.isRewardExcluded(address(vault)));
-        assertTrue(token.isRewardExcluded(address(0)));
-        assertFalse(token.isRewardExcluded(ALICE));
+    /* ─────────────────────────── exempt infra set ──────────────────────────── */
+    function test_exemptSet() public view {
+        assertTrue(token.exempt(POOL));
+        assertTrue(token.exempt(address(vault)));
+        assertTrue(token.exempt(address(0)));
+        assertFalse(token.exempt(ALICE));
     }
 
     /* ─────────────────────────── EIP-2612 permit ───────────────────────────── */

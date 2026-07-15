@@ -93,7 +93,9 @@ contract AntiRugTest is HydeStackSetup {
     /// The 90/5 split bps are immutable — the public getters are fixed and there is no setter (see B).
     function test_fee_bps_are_immutable() public view {
         assertEq(vault.hydeBps(), HYDE_BPS, "hyde bps fixed");
-        assertEq(vault.holderBps(), HOLDER_BPS, "holder bps fixed");
+        assertEq(vault.NET_BPS(), NET_BPS, "vault net bps fixed");
+        assertEq(collector.liqBps(), LIQ_BPS, "collector liq bps fixed");
+        assertEq(uint256(vault.NET_BPS()) + collector.liqBps(), 10_000, "90/5/5 split consistent (INV-C7b)");
         assertEq(vault.hydeoutTreasury(), HYDE_TREASURY, "treasury fixed");
     }
 
@@ -133,6 +135,11 @@ contract AntiRugTest is HydeStackSetup {
         _assertAbsent(address(collector), "setVault(address)");
         _assertAbsent(address(collector), "withdrawNFT(uint256)");
         _assertAbsent(address(collector), "transferPosition(address,uint256)");
+        // (rev8) the in-kind pending liquidity + the position itself have NO owner exit (INV-C6/C8).
+        _assertAbsent(address(collector), "sweepPending(address)");
+        _assertAbsent(address(collector), "withdrawPending(address,uint256)");
+        _assertAbsent(address(collector), "decreaseLiquidity(uint256,uint128)");
+        _assertAbsent(address(collector), "burn(uint256)");
 
         // Token: no mint/burn/blacklist/pause/tax — supply is fixed and non-seizable.
         address token = _anyToken();

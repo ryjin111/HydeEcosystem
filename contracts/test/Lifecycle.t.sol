@@ -7,10 +7,11 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {HydeERC20} from "../src/HydeERC20.sol";
 
-/// @notice End-to-end lifecycle on a REAL Uniswap V4 stack: launch → seed/custody → trade → collect →
-///         settle (WETH leg) → creator/Hyde/holder claims. Proves the factory + hook + collector + vault
-///         work together against the actual PoolManager/PositionManager, and asserts the seed invariants
-///         (custody, single-sided, measured dust, factory/vault 0 LT — INV-15/52) + the 90/5/5 split.
+/// @notice End-to-end lifecycle on a REAL Uniswap V4 stack: launch → seed/custody → trade → collect
+///         (5% in-kind carve) → settle (WETH leg) → creator/Hyde claims. Proves the factory + hook +
+///         collector + vault work together against the actual PoolManager/PositionManager, and asserts
+///         the seed invariants (custody, single-sided, measured dust, factory/vault 0 LT — INV-15/52) +
+///         the rev8 90/5 split + the 5% liquidity carve (INV-C7).
 contract LifecycleTest is HydeStackSetup {
     address internal creator = makeAddr("creator");
     address internal buyer = makeAddr("buyer");
@@ -39,7 +40,7 @@ contract LifecycleTest is HydeStackSetup {
         // Registrations wired across the stack.
         assertEq(vault.creator(token), creator, "vault creator");
         assertTrue(vault.registered(token), "vault registered");
-        (bool reg,, address col,,,) = collector.positionOf(token);
+        (bool reg,, address col,,,,,) = collector.positionOf(token);
         assertTrue(reg, "collector registered");
         assertEq(col, creator, "collector creator");
         (bool hookActive,,) = hydeHook.active(_key(token).toId());
@@ -60,25 +61,22 @@ contract LifecycleTest is HydeStackSetup {
         uint256 rawWeth = vault.rawFees(token, address(weth));
         assertGt(rawWeth, 0, "raw WETH fees harvested");
 
-        // Permissionless settle of the WETH leg — reclassify-only, splits 90/5/5 into the pull buckets.
+        // The collector RETAINED the 5% in-kind carve (WETH side) before noting the 95% to the vault.
+        assertGt(collector.pendingLiqWETH(token), 0, "5% WETH carve retained for liquidity");
+
+        // Permissionless settle of the WETH leg — reclassify-only, splits creator/Hyde via NET_BPS.
         vault.settle(token, address(weth), rawWeth, 0, block.timestamp);
         uint256 creatorCut = vault.creatorClaimable(token);
         uint256 hydeCut = vault.hydeClaimable(token);
-        uint256 holderFunded = vault.holderFunded(token);
-        assertEq(creatorCut + hydeCut + holderFunded, rawWeth, "split conserves");
-        assertEq(hydeCut, rawWeth * 500 / 10_000, "hyde 5%");
-        assertEq(holderFunded, rawWeth * 500 / 10_000, "holder 5%");
-        assertEq(creatorCut, rawWeth - hydeCut - holderFunded, "creator remainder ~90%");
+        assertEq(creatorCut + hydeCut, rawWeth, "split conserves (creator + Hyde, no holder)");
+        // rawWeth is the forwarded 95% remainder, so Hyde = 500/9500 of it = 5% of the original notional.
+        assertEq(hydeCut, rawWeth * 500 / 9500, "hyde 500/9500 of forwarded");
+        assertEq(creatorCut, rawWeth - hydeCut, "creator remainder ~90% of notional");
 
-        // Creator + Hyde pull-claims pay the fixed recipients.
+        // Creator + Hyde pull-claims pay the fixed recipients (rev8: no holder claim — that leg is gone).
         vault.claimCreator(token);
         assertEq(weth.balanceOf(creator), creatorCut, "creator paid WETH");
         vault.claimHyde(token);
         assertEq(weth.balanceOf(HYDE_TREASURY), hydeCut, "hyde treasury paid WETH");
-
-        // The holder 5% vests over the epoch; the buyer (an eligible holder) can claim a portion after time.
-        vm.warp(block.timestamp + DURATION);
-        vault.claim(token, buyer);
-        assertGt(weth.balanceOf(buyer), 0, "holder vested WETH");
     }
 }
