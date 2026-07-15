@@ -65,14 +65,27 @@ function useGeckoPool(address?: string): { gtPool: string | null; gtChecked: boo
   return { gtPool, gtChecked };
 }
 
-/** Compact USD — only called with a real number; callers render "—" when the source is null.
- *  Sub-$1 uses significant-digit decimal (never scientific notation, e.g. $0.0000002 not $2e-7). */
+/** Compact USD for MCAP/volume/liquidity — only called with a real number ≥ ~1. */
 function fmtUsd(n: number): string {
   if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
   if (n >= 1) return `$${n.toFixed(2)}`;
   return `$${n.toLocaleString("en-US", { maximumSignificantDigits: 3 })}`;
+}
+
+/** Token price — compact so it never overflows its column (shiro layout-break fix). Micro-cap
+ *  prices use the DEX subscript-zero convention ($0.0₆204 = 0.000000204), not a long decimal that
+ *  collided with the next stat, and never scientific notation. */
+const SUBSCRIPT = "₀₁₂₃₄₅₆₇₈₉";
+const subNum = (k: number): string => String(k).split("").map((d) => SUBSCRIPT[+d]).join("");
+function fmtPrice(n: number): string {
+  if (n >= 1) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 4 })}`;
+  if (n >= 0.0001) return `$${parseFloat(n.toPrecision(4))}`;
+  const exp = Math.floor(Math.log10(n)); // negative
+  const zeros = -exp - 1;                // leading zeros after the decimal point
+  const sig = String(Math.round((n / Math.pow(10, exp)) * 100) / 100).replace(".", ""); // 3 sig figs
+  return `$0.0${subNum(zeros)}${sig}`;
 }
 
 type Holder = { address: string; value: string };
@@ -153,7 +166,7 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
               real value or an honest "—" when the source is null — never a fabricated number. */}
           <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Stat label="Market Cap" value={pool.marketCapUsd != null && pool.marketCapUsd > 0 ? fmtUsd(pool.marketCapUsd) : "—"} />
-            <Stat label="Price" value={pool.priceUsd != null && pool.priceUsd > 0 ? fmtUsd(pool.priceUsd) : "—"} />
+            <Stat label="Price" value={pool.priceUsd != null && pool.priceUsd > 0 ? fmtPrice(pool.priceUsd) : "—"} />
             <Stat label="24h Volume" value={pool.volumeUsd != null && parseFloat(pool.volumeUsd) > 0 ? fmtUsd(parseFloat(pool.volumeUsd)) : "—"} />
             <Stat label="Liquidity" value={pool.dollarLiquidity != null && parseFloat(pool.dollarLiquidity) > 0 ? fmtUsd(parseFloat(pool.dollarLiquidity)) : "—"} />
           </div>
@@ -257,7 +270,8 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
             <p className="text-pcs-textSub">Current rail: <b className="text-pcs-text font-mono">95% creator / 5% Doppler</b> · anti-snipe swap fee <b className="text-pcs-text">3%→1%</b> (first hour) · no max-wallet, no blacklist.</p>
             <div className="my-2 h-px" style={{ background: "#22252D" }} />
             <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>COMING · HYDE STACK</p>
-            <p style={{ color: "#5B6472" }} className="font-mono text-[11px]">$1 flat launch · 90/5/5 (creator / buyback&amp;burn / Hydeout) · LP locked forever · anti-snipe max-wallet</p>
+            <p style={{ color: "#5B6472" }} className="font-mono text-[11px]">$1 flat launch · 90% creator · 5% Hyde · 5% auto-locked liquidity · anti-snipe max-wallet</p>
+            <p style={{ color: "#5B6472" }} className="text-[11px] leading-relaxed">Live rail, that 5% is a Doppler skim. On Hyde&rsquo;s own stack it becomes your token&rsquo;s permanently-locked liquidity — un-ruggable depth that grows every trade, working for your token instead of a platform.</p>
           </div>
         </Card>
 
