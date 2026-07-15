@@ -30,7 +30,7 @@ const CHAIN_LABELS: Record<number, string> = {
   4663: "Robinhood Chain",
 };
 
-function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void }) {
+export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void }) {
   const bt = pool.baseToken;
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
   return (

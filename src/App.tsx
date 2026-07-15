@@ -4,7 +4,7 @@ import { Header } from "./components/Header";
 import { AddLiquidityPage } from "./pages/AddLiquidity";
 import { SwapPage } from "./pages/Swap";
 import { LaunchpadPage } from "./pages/Launchpad";
-import { DiscoverPage } from "./pages/Discover";
+import { LandingPage } from "./pages/Landing";
 import { TokenPage } from "./pages/Token";
 import { ProfilePage } from "./pages/Profile";
 import { NETWORKS } from "./utils/constants";
@@ -75,13 +75,18 @@ function App() {
         }`}
         style={{ background: '#0F1114', borderRight: '1px solid #1C1F26' }}
       >
-        {/* Sidebar header */}
-        <div className="flex h-14 items-center gap-2.5 px-4" style={{ borderBottom: '1px solid #1C1F26' }}>
+        {/* Sidebar header — clickable, returns to the homepage (clint) */}
+        <NavLink
+          to="/"
+          onClick={closeOnMobile}
+          className="flex h-14 items-center gap-2.5 px-4 transition hover:bg-white/[0.03]"
+          style={{ borderBottom: '1px solid #1C1F26' }}
+        >
           <img src="/logo/lo.png" alt="Hyde" className="h-7 w-7 rounded-md object-contain" />
           <span className="font-display text-lg font-semibold tracking-tight text-pcs-text">
             Hyde
           </span>
-        </div>
+        </NavLink>
 
         {/* Nav sections */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
@@ -157,8 +162,8 @@ function App() {
               <Route path="/farms" element={<Navigate to="/launchpad" replace />} />
               <Route path="/pools" element={<Navigate to="/launchpad" replace />} />
               <Route path="/stats" element={<Navigate to="/launchpad" replace />} />
-              {/* `/` stays Discover until the Landing rebuild (UI_CONSOLIDATION step 4, shiro mock). */}
-              <Route path="/" element={<DiscoverPage />} />
+              {/* Landing (UI_CONSOLIDATION step 4) — hero + trending strip, not a 4th board copy. */}
+              <Route path="/" element={<LandingPage />} />
               {/* The board lives ONLY at /launchpad — collapse the duplicate board routes. */}
               <Route path="/discover" element={<Navigate to="/launchpad" replace />} />
               <Route path="/launches" element={<Navigate to="/launchpad" replace />} />
