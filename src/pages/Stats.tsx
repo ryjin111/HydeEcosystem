@@ -1,180 +1,229 @@
-import { useHydeLaunches } from "../hooks/useDopplerTokens";
+import { useNavigate } from "react-router-dom";
+import { useHydeLaunches, useHydeStats } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
-/* ── helpers ──────────────────────────────────────────────────────────────── */
+/* Hydeout Stats — on-chain transparency (shiro mock 21675 · casper honesty rules).
+ * Every $ / count is a REAL fetch or an honest "indexing" / "AT DEPLOY" state — NEVER a placeholder.
+ * Two zones: LIVE NOW (real on-chain reads) + own-stack ("activates at deploy", never a number). */
+
+const ROBINHOOD_CHAIN_ID = 4663;
+
+function fmtInt(n: number): string {
+  return n.toLocaleString("en-US");
+}
 function fmtUsd(n: number): string {
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
-  if (n > 0)    return `$${n.toFixed(2)}`;
-  return "—";
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  return `$${n.toFixed(2)}`;
+}
+function ago(ms: number): string {
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
 }
 
-function sumField(pools: DopplerPool[], field: "dollarLiquidity" | "volumeUsd"): number {
-  return pools.reduce((acc, p) => acc + parseFloat(p[field] ?? "0"), 0);
-}
+/* ── small building blocks ────────────────────────────────────────────────── */
 
-/* ── overview card ────────────────────────────────────────────────────────── */
-function StatCard({
-  label, value, sub, accent, loading,
-}: {
-  label: string; value: string; sub?: string; accent?: string; loading?: boolean;
-}) {
+function Tile({ label, sub, subTone, children }: { label: React.ReactNode; sub: React.ReactNode; subTone: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid #22252D" }}>
-      <p className="text-[11px] font-semibold uppercase tracking-widest text-pcs-textDim mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${accent ?? "text-pcs-text"} ${loading ? "opacity-40" : ""}`}>
-        {loading ? "…" : value}
-      </p>
-      {sub && <p className="mt-0.5 text-[11px] text-pcs-textDim">{sub}</p>}
+    <div className="rounded-2xl p-5" style={{ background: "#121419", border: "1px solid #22252D" }}>
+      <p className="text-xs text-pcs-textDim">{label}</p>
+      <div className="mt-2 mb-2">{children}</div>
+      <p className="text-[11px] leading-relaxed" style={{ color: subTone }}>{sub}</p>
     </div>
   );
 }
 
-/* ── coming-soon box ─────────────────────────────────────────────────────── */
-function ComingSoon({ icon, label, detail }: { icon: string; label: string; detail: string }) {
+function AtDeployCard({ title, detail }: { title: string; detail: string }) {
   return (
-    <div
-      className="rounded-2xl p-8 flex flex-col items-center gap-3 text-center"
-      style={{ background: "rgba(255,255,255,0.02)", border: "1px solid #1C1F26" }}
-    >
-      <span className="text-2xl">{icon}</span>
-      <div>
-        <p className="text-sm font-bold text-pcs-text">{label}</p>
-        <p className="text-xs text-pcs-textDim mt-0.5 max-w-xs">{detail}</p>
-      </div>
+    <div className="rounded-2xl p-5" style={{ background: "#101216", border: "1px solid #1C1F26" }}>
+      <p className="text-sm font-medium text-pcs-text">{title}</p>
+      <span
+        className="mt-3 inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+        style={{ background: "rgba(224,163,46,0.14)", color: "#E0A32E", border: "1px solid rgba(224,163,46,0.3)" }}
+      >
+        At deploy
+      </span>
+      <p className="mt-2 text-[11px] leading-relaxed text-pcs-textDim">{detail}</p>
     </div>
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════════ */
+/* ── page ─────────────────────────────────────────────────────────────────── */
+
 export function StatsPage() {
-  const { pools, loading } = useHydeLaunches();
+  const { pools } = useHydeLaunches();
+  const { totalLaunched, updatedAt, loading: statsLoading } = useHydeStats();
+  const navigate = useNavigate();
 
-  const totalLiquidity = sumField(pools, "dollarLiquidity");
-  const totalVolume    = sumField(pools, "volumeUsd");
-  const inAuction      = pools.filter((p) => p.type !== "v2").length;
-  const graduated      = pools.filter((p) => p.type === "v2").length;
+  // Zone-1 real reads from the loaded (tracked) board set — N is DYNAMIC, never hardcoded.
+  const trackedN = pools.length;
+  const trackedVol = pools.reduce((sum, p) => sum + (p.volumeUsd != null ? parseFloat(p.volumeUsd) : 0), 0);
 
-  const thCls = "py-2.5 px-4 text-left text-[11px] font-semibold uppercase tracking-wide text-pcs-textDim";
-  const tdCls = "py-3 px-4 text-sm";
-  const tableBg = { background: "rgba(255,255,255,0.02)", border: "1px solid #1C1F26" };
-  const rowBorder = { borderBottom: "1px solid #1C1F26" };
+  // Trending: rank the in-view set by real curve % (not all-time). Only tokens with a real %.
+  const trending = pools
+    .filter((p) => p.progress != null)
+    .sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))
+    .slice(0, 8);
+
+  const openToken = (p: DopplerPool) => {
+    if (p.chainId === ROBINHOOD_CHAIN_ID) navigate(`/token/${p.address}`);
+  };
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 space-y-8">
-
-      {/* ── header ──────────────────────────────────────────────────────── */}
-      <div>
-        <h1 className="font-display text-2xl font-semibold text-pcs-text">Stats</h1>
-        <p className="mt-1 text-xs text-pcs-textDim">
-          Live protocol data from Hyde launches · Robinhood L2
+    <div className="mx-auto w-full max-w-6xl px-4">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="font-display text-2xl font-semibold text-pcs-text">Hydeout Stats</h1>
+        <p className="mt-1 text-sm text-pcs-textSub">
+          On-chain transparency — real values, honestly sourced. Nothing shown until it&rsquo;s true.
         </p>
       </div>
 
-      {/* ── overview cards ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard label="Total Launches"  value={String(pools.length)}       sub="All time"           loading={loading} />
-        <StatCard label="Total Liquidity" value={fmtUsd(totalLiquidity)}     sub="Active pools"       accent="text-pcs-text"    loading={loading} />
-        <StatCard label="Total Volume"    value={fmtUsd(totalVolume)}        sub="All pools"          accent="text-pcs-primary" loading={loading} />
-        <StatCard label="Graduated"       value={`${graduated} / ${pools.length}`} sub="Migrated to V2" accent="text-green-400"  loading={loading} />
-      </div>
-
-      {/* ── token table ─────────────────────────────────────────────────── */}
-      <div>
-        <h2 className="mb-3 text-sm font-bold text-pcs-text">
-          Hyde Launches · Robinhood L2
-        </h2>
-        <div className="rounded-2xl overflow-hidden" style={tableBg}>
-          {loading ? (
-            <p className="py-8 text-center text-xs text-pcs-textDim">Loading…</p>
-          ) : pools.length === 0 ? (
-            <p className="py-8 text-center text-xs text-pcs-textDim">No launches found.</p>
+      {/* ── ZONE 1 · LIVE NOW ─────────────────────────────────────────────── */}
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-pcs-textDim">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#34C77B" }} />
+          Live · Robinhood Chain
+        </div>
+        <p className="text-[11px] text-pcs-textDim">
+          {statsLoading && updatedAt == null ? (
+            "indexing…"
+          ) : updatedAt != null ? (
+            <>indexed · <span style={{ color: "#34C77B" }}>updated {ago(updatedAt)}</span></>
           ) : (
-            <table className="w-full border-collapse">
-              <thead>
-                <tr style={rowBorder}>
-                  <th className={`${thCls} pl-5`}>#</th>
-                  <th className={thCls}>Token</th>
-                  <th className={thCls}>Type</th>
-                  <th className={thCls}>Liquidity</th>
-                  <th className={`${thCls} pr-5`}>Volume</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pools.map((pool, i) => (
-                  <tr
-                    key={pool.address}
-                    className="hover:bg-white/[0.015] transition"
-                    style={i < pools.length - 1 ? rowBorder : undefined}
-                  >
-                    <td className={`${tdCls} pl-5 text-pcs-textDim`}>{i + 1}</td>
-                    <td className={tdCls}>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                          style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
-                        >
-                          {pool.baseToken.symbol.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <span className="font-semibold text-pcs-text">{pool.baseToken.name}</span>
-                          <span className="ml-1.5 text-pcs-textDim text-xs">{pool.baseToken.symbol}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td className={tdCls}>
-                      <span
-                        className="rounded px-1.5 py-0.5 text-[11px] font-bold uppercase"
-                        style={
-                          pool.type === "v2"
-                            ? { background: "rgba(52,199,123,0.12)", color: "#34C77B" }
-                            : { background: "rgba(46,159,230,0.14)", color: "#54B4F0" }
-                        }
-                      >
-                        {pool.type === "v2" ? "Graduated" : "Auction"}
-                      </span>
-                    </td>
-                    <td className={`${tdCls} font-semibold text-pcs-text`}>
-                      {fmtUsd(parseFloat(pool.dollarLiquidity ?? "0"))}
-                    </td>
-                    <td className={`${tdCls} pr-5 text-pcs-textDim`}>
-                      {fmtUsd(parseFloat(pool.volumeUsd ?? "0"))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr style={{ borderTop: "1px solid #1C1F26" }}>
-                  <td colSpan={3} className={`${tdCls} pl-5 text-xs font-semibold text-pcs-textDim`}>
-                    Total ({pools.length} launches · {inAuction} in auction)
-                  </td>
-                  <td className={`${tdCls} font-bold text-pcs-text`}>{fmtUsd(totalLiquidity)}</td>
-                  <td className={`${tdCls} pr-5 font-semibold text-pcs-textDim`}>{fmtUsd(totalVolume)}</td>
-                </tr>
-              </tfoot>
-            </table>
+            "indexed"
           )}
-        </div>
+        </p>
       </div>
 
-      {/* ── coming soon sections ─────────────────────────────────────────── */}
-      <div>
-        <h2 className="mb-3 text-sm font-bold text-pcs-text">Upcoming</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <ComingSoon
-            icon="🌱"
-            label="Farms"
-            detail="HYDE farming rewards — TVL and APR data will appear here when MasterChef deploys."
-          />
-          <ComingSoon
-            icon="💧"
-            label="Pools"
-            detail="Single-asset HYDE staking — staking stats will appear here when staking contracts deploy."
-          />
-        </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {/* Total tokens launched — REAL unique on-chain count (deduped), honest indexing state */}
+        <Tile
+          label="Total tokens launched"
+          subTone="#E0A32E"
+          sub={<>indexed · on-chain Create events (unique, not the page list)</>}
+        >
+          {totalLaunched != null ? (
+            <p className="font-display text-4xl font-bold text-pcs-text tabular-nums">{fmtInt(totalLaunched)}</p>
+          ) : (
+            <p className="font-display text-2xl font-semibold text-pcs-textDim">
+              indexing <span className="tracking-widest">•••</span>
+            </p>
+          )}
+        </Tile>
+
+        {/* 24h volume — REAL sum across the tracked pools, N dynamic */}
+        <Tile
+          label={<>24h volume <span className="text-pcs-textDim">· tracked pools</span></>}
+          subTone="#34C77B"
+          sub={<><span style={{ color: "#34C77B" }}>live</span> · DEXScreener, across {trackedN || "…"} tracked pools (not all-time)</>}
+        >
+          {trackedN > 0 ? (
+            <p className="font-display text-4xl font-bold text-pcs-text tabular-nums">{fmtUsd(trackedVol)}</p>
+          ) : (
+            <p className="font-display text-2xl font-semibold text-pcs-textDim">loading…</p>
+          )}
+        </Tile>
+
+        {/* Paid to creators — own-stack ledger; honest indexing state (no cron yet) */}
+        <Tile
+          label="Paid to creators"
+          subTone="#5B6472"
+          sub={<>live-rail creators earn 95% · all-time needs the cron</>}
+        >
+          <p className="font-display text-2xl font-semibold text-pcs-textDim">
+            indexing <span className="tracking-widest">•••</span>
+          </p>
+        </Tile>
       </div>
 
+      {/* ── TRENDING · RECENT LAUNCHES ────────────────────────────────────── */}
+      <div className="mb-3 mt-10 flex items-center justify-between">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-pcs-textDim">Trending · Recent launches</h2>
+        <p className="text-[11px] text-pcs-textDim">ranked by curve % · in-view set (not all-time)</p>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl" style={{ background: "#121419", border: "1px solid #22252D" }}>
+        <div
+          className="grid grid-cols-[32px_1fr_88px_96px] gap-2 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-pcs-textDim"
+          style={{ borderBottom: "1px solid #1C1F26" }}
+        >
+          <span>#</span>
+          <span>Token</span>
+          <span className="text-right">Curve</span>
+          <span className="text-right">24h vol</span>
+        </div>
+        {trending.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-pcs-textDim">Loading live launches…</div>
+        ) : (
+          trending.map((p, i) => {
+            const vol = p.volumeUsd != null ? parseFloat(p.volumeUsd) : null;
+            return (
+              <button
+                key={`${p.chainId}-${p.address}`}
+                onClick={() => openToken(p)}
+                className="grid w-full grid-cols-[32px_1fr_88px_96px] items-center gap-2 px-4 py-3 text-left transition hover:bg-white/[0.03]"
+                style={{ borderBottom: i < trending.length - 1 ? "1px solid #16191F" : "none" }}
+              >
+                <span className="text-sm text-pcs-textDim tabular-nums">{i + 1}</span>
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <span
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                    style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
+                  >
+                    {p.baseToken.symbol.slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-pcs-text">{p.baseToken.name}</span>
+                    <span className="block truncate font-mono text-[11px] text-pcs-textDim">${p.baseToken.symbol}</span>
+                  </span>
+                </span>
+                <span className="text-right text-sm font-semibold text-pcs-text tabular-nums">
+                  {p.progress! < 1 && p.progress! > 0 ? "<1" : Math.round(p.progress!)}%
+                </span>
+                <span className="text-right text-sm tabular-nums" style={{ color: vol != null && vol > 0 ? "#EDEFF3" : "#5B6472" }}>
+                  {vol != null && vol > 0 ? fmtUsd(vol) : "—"}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      {/* ── ZONE 2 · OWN STACK · LAUNCHING SOON ───────────────────────────── */}
+      <h2 className="mb-3 mt-10 text-[11px] font-semibold uppercase tracking-wide text-pcs-textDim">
+        Powered by our own stack · Launching soon
+      </h2>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <AtDeployCard
+          title="Total auto-injected LP"
+          detail="The 5% permanently-locked auto-compound — own-stack only, $0 today. Flips to a live counter at deploy."
+        />
+        <AtDeployCard
+          title="Hydeout fees"
+          detail="Protocol's 5% — accrues only through the own-stack (live rail = 0% to Hyde)."
+        />
+        <AtDeployCard
+          title="Our-stack launches"
+          detail="Tokens launched through the Hyde factory — none until the own-stack ships."
+        />
+      </div>
+
+      {/* Honesty footnote */}
+      <p className="mt-8 text-[11px] leading-relaxed text-pcs-textDim">
+        <span className="font-semibold text-pcs-textSub">Honesty scoping:</span> Live tiles are real on-chain reads
+        (launch count from unique on-chain Create events — never the page cap), timestamped so a cached value can&rsquo;t
+        read as live. Volume is live (board-scoped 24h via DEXScreener, source-labeled); creator-paid shows
+        &ldquo;indexing&rdquo; until the stats-cron — never a fabricated &ldquo;$—&rdquo;. The own-stack tiles are genuinely $0
+        today (5% auto-LP, Hyde&rsquo;s 5% fee, our-stack launches don&rsquo;t exist on the Doppler rail) — shown as
+        &ldquo;at deploy,&rdquo; never a number, and they flip to real the moment the own-stack ships.
+      </p>
     </div>
   );
 }
+
+export default StatsPage;

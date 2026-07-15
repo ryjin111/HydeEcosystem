@@ -358,3 +358,87 @@ export function useHydeLaunches(): {
 
   return { pools, loading, refetch };
 }
+
+/* ─── Platform stats (transparency page) ──────────────────────────────────────
+ * Total UNIQUE tokens launched (dedup by asset — the Airlock emits several Create
+ * logs per launch) + graduated count. Blockscout has no one-call filtered event
+ * count, so this is a REAL on-chain scan; it's cached (localStorage, 10-min TTL)
+ * and run in the background behind an honest "indexing" state — never a placeholder.
+ * The clean long-term source is a stats indexer/cron; this is the honest client fallback. */
+const STATS_CACHE_KEY = "hyde_stats_v1";
+const STATS_TTL_MS = 10 * 60 * 1000;
+type HydeStatsCache = { totalLaunched: number; graduated: number; at: number };
+
+function readStatsCache(): HydeStatsCache | null {
+  try {
+    const raw = localStorage.getItem(STATS_CACHE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as HydeStatsCache;
+    return typeof v?.totalLaunched === "number" && typeof v?.at === "number" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+async function scanHydeStats(): Promise<{ totalLaunched: number; graduated: number }> {
+  const latest = await client.getBlockNumber();
+  const uniq = new Set<string>(); // unique launch tokens (dedup by asset address)
+  let graduated = 0;
+  for (let to = latest; to > 0n; to -= RANGE) {
+    const from = to > RANGE ? to - RANGE + 1n : 0n;
+    const [cLogs, mLogs] = await Promise.all([
+      client.getLogs({ address: AIRLOCK, event: CREATE_EVENT, fromBlock: from, toBlock: to }),
+      client.getLogs({ address: AIRLOCK, event: MIGRATE_EVENT, fromBlock: from, toBlock: to }),
+    ]);
+    for (const l of cLogs) {
+      const a = (l.args as { asset?: string }).asset;
+      if (a) uniq.add(a.toLowerCase());
+    }
+    graduated += mLogs.length;
+    if (from === 0n) break;
+  }
+  return { totalLaunched: uniq.size, graduated };
+}
+
+/** Real platform-wide launch totals for the Stats page. Serves a cached value instantly and
+ *  refreshes in the background; `loading` stays true (→ honest "indexing" state) until the first
+ *  real scan resolves. Fail-neutral: an RPC error leaves the numbers null, never fabricated. */
+export function useHydeStats(): {
+  totalLaunched: number | null;
+  graduated: number | null;
+  updatedAt: number | null;
+  loading: boolean;
+} {
+  const [s, setS] = useState(() => {
+    const c = readStatsCache();
+    return c
+      ? { totalLaunched: c.totalLaunched, graduated: c.graduated, updatedAt: c.at, loading: Date.now() - c.at >= STATS_TTL_MS }
+      : { totalLaunched: null as number | null, graduated: null as number | null, updatedAt: null as number | null, loading: true };
+  });
+
+  useEffect(() => {
+    const c = readStatsCache();
+    if (c && Date.now() - c.at < STATS_TTL_MS) return; // fresh cache — no rescan
+    let cancelled = false;
+    setS((p) => ({ ...p, loading: true }));
+    scanHydeStats()
+      .then((r) => {
+        if (cancelled) return;
+        const at = Date.now();
+        try {
+          localStorage.setItem(STATS_CACHE_KEY, JSON.stringify({ ...r, at }));
+        } catch {
+          /* ignore storage quota */
+        }
+        setS({ totalLaunched: r.totalLaunched, graduated: r.graduated, updatedAt: at, loading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setS((p) => ({ ...p, loading: false })); // honest: stays null → "indexing"
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return s;
+}
