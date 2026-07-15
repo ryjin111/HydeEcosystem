@@ -5,6 +5,8 @@ import {HydeStackSetup} from "./support/HydeStackSetup.sol";
 import {HydeTokenFactory} from "../src/HydeTokenFactory.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 
 /// @notice The rug-proofing clint asked for, PROVEN in tests (not just asserted). Two layers:
 ///         (A) BEHAVIORAL — the protocol owner / deployer / any attacker cannot move a live pool's LP,
@@ -151,6 +153,44 @@ contract AntiRugTest is HydeStackSetup {
         _assertAbsent(token, "pause()");
         _assertAbsent(token, "setTax(uint256)");
         _assertAbsent(token, "owner()"); // no owner surface at all on the token
+    }
+
+    /* ────────── (rev8) hook address-bits = INV-EXT (external LPs never trapped) ──────────── */
+
+    /// The deployed hook's ADDRESS must encode EXACTLY {beforeInit, afterInit, beforeSwap, afterSwap}
+    /// and NONE of add/remove/donate/returns-delta — else V4 routes those to the hook's revert-stubs and
+    /// external LPs get trapped (a honeypot-for-LPs). Deploy-critical INV-EXT check (casper FINDING-1).
+    function test_hook_address_encodes_exactly_four_permissions() public view {
+        IHooks h = IHooks(address(hydeHook));
+        // The four we implement — present.
+        assertTrue(Hooks.hasPermission(h, Hooks.BEFORE_INITIALIZE_FLAG), "beforeInitialize bit set");
+        assertTrue(Hooks.hasPermission(h, Hooks.AFTER_INITIALIZE_FLAG), "afterInitialize bit set");
+        assertTrue(Hooks.hasPermission(h, Hooks.BEFORE_SWAP_FLAG), "beforeSwap bit set");
+        assertTrue(Hooks.hasPermission(h, Hooks.AFTER_SWAP_FLAG), "afterSwap bit set");
+        // The dangerous bits (routed to our revert-stubs) MUST be absent so removals/adds/donates go to
+        // core — external LPs stay freely removable (INV-EXT).
+        assertFalse(Hooks.hasPermission(h, Hooks.BEFORE_ADD_LIQUIDITY_FLAG), "no beforeAddLiquidity bit");
+        assertFalse(Hooks.hasPermission(h, Hooks.AFTER_ADD_LIQUIDITY_FLAG), "no afterAddLiquidity bit");
+        assertFalse(Hooks.hasPermission(h, Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG), "no beforeRemove bit (LPs not trapped)");
+        assertFalse(Hooks.hasPermission(h, Hooks.AFTER_REMOVE_LIQUIDITY_FLAG), "no afterRemove bit");
+        assertFalse(Hooks.hasPermission(h, Hooks.BEFORE_DONATE_FLAG), "no beforeDonate bit");
+        assertFalse(Hooks.hasPermission(h, Hooks.AFTER_DONATE_FLAG), "no afterDonate bit");
+        assertFalse(Hooks.hasPermission(h, Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG), "no beforeSwapReturnDelta bit");
+        assertFalse(Hooks.hasPermission(h, Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG), "no afterSwapReturnDelta bit");
+    }
+
+    /// A mis-mined hook (with a stray remove bit) MUST fail to construct — the ctor self-check
+    /// (`Hooks.validateHookPermissions`) reverts, so a trapped-LP hook can NEVER be deployed.
+    function test_hook_deploy_reverts_on_mismined_address() public {
+        uint160 badFlags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
+                | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG // the stray, dangerous bit
+        );
+        bytes memory args = abi.encode(
+            manager, address(vault), address(weth), START_FEE, BASE_FEE, MAX_LP_FEE_CAP, ANTI_SNIPE_WINDOW, CARDINALITY
+        );
+        vm.expectRevert(); // Hooks.HookAddressNotValid — ctor rejects the stray remove bit
+        deployCodeTo("HydeHook.sol:HydeHook", args, address(badFlags));
     }
 
     /* ─────────────────────────── helpers ───────────────────────────────────── */

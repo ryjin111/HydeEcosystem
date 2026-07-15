@@ -11,6 +11,7 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/type
 import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IHydeHook} from "./interfaces/IHydeHook.sol";
 
 /// @title HydeHook — per-pool V4 hook (non-fund-bearing) for the Hydeout own-stack
@@ -107,6 +108,31 @@ contract HydeHook is IHooks, IHydeHook {
         uint32 _antiSnipeWindow,
         uint16 _cardinality
     ) {
+        // (casper FINDING-1) DEPLOY-TIME address-bits self-check: the deployed hook MUST carry EXACTLY
+        // the four permission bits it implements and NONE of add/remove/donate/returns-delta. If the
+        // CREATE2 salt were mis-mined so (e.g.) the remove bit were set, V4 would route liquidity
+        // removals to this hook's `revert HookNotImplemented()` stub → external LPs would be TRAPPED
+        // (a honeypot-for-LPs, violating INV-EXT). This reverts construction on ANY address-bit
+        // mismatch, so a mis-mined hook can never deploy.
+        Hooks.validateHookPermissions(
+            IHooks(address(this)),
+            Hooks.Permissions({
+                beforeInitialize: true,
+                afterInitialize: true,
+                beforeAddLiquidity: false,
+                afterAddLiquidity: false,
+                beforeRemoveLiquidity: false,
+                afterRemoveLiquidity: false,
+                beforeSwap: true,
+                afterSwap: true,
+                beforeDonate: false,
+                afterDonate: false,
+                beforeSwapReturnDelta: false,
+                afterSwapReturnDelta: false,
+                afterAddLiquidityReturnDelta: false,
+                afterRemoveLiquidityReturnDelta: false
+            })
+        );
         require(address(poolManager) != address(0) && vault != address(0) && weth != address(0), "ZERO");
         require(
             _baseFee <= _startFee && _startFee <= _maxLpFeeCap && _maxLpFeeCap <= LPFeeLibrary.MAX_LP_FEE, "FEE_BOUNDS"
