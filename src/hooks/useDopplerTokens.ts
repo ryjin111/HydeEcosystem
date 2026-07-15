@@ -55,6 +55,44 @@ async function getLogsChunked<E>(call: (from: bigint, to: bigint) => Promise<E[]
 type CreateLog = { args: { asset: `0x${string}` }; blockNumber: bigint | null };
 const blockOf = (l: CreateLog): bigint => l.blockNumber ?? 0n;
 
+// Real market-cap / price / liquidity / 24h-volume from the DEXScreener pair — the
+// same indexer the Token page already uses for the chart. Only graduated tokens that
+// have a live Uniswap pool are indexed; curve-stage tokens simply aren't returned, so
+// their MCAP stays null (honest — no fabricated number, the card shows curve % instead).
+// Batched (up to 30 addrs/call) + fail-neutral: any error leaves everything null.
+type DexData = { marketCapUsd: number | null; priceUsd: number | null; liquidityUsd: number | null; volumeUsd: number | null };
+async function fetchDexData(addresses: string[]): Promise<Map<string, DexData>> {
+  const out = new Map<string, DexData>();
+  const CHUNK = 30; // DEXScreener /tokens accepts up to 30 comma-separated addresses
+  for (let i = 0; i < addresses.length; i += CHUNK) {
+    const batch = addresses.slice(i, i + CHUNK);
+    try {
+      const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${batch.join(",")}`);
+      if (!r.ok) continue;
+      const d = await r.json();
+      type Pair = { chainId?: string; dexId?: string; baseToken?: { address?: string };
+        marketCap?: number; fdv?: number; priceUsd?: string; liquidity?: { usd?: number }; volume?: { h24?: number } };
+      for (const p of (d?.pairs ?? []) as Pair[]) {
+        // only robinhood/uniswap pairs — never a wrong-chain price
+        if (p.chainId !== "robinhood" || p.dexId !== "uniswap") continue;
+        const key = (p.baseToken?.address ?? "").toLowerCase();
+        if (!key) continue;
+        const liq = p.liquidity?.usd ?? null;
+        const prev = out.get(key);
+        // keep the deepest-liquidity pair per token (the canonical/graduated one)
+        if (prev && (prev.liquidityUsd ?? 0) >= (liq ?? 0)) continue;
+        out.set(key, {
+          marketCapUsd: p.marketCap ?? p.fdv ?? null,
+          priceUsd: p.priceUsd != null ? Number(p.priceUsd) : null,
+          liquidityUsd: liq,
+          volumeUsd: p.volume?.h24 ?? null,
+        });
+      }
+    } catch { /* fail neutral — leave this batch null */ }
+  }
+  return out;
+}
+
 async function fetchHydePools(): Promise<DopplerPool[]> {
   const latest = await client.getBlockNumber();
 
@@ -142,6 +180,8 @@ async function fetchHydePools(): Promise<DopplerPool[]> {
       type: isGraduated ? "v2" : "v4",
       dollarLiquidity: null,
       volumeUsd: null,
+      marketCapUsd: null,
+      priceUsd: null,
       createdAt: new Date((ts ?? 0) * 1000).toISOString(),
       progress,
     };
@@ -151,11 +191,27 @@ async function fetchHydePools(): Promise<DopplerPool[]> {
   // Different tokens sharing a NAME (e.g. two "Joseph") have different addresses → both correctly kept.
   const nonNull = pools.filter((p): p is DopplerPool => p !== null);
   const seenAddr = new Set<string>();
-  return nonNull.filter((p) => {
+  const deduped = nonNull.filter((p) => {
     const k = p.address.toLowerCase();
     if (seenAddr.has(k)) return false;
     seenAddr.add(k);
     return true;
+  });
+
+  // Enrich with real MCAP / price / liquidity / volume for any token that has graduated
+  // to a live (DEXScreener-indexed) Uniswap pool. Best-effort: on any failure the pools
+  // pass through unchanged (all null), and the card falls back to the on-chain curve %.
+  const dex = await fetchDexData(deduped.map((p) => p.address));
+  return deduped.map((p) => {
+    const d = dex.get(p.address.toLowerCase());
+    if (!d) return p;
+    return {
+      ...p,
+      marketCapUsd: d.marketCapUsd,
+      priceUsd: d.priceUsd,
+      dollarLiquidity: d.liquidityUsd != null ? String(d.liquidityUsd) : p.dollarLiquidity,
+      volumeUsd: d.volumeUsd != null ? String(d.volumeUsd) : p.volumeUsd,
+    };
   });
 }
 
@@ -239,7 +295,7 @@ export async function fetchLaunchToken(address: `0x${string}`): Promise<DopplerP
     baseToken: { address, name, symbol, decimals: 18 },
     quoteToken: { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
     // type refined by the Token page from the DEXScreener pair (has pool = graduated)
-    type: "v4", dollarLiquidity: null, volumeUsd: null,
+    type: "v4", dollarLiquidity: null, volumeUsd: null, marketCapUsd: null, priceUsd: null,
     createdAt: new Date(0).toISOString(), // exact create time is unindexed; omitted honestly
     progress: null, // precise % only for board (newest-page) tokens; honest null here
   };

@@ -7,12 +7,13 @@ const ROBINHOOD_CHAIN_ID = 4663;
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 
-function fmtLiquidity(raw: string | null): string {
-  const n = parseFloat(raw ?? "0");
-  if (!n) return "—";
+/** Compact USD — only ever called with a real number (tiles that lack data aren't rendered). */
+function fmtUsd(n: number): string {
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
-  return `$${n.toFixed(2)}`;
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  return `$${n.toPrecision(2)}`; // sub-$1 curve prices keep significant digits
 }
 
 function timeAgo(iso: string): string {
@@ -30,72 +31,74 @@ const CHAIN_LABELS: Record<number, string> = {
   4663: "Robinhood Chain",
 };
 
+/** Bigger launch card (clint 21605): the token NAME + $TICKER read in full (no more "A…" crush),
+ *  with MCAP shown large. The per-card "ROBINHOOD CHAIN" pill is dropped — every launch is on the
+ *  same chain (stated in the page/footer), and repeating it was what squeezed the name column.
+ *  Metrics are honesty-gated: MCAP/Liquidity render ONLY when the DEXScreener pair is real
+ *  (graduated + indexed); curve-stage tokens show the on-chain curve % instead — never a fake $. */
 export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void }) {
   const bt = pool.baseToken;
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
+  const graduated = pool.type === "v2";
+  const liq = pool.dollarLiquidity != null ? parseFloat(pool.dollarLiquidity) : null;
+  const hasMcap = pool.marketCapUsd != null && pool.marketCapUsd > 0;
+  const hasLiq = liq != null && liq > 0;
+
   return (
     <div
-      className="rounded-2xl p-4 flex flex-col gap-3 border transition hover:border-pcs-primary/40"
+      className="rounded-2xl p-5 flex flex-col gap-4 border transition hover:border-pcs-primary/40"
       style={{ background: "#121419", borderColor: "#22252D" }}
     >
-      {/* Token identity */}
-      <div className="flex items-center gap-3">
+      {/* Token identity — name gets the full width; only the status pill sits beside it */}
+      <div className="flex items-start gap-3">
         <div
-          className="h-10 w-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+          className="h-12 w-12 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0"
           style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
         >
           {bt.symbol.slice(0, 2).toUpperCase()}
         </div>
-        <div className="min-w-0">
-          <p className="font-semibold text-pcs-text truncate">{bt.name}</p>
-          <p className="text-xs text-pcs-textDim">{bt.symbol}</p>
+        <div className="min-w-0 flex-1">
+          <p className="font-display text-[15px] font-semibold text-pcs-text truncate leading-tight">{bt.name}</p>
+          <p className="text-xs text-pcs-textDim mt-0.5">${bt.symbol}</p>
         </div>
-        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-          <span
-            className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
-            style={{ background: "rgba(255,255,255,0.06)", color: "#9ca3af" }}
-          >
-            {chainLabel}
-          </span>
-          <span
-            className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
-            style={{
-              background: pool.type === "v4" ? "rgba(46,159,230,0.14)" : "rgba(52,199,123,0.12)",
-              color: pool.type === "v4" ? "#54B4F0" : "#34C77B",
-            }}
-          >
-            {pool.type}
-          </span>
-        </div>
+        <span
+          className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide flex-shrink-0"
+          style={{
+            background: graduated ? "rgba(52,199,123,0.12)" : "rgba(46,159,230,0.14)",
+            color: graduated ? "#34C77B" : "#54B4F0",
+          }}
+        >
+          {graduated ? "Graduated" : "Live"}
+        </span>
       </div>
 
-      {/* Stats — render only fields with real data. The current rail returns null for both, so the
-          dead "—" rows are hidden entirely (honesty bar); they return when the data layer repoints. */}
-      {(pool.dollarLiquidity != null || pool.volumeUsd != null) && (
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          {pool.dollarLiquidity != null && (
-            <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
-              <p className="text-pcs-textDim mb-0.5">Liquidity</p>
-              <p className="font-semibold text-pcs-text">{fmtLiquidity(pool.dollarLiquidity)}</p>
+      {/* Market metrics — MCAP is the hero. Rendered ONLY with real DEXScreener data; a curve-stage
+          token (no priced pool yet) skips this block and shows the curve bar below instead. */}
+      {(hasMcap || hasLiq) && (
+        <div className="grid grid-cols-2 gap-2">
+          {hasMcap && (
+            <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap</p>
+              <p className="text-base font-semibold text-pcs-text tabular-nums">{fmtUsd(pool.marketCapUsd as number)}</p>
             </div>
           )}
-          {pool.volumeUsd != null && (
-            <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
-              <p className="text-pcs-textDim mb-0.5">Volume</p>
-              <p className="font-semibold text-pcs-text">{fmtLiquidity(pool.volumeUsd)}</p>
+          {hasLiq && (
+            <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Liquidity</p>
+              <p className="text-base font-semibold text-pcs-text tabular-nums">{fmtUsd(liq as number)}</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Curve progress — real % of the launch inventory sold, on-chain */}
-      {pool.type !== "v2" && pool.progress !== null && (
+      {/* Curve progress — real % of the launch inventory sold, on-chain (pre-graduation signal) */}
+      {!graduated && pool.progress !== null && (
         <div>
-          <div className="flex justify-between text-[9px] text-pcs-textDim mb-1">
+          <div className="flex justify-between text-[10px] text-pcs-textDim mb-1">
             <span>Curve sold</span>
-            <span>{pool.progress < 1 && pool.progress > 0 ? "<1" : Math.round(pool.progress)}%</span>
+            <span className="tabular-nums">{pool.progress < 1 && pool.progress > 0 ? "<1" : Math.round(pool.progress)}%</span>
           </div>
-          <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
             <div
               className="h-full rounded-full"
               style={{ width: `${Math.max(pool.progress, pool.progress > 0 ? 2 : 0)}%`, background: "#2E9FE6" }}
@@ -104,12 +107,12 @@ export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr:
         </div>
       )}
 
-      {/* Footer */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-pcs-textDim">{timeAgo(pool.createdAt)}</span>
+      {/* Footer — chain lives here (subtle) instead of a per-card pill that crushed the name */}
+      <div className="flex items-center justify-between mt-auto">
+        <span className="text-xs text-pcs-textDim truncate">{chainLabel} · {timeAgo(pool.createdAt)}</span>
         <button
           onClick={() => onTrade(bt.address, pool.chainId)}
-          className="text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+          className="text-xs font-semibold px-4 py-2 rounded-lg transition flex-shrink-0"
           style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.20)")}
           onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.12)")}
