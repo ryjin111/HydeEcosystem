@@ -39,6 +39,42 @@ function useDexPair(address?: string): { pair: string | null; checked: boolean }
   return { pair, checked };
 }
 
+// Resolve this token's canonical GeckoTerminal pool (deepest reserve) for the chart embed.
+// GeckoTerminal indexes the 4663 Uniswap-V4 curve pools by poolId, so a chart exists ON the
+// auction curve — earlier than the DEXScreener graduation-only pair. Fail-neutral → null.
+function useGeckoPool(address?: string): { gtPool: string | null; gtChecked: boolean } {
+  const [gtPool, setGtPool] = useState<string | null>(null);
+  const [gtChecked, setGtChecked] = useState(false);
+  useEffect(() => {
+    if (!address) return;
+    let cancelled = false;
+    setGtChecked(false); setGtPool(null);
+    fetch(`https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/${address}/pools`, { headers: { accept: "application/json" } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const pools: { attributes?: { address?: string; reserve_in_usd?: string } }[] = d?.data ?? [];
+        // deepest-reserve pool = the canonical one to chart (deterministic, never constructed)
+        const top = pools
+          .slice()
+          .sort((a, b) => Number(b.attributes?.reserve_in_usd ?? 0) - Number(a.attributes?.reserve_in_usd ?? 0))[0];
+        if (!cancelled) { setGtPool(top?.attributes?.address ?? null); setGtChecked(true); }
+      })
+      .catch(() => { if (!cancelled) setGtChecked(true); });
+    return () => { cancelled = true; };
+  }, [address]);
+  return { gtPool, gtChecked };
+}
+
+/** Compact USD — only called with a real number; callers render "—" when the source is null.
+ *  Sub-$1 uses significant-digit decimal (never scientific notation, e.g. $0.0000002 not $2e-7). */
+function fmtUsd(n: number): string {
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  return `$${n.toLocaleString("en-US", { maximumSignificantDigits: 3 })}`;
+}
+
 type Holder = { address: string; value: string };
 function useTopHolders(address?: string): { holders: Holder[]; loading: boolean } {
   const [holders, setHolders] = useState<Holder[]>([]);
@@ -66,7 +102,8 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
   const { address = "" } = useParams();
   const { pools } = useHydeLaunches();
   const verify = useVerifiedStatus(address);
-  const { pair, checked } = useDexPair(address);
+  const { pair } = useDexPair(address);
+  const { gtPool, gtChecked } = useGeckoPool(address);
   const { holders } = useTopHolders(address);
   const [copied, setCopied] = useState(false);
   const [chartLoad, setChartLoad] = useState(false); // don't auto-embed DEXScreener's raw UI
@@ -112,11 +149,13 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
             </div>
           </div>
 
+          {/* Real market stats from the DEXScreener pair (via the board feed). Each cell shows a
+              real value or an honest "—" when the source is null — never a fabricated number. */}
           <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Stat label="Market Cap" value="—" />
-            <Stat label="ATH" value="—" />
-            <Stat label="24h Volume" value="—" />
-            <Stat label="Price" value="—" />
+            <Stat label="Market Cap" value={pool.marketCapUsd != null && pool.marketCapUsd > 0 ? fmtUsd(pool.marketCapUsd) : "—"} />
+            <Stat label="Price" value={pool.priceUsd != null && pool.priceUsd > 0 ? fmtUsd(pool.priceUsd) : "—"} />
+            <Stat label="24h Volume" value={pool.volumeUsd != null && parseFloat(pool.volumeUsd) > 0 ? fmtUsd(parseFloat(pool.volumeUsd)) : "—"} />
+            <Stat label="Liquidity" value={pool.dollarLiquidity != null && parseFloat(pool.dollarLiquidity) > 0 ? fmtUsd(parseFloat(pool.dollarLiquidity)) : "—"} />
           </div>
 
           {graduated ? (
@@ -143,21 +182,21 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
            chart gate). Indexed tokens get load-inline + open-external; others get
            the designed fallback. */}
         <Card className="p-0 overflow-hidden">
-          {chartLoad && pair ? (
-            <iframe title="chart" src={`https://dexscreener.com/robinhood/${pair}?embed=1&theme=dark&info=0`} className="h-[460px] w-full border-0" />
+          {chartLoad && gtPool ? (
+            <iframe title="chart" src={`https://www.geckoterminal.com/robinhood/pools/${gtPool}?embed=1&info=0&swaps=0`} className="h-[460px] w-full border-0" allow="clipboard-write" />
           ) : (
             <div className="flex h-[460px] flex-col items-center justify-center gap-3 bg-pcs-input/40 px-6 text-center">
               <SectionLabel>Live chart</SectionLabel>
-              {pair ? (
+              {gtPool ? (
                 <>
-                  <p className="max-w-sm text-pcs-textSub">Live market chart for this pool on DEXScreener.</p>
+                  <p className="max-w-sm text-pcs-textSub">Live price chart for this pool on GeckoTerminal.</p>
                   <div className="flex flex-wrap items-center justify-center gap-2">
                     <Button variant="secondary" size="sm" onClick={() => setChartLoad(true)}>▶ Load live chart</Button>
-                    <a href={`https://dexscreener.com/robinhood/${pair}`} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm">Open on DEXScreener ↗</Button></a>
+                    <a href={`https://www.geckoterminal.com/robinhood/pools/${gtPool}`} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm">Open on GeckoTerminal ↗</Button></a>
                   </div>
                 </>
               ) : (
-                <p className="max-w-sm text-pcs-textSub">{checked ? "Live chart appears once the token graduates to a Uniswap pool and is indexed on DEXScreener. Until then it trades on its Hyde auction curve." : "Checking for a live chart…"}</p>
+                <p className="max-w-sm text-pcs-textSub">{gtChecked ? "The live chart appears once this pool is indexed on GeckoTerminal (usually within a few minutes of launch). Until then it trades on its Hyde auction curve." : "Checking for a live chart…"}</p>
               )}
             </div>
           )}
