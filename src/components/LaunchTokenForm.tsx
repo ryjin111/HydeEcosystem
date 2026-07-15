@@ -118,7 +118,7 @@ export function LaunchTokenForm() {
       <div>
         <h2 className="font-display text-lg font-semibold text-pcs-text">Launch a Token</h2>
         <p className="text-xs text-pcs-textSub mt-1">
-          Price-discovery launch on Robinhood L2 — fees stream to you from the first trade.
+          Price-discovery launch on Robinhood Chain — tradeable from the first block.
         </p>
       </div>
 
@@ -349,7 +349,7 @@ export function LaunchTokenForm() {
           style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
           onClick={() => switchChain({ chainId: ROBINHOOD_CHAIN_ID })}
         >
-          Switch to Robinhood L2
+          Switch to Robinhood Chain
         </button>
       ) : !preview ? (
         <button

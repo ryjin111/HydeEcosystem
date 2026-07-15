@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { LaunchTokenForm } from "../components/LaunchTokenForm";
@@ -28,7 +27,7 @@ function timeAgo(iso: string): string {
 /* ─── Pool card (Explore tab) ─────────────────────────────────────────────── */
 
 const CHAIN_LABELS: Record<number, string> = {
-  4663: "Robinhood L2",
+  4663: "Robinhood Chain",
 };
 
 function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void }) {
@@ -70,17 +69,24 @@ function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
-          <p className="text-pcs-textDim mb-0.5">Liquidity</p>
-          <p className="font-semibold text-pcs-text">{fmtLiquidity(pool.dollarLiquidity)}</p>
+      {/* Stats — render only fields with real data. The current rail returns null for both, so the
+          dead "—" rows are hidden entirely (honesty bar); they return when the data layer repoints. */}
+      {(pool.dollarLiquidity != null || pool.volumeUsd != null) && (
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          {pool.dollarLiquidity != null && (
+            <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <p className="text-pcs-textDim mb-0.5">Liquidity</p>
+              <p className="font-semibold text-pcs-text">{fmtLiquidity(pool.dollarLiquidity)}</p>
+            </div>
+          )}
+          {pool.volumeUsd != null && (
+            <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <p className="text-pcs-textDim mb-0.5">Volume</p>
+              <p className="font-semibold text-pcs-text">{fmtLiquidity(pool.volumeUsd)}</p>
+            </div>
+          )}
         </div>
-        <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
-          <p className="text-pcs-textDim mb-0.5">Volume</p>
-          <p className="font-semibold text-pcs-text">{fmtLiquidity(pool.volumeUsd)}</p>
-        </div>
-      </div>
+      )}
 
       {/* Curve progress — real % of the launch inventory sold, on-chain */}
       {pool.type !== "v2" && pool.progress !== null && (
@@ -118,7 +124,11 @@ function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 
 export function LaunchpadPage() {
-  const [tab, setTab] = useState<"explore" | "launch">("launch");
+  // Tab is URL-driven (?tab=launch|explore) so the sidebar "Launch a Token" reliably lands on the
+  // form even when the user is already on /launchpad viewing Explore. Default = launch.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: "explore" | "launch" = searchParams.get("tab") === "explore" ? "explore" : "launch";
+  const setTab = (t: "explore" | "launch") => setSearchParams({ tab: t });
   const { pools, loading, refetch } = useHydeLaunches();
   const navigate = useNavigate();
 
@@ -135,7 +145,7 @@ export function LaunchpadPage() {
       <div className="mb-8">
         <h1 className="font-display text-2xl font-semibold text-pcs-text">Launchpad</h1>
         <p className="text-sm text-pcs-textSub mt-1">
-          Instant token launches on Robinhood L2 — earn trading fees from day one.
+          Live token launches on Robinhood Chain — Hyde own-stack launching soon.
         </p>
       </div>
 
@@ -160,9 +170,11 @@ export function LaunchpadPage() {
       {/* Explore tab */}
       {tab === "explore" && (
         <div>
+          {/* Provenance lives in the page subtitle above (honest rail note); no fee split is stated for
+              the live Doppler-rail tokens — the 90/5-locked story is future-tense on the Landing only. */}
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-pcs-textDim">
-              {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Robinhood L2`}
+              {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Robinhood Chain`}
             </p>
             <button
               onClick={refetch}
@@ -180,7 +192,7 @@ export function LaunchpadPage() {
             >
               <p className="text-pcs-textDim text-sm">No launches found yet.</p>
               <p className="text-pcs-textDim text-xs mt-1">
-                Be the first to launch a token on Robinhood L2!
+                Be the first to launch a token on Robinhood Chain!
               </p>
               <button
                 onClick={() => setTab("launch")}

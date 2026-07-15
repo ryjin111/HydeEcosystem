@@ -147,7 +147,16 @@ async function fetchHydePools(): Promise<DopplerPool[]> {
     };
   });
 
-  return pools.filter((p): p is DopplerPool => p !== null);
+  // Dedupe by token address so the same launch never renders twice (clint flagged duplicate cards).
+  // Different tokens sharing a NAME (e.g. two "Joseph") have different addresses → both correctly kept.
+  const nonNull = pools.filter((p): p is DopplerPool => p !== null);
+  const seenAddr = new Set<string>();
+  return nonNull.filter((p) => {
+    const k = p.address.toLowerCase();
+    if (seenAddr.has(k)) return false;
+    seenAddr.add(k);
+    return true;
+  });
 }
 
 /** Tokens launched via the Hydeout launchpad on Robinhood Chain, as TokenInfo[].
