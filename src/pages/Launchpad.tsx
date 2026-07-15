@@ -113,11 +113,13 @@ export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr:
         </div>
       )}
 
-      {/* Curve progress — real % of the launch inventory sold, on-chain (pre-graduation signal) */}
+      {/* Curve progress — real % of the launch inventory BOUGHT, on-chain. "Bought" reads clearer than
+          "sold" (it's buyers pulling tokens off the curve); the tooltip flags it's a live two-way level
+          — rises on net buys, dips on net sells — so the breathing isn't a surprise (shiro 21736). */}
       {!graduated && pool.progress !== null && (
-        <div>
+        <div title="% of the launch curve bought so far — rises on net buys, dips on net sells (a live level, not a one-way counter)">
           <div className="flex justify-between text-[10px] text-pcs-textDim mb-1">
-            <span>Curve sold</span>
+            <span>Curve bought</span>
             <span className="tabular-nums">{pool.progress < 1 && pool.progress > 0 ? "<1" : Math.round(pool.progress)}%</span>
           </div>
           <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>

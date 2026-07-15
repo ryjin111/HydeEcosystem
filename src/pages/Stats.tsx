@@ -155,7 +155,7 @@ export function StatsPage() {
       {/* ── TRENDING · RECENT LAUNCHES ────────────────────────────────────── */}
       <div className="mb-3 mt-10 flex items-center justify-between">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-pcs-textDim">Trending · Recent launches</h2>
-        <p className="text-[11px] text-pcs-textDim">ranked by curve % · in-view set (not all-time)</p>
+        <p className="text-[11px] text-pcs-textDim">ranked by % bought · in-view set (not all-time)</p>
       </div>
 
       <div className="overflow-hidden rounded-2xl" style={{ background: "#121419", border: "1px solid #22252D" }}>
@@ -165,7 +165,7 @@ export function StatsPage() {
         >
           <span>#</span>
           <span>Token</span>
-          <span className="text-right">Curve</span>
+          <span className="text-right">Bought</span>
           <span className="text-right">24h vol</span>
         </div>
         {trending.length === 0 ? (
