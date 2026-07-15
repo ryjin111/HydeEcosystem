@@ -120,6 +120,12 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
   const { holders } = useTopHolders(address);
   const [copied, setCopied] = useState(false);
   const [chartLoad, setChartLoad] = useState(false); // don't auto-embed DEXScreener's raw UI
+  // Native-swap PREVIEW config (clint: buy any/lower amount). Configurable but NOT executable on the
+  // current rail (own-stack not wired) — the live action stays "Trade on live pair" (casper boundary).
+  const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
+  const [amtSel, setAmtSel] = useState<string>("0.1"); // a preset value, or "custom"
+  const [customAmt, setCustomAmt] = useState("");
+  const previewAmt = amtSel === "custom" ? customAmt : amtSel;
 
   // Prefer the board pool (richer: precise graduation %); else read the token
   // directly by address so launches OUTSIDE the newest-60 page still render.
@@ -243,18 +249,101 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
             ) : (
               <p className="mt-2 text-sm text-pcs-textSub">Native Hyde swap is not available for this rail yet. This token trades on its Hyde auction curve.</p>
             )}
-            {/* reference-only in-app swap preview — dimmed + non-interactive until native swap carries the order */}
-            <div className="mt-3 select-none rounded-xl p-3 opacity-50" style={{ background: "#171A21", border: "1px solid #22252D", pointerEvents: "none" }} aria-disabled>
+            {/* Native-swap preview — CONFIGURABLE (side · preset · Custom free-entry, clint 21641) so
+                users can size any/lower amount, but NOT executable on the current rail: the action
+                button is disabled and the live path stays "Trade on live pair" above (casper boundary). */}
+            <div className="mt-3 rounded-xl p-3" style={{ background: "#171A21", border: "1px solid #22252D" }}>
+              {/* Buy / Sell */}
               <div className="flex gap-2">
-                <span className="flex-1 rounded-lg py-1.5 text-center text-xs font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B" }}>Buy</span>
-                <span className="flex-1 rounded-lg py-1.5 text-center text-xs font-semibold" style={{ background: "rgba(229,72,77,0.12)", color: "#E5484D" }}>Sell</span>
-              </div>
-              <div className="mt-2 flex gap-1.5">
-                {["0.1", "0.5", "1"].map((v) => (
-                  <span key={v} className="flex-1 rounded-md py-1 text-center font-mono text-[11px] tabular-nums" style={{ background: "#121419", color: "#8A93A2", border: "1px solid #22252D" }}>{v}</span>
+                {(["buy", "sell"] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setTradeSide(s)}
+                    className="flex-1 rounded-lg py-1.5 text-center text-xs font-semibold transition"
+                    style={
+                      s === tradeSide
+                        ? s === "buy"
+                          ? { background: "rgba(52,199,123,0.16)", color: "#34C77B" }
+                          : { background: "rgba(229,72,77,0.16)", color: "#E5484D" }
+                        : { background: "#121419", color: "#5B6472", border: "1px solid #22252D" }
+                    }
+                  >
+                    {s === "buy" ? "Buy" : "Sell"}
+                  </button>
                 ))}
               </div>
-              <p className="mt-2 font-mono text-[10px]" style={{ color: "#5B6472" }}>Native Hyde swap · preview — not live on this rail</p>
+
+              <p className="mt-3 text-[10px] uppercase tracking-wide text-pcs-textDim">Amount ({tradeSide === "buy" ? "ETH" : sym})</p>
+              {/* presets + Custom */}
+              <div className="mt-1 flex gap-1.5">
+                {["0.1", "0.5", "1"].map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setAmtSel(v)}
+                    className="flex-1 rounded-md py-1.5 text-center font-mono text-[11px] tabular-nums transition"
+                    style={
+                      amtSel === v
+                        ? { background: "rgba(46,159,230,0.14)", color: "#54B4F0", border: "1px solid rgba(46,159,230,0.4)" }
+                        : { background: "#121419", color: "#8A93A2", border: "1px solid #22252D" }
+                    }
+                  >
+                    {v}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setAmtSel("custom")}
+                  className="flex-1 rounded-md py-1.5 text-center text-[11px] font-semibold transition"
+                  style={
+                    amtSel === "custom"
+                      ? { background: "rgba(46,159,230,0.14)", color: "#54B4F0", border: "1px solid rgba(46,159,230,0.4)" }
+                      : { background: "#121419", color: "#8A93A2", border: "1px solid #22252D" }
+                  }
+                >
+                  Custom
+                </button>
+              </div>
+
+              {/* free-entry amount — revealed by Custom (clint: buy lower than the 0.1 floor) */}
+              {amtSel === "custom" && (
+                <div className="mt-2 flex items-center rounded-lg px-3 py-2" style={{ background: "#121419", border: "1px solid rgba(46,159,230,0.4)" }}>
+                  <input
+                    autoFocus
+                    type="number"
+                    min="0"
+                    step="any"
+                    inputMode="decimal"
+                    placeholder="0.03"
+                    value={customAmt}
+                    onChange={(e) => setCustomAmt(e.target.value)}
+                    className="w-full bg-transparent text-base font-semibold text-pcs-text outline-none"
+                  />
+                  <span className="ml-2 text-xs text-pcs-textDim">{tradeSide === "buy" ? "ETH" : sym}</span>
+                </div>
+              )}
+
+              {/* quote preview — You pay echoes the input; You receive is deferred to the own-stack
+                  router (no fabricated token amount — there's no native quote until it's wired). */}
+              <div className="mt-3 space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-pcs-textDim">You pay</span>
+                  <span className="font-mono text-pcs-text">{previewAmt || "0"} {tradeSide === "buy" ? "ETH" : sym}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-pcs-textDim">You receive ≈</span>
+                  <span className="font-mono text-pcs-textDim">quoted on own-stack</span>
+                </div>
+              </div>
+
+              {/* preview action — disabled: a native buy can't submit on the current rail yet */}
+              <button
+                disabled
+                aria-disabled
+                className="mt-3 w-full cursor-not-allowed rounded-xl py-2.5 text-center text-sm font-semibold"
+                style={{ background: tradeSide === "buy" ? "rgba(46,159,230,0.28)" : "rgba(229,72,77,0.24)", color: "#0A0C10" }}
+              >
+                {tradeSide === "buy" ? "Buy" : "Sell"} {previewAmt || "0"} {tradeSide === "buy" ? "ETH" : sym}
+              </button>
+              <p className="mt-2 text-center font-mono text-[10px]" style={{ color: "#5B6472" }}>Native Hyde swap · preview — live on own-stack</p>
             </div>
           </Card>
         )}
