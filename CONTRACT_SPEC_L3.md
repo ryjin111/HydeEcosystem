@@ -200,8 +200,12 @@ freely removable (INV-EXT).
 - `graduate(token)` — permissionless; `require(!graduated && HOOK.swapVolume(poolId) ≥ graduationThreshold)`; label
   only. **Stubbed `GRADUATION_PENDING` until clint pins the threshold.**
 
-**(rev8) `compound(address token) external nonReentrant` — permissionless, trigger (A) continuous auto-compound:**
-Adds the pending in-kind LT+WETH into the collector's own custody-locked position. Hands-off, no operator, no button.
+**(rev8, sig rev8.2) `compound(address token, uint256 deadline) external nonReentrant` — permissionless, trigger (A)
+continuous auto-compound:** Adds the pending in-kind LT+WETH into the collector's own custody-locked position. Hands-off,
+no operator, no button. **`require(block.timestamp <= deadline)` first — the `deadline` is CALLER-SUPPLIED, never
+silently `block.timestamp` (casper MEV refinement 1: a `block.timestamp` deadline is no protection — a validator can
+delay the tx to a worse add price; the caller must bound it), and it is the SAME value passed to `modifyLiquidities` in
+step 5.**
 1. `pos = positionOf[token]; require(pos.registered); (l0, l1) = _pendingSorted(token)` — map `pendingLiqLT/WETH` onto
    currency0/1 **by the same address sort as everywhere** (`token < WETH ? (LT, WETH) : (WETH, LT)`), so both sort
    branches are handled by one code path (INV-C1).
@@ -583,7 +587,10 @@ rehearsed**.
   direct-call-reverts test added (§10). Also locked 3 incident-derived BLOCKING .sol audit gates (AUDIT-1 Cork callback-
   auth/delta-zero · AUDIT-2 Bunni compound-rounding-in-protocol-favor · AUDIT-3 100%-supply-to-locked-position/no-pre-
   allocation) + honeypot/SafeMoon checks (no public burn = INV-5; max-wallet receive-only + no owner setter; clone impl
-  immutable). No re-architecture.
+  immutable). No re-architecture. **Addendum (casper 21519 / ethskills AMM checklist):** `compound` signature gains a
+  **caller-supplied `deadline`** (`compound(token, deadline)`) — it referenced `deadline` but had no param (would have
+  defaulted to `block.timestamp` = no MEV protection). `settle` already takes a caller `deadline` + checks `wethOut ≥
+  minOut` AFTER the take (post-op, unbypassable) — both confirmed, no change needed there.
 - **2026-07-15 rev8.1 (casper audit `38521e2` — DESIGN PASS + 2 edits):** (edit 1) added **INV-C7b cross-contract
   split-consistency** — a deploy-time assert `vault.NET_BPS() + collector.liqBps() == BPS_DENOM` (§9) so the two
   independent immutables can't silently drift and break 90/5/5 conservation, + matching test (§10). (edit 2) replaced
