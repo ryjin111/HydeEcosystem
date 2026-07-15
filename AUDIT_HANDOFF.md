@@ -55,6 +55,27 @@ INV-45/46 (oracle same-block coalesce, interpolate) · INV-48 (unlock delta-comp
 INV-49 (preloaded-PoolManager seed fails) · INV-50 (settle rejects partial fills) · INV-51 (oracle idle-pool + signed
 rounding) · INV-52 (seed token-order + measured dust ≤ MAX_SEED_DUST).
 
+## 4b. Internal review — findings already caught + resolved (verify the fixes, don't just re-find)
+Our internal pass surfaced and fixed the following before this handoff. Listed so the audit can **verify each fix
+holds** and spend its budget going deeper, not re-deriving what we already patched:
+- **FINDING-1 — hook must be mined to EXACTLY the 4 permission bits.** A hook deployed to an address with a stray
+  remove/add/donate bit set would trap external LP removals (honeypot-for-LPs, INV-EXT). **Fixed:** factory ctor
+  `require(uint160(hook) & Hooks.ALL_HOOK_MASK == the 4 flags)` + hook-ctor `validateHookPermissions` + a negative test
+  (`HookExternalLP.t`: a remove-bit hook traps `decreaseLiquidity`; the correct hook doesn't). *Verify: the assert is
+  fail-closed and the mined mainnet address decodes to exactly {beforeInitialize, afterInitialize, beforeSwap,
+  afterSwap}.*
+- **Cork-class callback auth.** Original hook callbacks validated only the `sender` param (attacker-controlled), not
+  `msg.sender`. **Fixed:** every hook entrypoint `require(msg.sender == POOL_MANAGER)` FIRST (INV-40). *Verify: direct
+  calls from a non-PoolManager revert.*
+- **INV-C7b cross-contract split-consistency.** `vault.NET_BPS` and `collector.liqBps` are independent immutables in
+  separately-deployed contracts → could silently drift and break 90/5/5. **Fixed:** deploy assert `NET_BPS + liqBps ==
+  BPS_DENOM`, abort on mismatch. *Verify: a mismatched pair aborts deploy.*
+- **Invariant enumeration precision.** Clarified that INV-27 (solvency) and INV-30 (register-before-mint) are RETAINED,
+  only the holder set (23/24/25/26/28/29) retired.
+- **MEV refinements:** `compound` takes a caller-supplied `deadline` (not `block.timestamp`); settle's `wethOut≥minOut`
+  is checked post-op inside the unlock (non-bypassable); the settle 3% slippage floor is a permissionless backstop with
+  a keeper passing tighter `callerMinOut` (documented as ops, not a liveness dependency).
+
 ## 5. Threat model — mapped to real 2025 incidents (please pressure-test each)
 | Incident (sourced) | Class | Our defense — verify it holds |
 |---|---|---|
