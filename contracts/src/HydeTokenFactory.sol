@@ -15,6 +15,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
 import {LiquidityAmounts} from "v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {Actions} from "v4-periphery/src/libraries/Actions.sol";
@@ -183,6 +184,18 @@ contract HydeTokenFactory is ReentrancyGuard {
         // Both are independent immutables set before the factory in the deploy cycle; abort on mismatch.
         require(
             IHydeVaultBps(p.vault).NET_BPS() + IHydeCollectorBps(p.collector).liqBps() == BPS_DENOM_F, "BPS_SPLIT"
+        );
+        // (rev8 / FINDING-1) The hook address MUST decode to EXACTLY the 4 permission bits it implements
+        // and NONE of add/remove/donate/returns-delta — a stray bit routes those ops to the hook's
+        // `revert HookNotImplemented()` stubs and TRAPS external LPs (honeypot-for-LPs, INV-EXT). Abort
+        // the deploy on any mismatch (belt-and-suspenders over the hook's own ctor self-check; §9).
+        require(
+            uint160(p.hook) & Hooks.ALL_HOOK_MASK
+                == uint160(
+                    Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
+                        | Hooks.AFTER_SWAP_FLAG
+                ),
+            "HOOK_FLAGS"
         );
 
         IMPL = p.impl;
