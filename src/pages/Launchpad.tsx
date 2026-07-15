@@ -41,8 +41,13 @@ export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr:
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
   const graduated = pool.type === "v2";
   const liq = pool.dollarLiquidity != null ? parseFloat(pool.dollarLiquidity) : null;
+  const vol = pool.volumeUsd != null ? parseFloat(pool.volumeUsd) : null;
   const hasMcap = pool.marketCapUsd != null && pool.marketCapUsd > 0;
   const hasLiq = liq != null && liq > 0;
+  const hasVol = vol != null && vol > 0;
+  // A DEXScreener pair exists (real seed mcap) but no trades yet — the clustered pre-trade
+  // seed caps get a "new" marker so identical-looking values don't read as a placeholder (shiro).
+  const untraded = hasMcap && !hasVol;
 
   return (
     <div
@@ -72,22 +77,39 @@ export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr:
         </span>
       </div>
 
-      {/* Market metrics — MCAP is the hero. Rendered ONLY with real DEXScreener data; a curve-stage
-          token (no priced pool yet) skips this block and shows the curve bar below instead. */}
-      {(hasMcap || hasLiq) && (
+      {/* Market metrics — ALWAYS rendered so every card has the same silhouette (shiro: no empty
+          gaps). All $ values are real, sourced from the DEXScreener pair; never fabricated. */}
+      {hasMcap ? (
         <div className="grid grid-cols-2 gap-2">
-          {hasMcap && (
-            <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.03)" }}>
-              <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap</p>
-              <p className="text-base font-semibold text-pcs-text tabular-nums">{fmtUsd(pool.marketCapUsd as number)}</p>
-            </div>
-          )}
-          {hasLiq && (
-            <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.03)" }}>
-              <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Liquidity</p>
-              <p className="text-base font-semibold text-pcs-text tabular-nums">{fmtUsd(liq as number)}</p>
-            </div>
-          )}
+          <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap</p>
+            <p className="text-base font-semibold text-pcs-text tabular-nums">
+              {fmtUsd(pool.marketCapUsd as number)}
+              {untraded && <span className="ml-1.5 text-[10px] font-medium text-pcs-textDim uppercase tracking-wide">· new</span>}
+            </p>
+          </div>
+          <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.03)" }}>
+            {hasLiq ? (
+              <>
+                <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Liquidity</p>
+                <p className="text-base font-semibold text-pcs-text tabular-nums">{fmtUsd(liq as number)}</p>
+              </>
+            ) : (
+              <>
+                <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">24h volume</p>
+                <p className="text-base font-semibold text-pcs-text tabular-nums">
+                  {hasVol ? fmtUsd(vol as number) : <span className="text-pcs-textDim font-medium">No trades yet</span>}
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      ) : (
+        // No DEXScreener pair yet (brand-new / not indexed). Honest fallback, same height as the
+        // grid above so the card silhouette stays consistent — not a fabricated number.
+        <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.03)" }}>
+          <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap</p>
+          <p className="text-sm font-medium text-pcs-textDim">New launch · not yet indexed</p>
         </div>
       )}
 
@@ -175,10 +197,15 @@ export function LaunchpadPage() {
         <div>
           {/* Provenance lives in the page subtitle above (honest rail note); no fee split is stated for
               the live Doppler-rail tokens — the 90/5-locked story is future-tense on the Landing only. */}
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-pcs-textDim">
-              {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Robinhood Chain`}
-            </p>
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <p className="text-sm text-pcs-textDim">
+                {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Robinhood Chain`}
+              </p>
+              {/* Source attribution — the headline $ figures (MCAP/liquidity/volume) are third-party
+                  priced, so name the source (gojo honesty note). */}
+              <p className="text-[11px] text-pcs-textDim/70 mt-0.5">Market data via DEXScreener</p>
+            </div>
             <button
               onClick={refetch}
               className="text-xs text-pcs-primary hover:underline"
