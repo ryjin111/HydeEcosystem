@@ -66,8 +66,9 @@ contract HydeERC20 {
 
     /// @notice One-time init. Callable exactly once, by the first caller, which is recorded as the
     ///         factory. The factory clones + calls this atomically in one tx (§3 steps 2–4) so there
-    ///         is no front-run window on a fresh clone. The factory MUST have `VAULT.register`ed this
-    ///         token first (§3 step 3) so the mint-`sync` below is accepted (INV-30).
+    ///         is no front-run window on a fresh clone. (rev8) The factory registers this token in the
+    ///         vault/collector BEFORE init per the §3 ordering (INV-30 retained; the mint no longer
+    ///         calls the vault — the `sync` hook is removed).
     function initialize(InitParams calldata p) external {
         require(factory == address(0), "INIT"); // initializer once-guard + onlyFactory (first caller)
         // Config bounds (INV-22): no zero recipients, sane cap/window.
