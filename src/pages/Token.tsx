@@ -360,7 +360,7 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
             <div className="my-2 h-px" style={{ background: "#22252D" }} />
             <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>COMING · HYDE STACK</p>
             <p style={{ color: "#5B6472" }} className="font-mono text-[11px]">$1 flat launch · 90% creator · 5% Hyde · 5% auto-locked liquidity · anti-snipe max-wallet</p>
-            <p style={{ color: "#5B6472" }} className="text-[11px] leading-relaxed">Live rail, that 5% is a Doppler skim. On Hyde&rsquo;s own stack it becomes your token&rsquo;s permanently-locked liquidity — un-ruggable depth that grows every trade, working for your token instead of a platform.</p>
+            <p style={{ color: "#5B6472" }} className="text-[11px] leading-relaxed">Live rail, that 5% is a Doppler skim. On Hyde&rsquo;s own stack it becomes your token&rsquo;s permanently-locked liquidity — un-ruggable depth that grows as it earns fees, working for your token instead of a platform.</p>
           </div>
         </Card>
 
