@@ -51,6 +51,32 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
         </div>
       </div>
 
+      {/* Trust teaser band — compact confidence signal, not the full section (shiro placement).
+          Three one-liners → the canonical /trust page where every receipt is checkable. */}
+      <div className="mb-12">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            { icon: "🍯", text: "Can't launch a honeypot" },
+            { icon: "🔐", text: "Approvals via Permit2, never a public multicall" },
+            { icon: "🔒", text: "LP locked from block 1" },
+          ].map((t) => (
+            <div
+              key={t.text}
+              className="flex items-center gap-2.5 rounded-xl px-4 py-3 text-[13px] text-pcs-textSub"
+              style={{ background: "#121419", border: "1px solid #22252D" }}
+            >
+              <span className="flex-shrink-0">{t.icon}</span>
+              <span>{t.text}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 text-center">
+          <NavLink to="/trust" className="text-xs font-semibold text-pcs-primary hover:underline">
+            See every receipt &rarr; Security
+          </NavLink>
+        </div>
+      </div>
+
       {/* Trending strip — only rendered when REAL data exists; never ship empty outlines (shiro). */}
       {trending.length > 0 && (
         <>

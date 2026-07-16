@@ -157,7 +157,7 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
             <div className="min-w-0 flex-1">
               <h1 className="truncate font-display text-2xl font-bold text-pcs-text">{pool.baseToken.name} <span className="font-mono text-sm text-pcs-textSub">${sym}</span></h1>
               <div className="mt-1 flex items-center gap-2">
-                <VerifiedBadge status={verify} />
+                <Link to="/trust" title="How Hyde verification + safety works"><VerifiedBadge status={verify} /></Link>
                 <Badge tone={graduated ? "success" : "accent"}>{graduated ? "Graduated" : "Auction"}</Badge>
               </div>
             </div>
