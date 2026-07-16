@@ -40,6 +40,11 @@ contract TestnetForkSwapQuote is Test {
         IERC20(WETH).approve(address(router), type(uint256).max);
 
         uint256[3] memory amts = [uint256(1e15), 1e16, 1e17]; // 0.001, 0.01, 0.1 WETH
+        // Golden outputs = the exact wei kuro's off-chain quoteOwnStackExactIn(feePips=10000) returns,
+        // asserted here against the REAL swap so a future TickMath/rounding drift fails RED (casper's gate).
+        // These are the UNTRADED launch-baseline outputs; if an intentional fee-cycle later moves the pool,
+        // update the goldens (the fork reads live state — the assert flagging a change is the point).
+        uint256[3] memory expected = [uint256(989999999999068), 9899999999906870, 98999999990687036];
 
         for (uint256 i; i < amts.length; i++) {
             uint256 snap = vm.snapshotState();
@@ -49,11 +54,10 @@ contract TestnetForkSwapQuote is Test {
                 PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
                 ""
             );
-            console2.log("=== amountIn WETH ===", amts[i]);
-            console2.log("WETH delta (spent, neg):");
-            console2.logInt(int256(d.amount0()));
-            console2.log("HYDE1 out (recv, pos):");
-            console2.logInt(int256(d.amount1()));
+            uint256 hydeOut = uint256(int256(d.amount1())); // HYDE1 received (positive)
+            console2.log("amountIn WETH / HYDE1 out:", amts[i], hydeOut);
+            assertEq(uint256(int256(-d.amount0())), amts[i], "exact-in WETH mismatch");
+            assertEq(hydeOut, expected[i], "off-chain quote drifted vs real swap");
             vm.revertToState(snap);
         }
     }
