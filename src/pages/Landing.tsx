@@ -33,7 +33,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
             </h1>
             <p className="text-sm text-pcs-textSub mt-5 leading-relaxed max-w-xl">
               <span className="text-pcs-text font-medium">Live today on Robinhood Chain.</span> Hyde&rsquo;s own stack launches
-              soon &mdash; creators keep 90% of fees and 5% auto-compounds into liquidity <span className="text-pcs-text font-medium">nobody can pull</span>.
+              soon &mdash; creators keep 90% of fees and 5% locks into liquidity <span className="text-pcs-text font-medium">nobody can pull</span> &mdash; designed to auto-compound.
               Proven in code, not promised.
             </p>
             <div className="flex flex-wrap gap-3 mt-8">

@@ -474,7 +474,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           <p className="text-pcs-text font-semibold">Token launched!</p>
           <p className="text-pcs-textDim">
             {isTestnet
-              ? "It's live on your own-stack pool now — all 1B seeded, liquidity custody-locked and growing every trade."
+              ? "It's live on your own-stack pool now — all 1B seeded, liquidity custody-locked and growing as it earns fees."
               : "It's live on the launch curve now — liquidity graduates to a real pool as the curve completes."}
           </p>
           {launched.token && (
