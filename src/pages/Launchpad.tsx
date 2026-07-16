@@ -163,10 +163,11 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   const { pools, loading, refetch } = useHydeLaunches(chainId);
   const navigate = useNavigate();
 
-  const handleTrade = (tokenAddress: string, chainId: number) => {
+  const handleTrade = (tokenAddress: string, poolChainId: number) => {
     if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
-    // All Hyde launches are on Robinhood Chain (4663) — gate anything else
-    if (chainId !== ROBINHOOD_CHAIN_ID) return;
+    // Hyde launches live on Robinhood mainnet (4663) OR the testnet own-stack (46630) — allow both;
+    // the swap page trades on whichever network is selected in the dropdown (matches the board).
+    if (poolChainId !== ROBINHOOD_CHAIN_ID && poolChainId !== RH_TESTNET_ID) return;
     navigate(`/swap?out=${tokenAddress}`);
   };
 
@@ -271,8 +272,8 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         </div>
       )}
 
-      {/* Launch tab */}
-      {tab === "launch" && <LaunchTokenForm />}
+      {/* Launch tab — network-aware: own-stack HydeTokenFactory on testnet, Doppler rail on mainnet */}
+      {tab === "launch" && <LaunchTokenForm chainId={chainId} />}
     </div>
   );
 }

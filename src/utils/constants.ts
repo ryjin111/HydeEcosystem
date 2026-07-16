@@ -177,13 +177,18 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     permit2: PLACEHOLDER_V4_PERMIT2,
     gateway: PLACEHOLDER_V4_GATEWAY
   },
+  // Robinhood Testnet (46630) — canonical Uniswap V4 core (same deterministic addresses as
+  // mainnet 4663), verified on-chain by gojo. The Hyde own-stack (factory/hook/vault/collector/
+  // StateView) is separately deployed at fresh 46630 addresses — see ROBINHOOD_TESTNET.factory
+  // and ROBINHOOD_TESTNET_STATE_VIEW below.
   [ROBINHOOD_TESTNET.id]: {
-    poolManager: PLACEHOLDER_V4_POOL_MANAGER,
-    universalRouter: PLACEHOLDER_V4_UNIVERSAL_ROUTER,
-    quoter: PLACEHOLDER_V4_QUOTER,
-    positionManager: PLACEHOLDER_V4_POSITION_MANAGER,
-    permit2: PLACEHOLDER_V4_PERMIT2,
-    gateway: PLACEHOLDER_V4_GATEWAY
+    poolManager:      "0x8366a39CC670B4001A1121B8F6A443A643e40951" as Address,
+    universalRouter:  "0x8876789976dEcBfCbBbe364623C63652db8C0904" as Address,
+    quoter:           PLACEHOLDER_V4_QUOTER, // V4Quoter not deployed on 46630 — quotes degrade to StateView reads
+    positionManager:  "0x58daec3116aae6D93017bAAea7749052E8a04fA7" as Address,
+    permit2:          "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
+    gateway:          PLACEHOLDER_V4_GATEWAY, // no HydeV4Gateway on testnet — swaps route via the canonical UniversalRouter (above)
+    hydeTokenFactory: "0x136914042064972913D54f024CccBA049C8cF03F" as Address,
   },
   [PHAROS_ATLANTIC_TESTNET.id]: {
     poolManager: PLACEHOLDER_V4_POOL_MANAGER,
@@ -270,6 +275,10 @@ export const DOPPLER_CONTRACTS_BY_CHAIN: Record<number, DopplerContracts> = {
 
 /** StateView (read-only V4 pool state) on Robinhood mainnet — Blockscout-verified, poolManager() cross-checked. */
 export const ROBINHOOD_STATE_VIEW = "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b" as Address;
+
+/** StateView on Robinhood Testnet (46630) — part of the Hyde own-stack deploy. Used for pool reads +
+ *  quote fallback where the canonical V4Quoter isn't deployed on this chain. */
+export const ROBINHOOD_TESTNET_STATE_VIEW = "0x94Aaf8D4548D957deB8618fcAb5c21577002036E" as Address;
 
 // Template encoding config for auto payload generation.
 // Adjust ABI parameter lists and command byte to match your deployed V4 periphery.
@@ -571,73 +580,78 @@ export const permit2Abi = [
   }
 ] as const;
 
+// HydeTokenFactory — REAL deployed interface (contracts/src/HydeTokenFactory.sol). The launch entrypoint
+// is `launch(LaunchParams{name,symbol,presetId})` with `creator := msg.sender` (NOT a passed arg); it
+// charges a $1 USDG fee (prior approval required) and emits `LaunchCreated`. Immutable getters (WETH /
+// tickSpacing / HOOK) are exposed for own-stack pool-key derivation in the swap path.
 export const hydeTokenFactoryAbi = [
   {
     type: "function",
-    name: "collectFees",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "token", type: "address" }],
-    outputs: [],
-  },
-  {
-    type: "function",
-    name: "launchToken",
+    name: "launch",
     stateMutability: "nonpayable",
     inputs: [
-      { name: "name",         type: "string" },
-      { name: "symbol",       type: "string" },
-      { name: "sqrtPriceX96", type: "uint160" },
-      { name: "tickLower",    type: "int24" },
-      { name: "tickUpper",    type: "int24" },
-      { name: "creator",      type: "address" },
+      {
+        name: "lp",
+        type: "tuple",
+        components: [
+          { name: "name",     type: "string" },
+          { name: "symbol",   type: "string" },
+          { name: "presetId", type: "uint256" },
+        ],
+      },
     ],
     outputs: [
-      { name: "token",      type: "address" },
-      { name: "positionId", type: "uint256" },
+      { name: "token",   type: "address" },
+      { name: "tokenId", type: "uint256" },
     ],
   },
   {
     type: "function",
-    name: "computeDefaultParams",
+    name: "predictNext",
     stateMutability: "view",
-    inputs: [{ name: "token", type: "address" }],
-    outputs: [
-      { name: "sqrtPriceX96", type: "uint160" },
-      { name: "tickLower",    type: "int24" },
-      { name: "tickUpper",    type: "int24" },
+    inputs: [
+      { name: "launcher", type: "address" },
+      { name: "symbol",   type: "string" },
     ],
+    outputs: [{ name: "", type: "address" }],
   },
-  {
-    type: "function",
-    name: "launches",
-    stateMutability: "view",
-    inputs: [{ name: "token", type: "address" }],
-    outputs: [
-      { name: "token",      type: "address" },
-      { name: "creator",    type: "address" },
-      { name: "positionId", type: "uint256" },
-      { name: "currency0",  type: "address" },
-      { name: "currency1",  type: "address" },
-    ],
-  },
-  {
-    type: "function",
-    name: "POOL_FEE",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint24" }],
-  },
+  { type: "function", name: "launchFeeAmount",   stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "launchFeeTreasury", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "USDG",              stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "WETH",              stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "tickSpacing",       stateMutability: "view", inputs: [], outputs: [{ name: "", type: "int24" }] },
+  { type: "function", name: "HOOK",              stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+  { type: "function", name: "paused",            stateMutability: "view", inputs: [], outputs: [{ name: "", type: "bool" }] },
+  { type: "function", name: "presetCount",       stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   {
     type: "event",
-    name: "TokenLaunched",
+    name: "LaunchCreated",
     inputs: [
-      { name: "token",      type: "address", indexed: true },
-      { name: "creator",    type: "address", indexed: true },
-      { name: "positionId", type: "uint256", indexed: false },
-      { name: "sqrtPriceX96", type: "uint160", indexed: false },
-      { name: "tickLower",  type: "int24",   indexed: false },
-      { name: "tickUpper",  type: "int24",   indexed: false },
+      { name: "token",    type: "address", indexed: true },
+      { name: "creator",  type: "address", indexed: true },
+      { name: "poolId",   type: "bytes32", indexed: true },
+      { name: "tokenId",  type: "uint256", indexed: false },
+      { name: "presetId", type: "uint256", indexed: false },
     ],
+  },
+] as const;
+
+/** Mock USDG (solmate MockERC20, 6-dec) launch-fee token on Robinhood Testnet. Its `mint` is a
+ *  permissionless faucet on testnet — the launch UI tops the creator up to the $1 fee. */
+export const ROBINHOOD_TESTNET_USDG = "0xCA5C4C7cc97C9aA3ea56B5F3a5c50Eb1c086615b" as Address;
+
+/** Faucet + fee-token surface for the testnet mock USDG (mint is public on the MockERC20 sandbox token).
+ *  Balance/allowance/approve come from the shared erc20Abi. */
+export const mockUsdgAbi = [
+  {
+    type: "function",
+    name: "mint",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to",    type: "address" },
+      { name: "value", type: "uint256" },
+    ],
+    outputs: [],
   },
 ] as const;
 
