@@ -114,7 +114,7 @@ const short = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
 export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
   const { address = "" } = useParams();
   const { pools } = useHydeLaunches();
-  const verify = useVerifiedStatus(address);
+  const verify = useVerifiedStatus(address, network.id);
   const { pair } = useDexPair(address);
   const { gtPool, gtChecked } = useGeckoPool(address);
   const { holders } = useTopHolders(address);

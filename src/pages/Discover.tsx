@@ -82,7 +82,7 @@ function TradeLink({ address }: { address: string }) {
 
 /* ── coin card ────────────────────────────────────────────────────────────── */
 function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }) {
-  const verify = useVerifiedStatus(p.address);
+  const verify = useVerifiedStatus(p.address, p.chainId);
   const graduated = p.type === "v2";
   const sym = p.baseToken.symbol || "?";
   return (
@@ -147,7 +147,7 @@ function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }) {
 
 /* ── Closest-to-Graduation hero (honest: highest real curve %, not a "hot/king" signal) ── */
 function ClosestToGraduation({ p }: { p: DopplerPool }) {
-  const verify = useVerifiedStatus(p.address);
+  const verify = useVerifiedStatus(p.address, p.chainId);
   const sym = p.baseToken.symbol || "?";
   return (
     <Link to={`/token/${p.address}`} className="block">
