@@ -125,8 +125,8 @@ export function TrustPage({ chainId }: { chainId: number }) {
         <TrustCard n="③" title="Fake LP-locks — custody-locked from block 1.">
           <p className="text-[13px] text-pcs-textSub leading-relaxed">
             The category: "locked" liquidity that's actually owner-withdrawable or migrates out. Hyde: the LP is
-            <span className="text-pcs-text"> custody-locked from block 1</span> — the position NFT is held by the collector,
-            grows every trade, and never migrates. No key can pull it (no decrease/transfer/burn selector exists).
+            <span className="text-pcs-text"> custody-locked from block 1</span> — the position NFT is held by the collector
+            and never migrates, with no decrease, transfer, or burn selector that could pull it. It grows as it earns fees.
           </p>
           <Receipt isTestnet={isTestnet}>
             <ExtLink href={`${EXPLORER}/address/${OWN_STACK.collector}`}>Locked-LP position #{OWN_STACK.lockedPositionId} ✓</ExtLink>
@@ -144,7 +144,7 @@ export function TrustPage({ chainId }: { chainId: number }) {
           </p>
           <Receipt isTestnet={isTestnet}>
             <ExtLink href={`${EXPLORER}/token/${OWN_STACK.exampleToken}`}>Token = no-owner ✓</ExtLink>
-            <span className="text-pcs-textDim">· factory = pause-only, renounced at mainnet</span>
+            <span className="text-pcs-textDim">· factory = pause-only, renounces at mainnet</span>
           </Receipt>
         </TrustCard>
       </div>
