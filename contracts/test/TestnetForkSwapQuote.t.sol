@@ -27,6 +27,14 @@ contract TestnetForkSwapQuote is Test {
     address constant HOOK = 0xFF312EA049522790357Aa9072c03DCaa1319b0c0;
 
     function test_forkSwapOutputs() external {
+        // Fork-ONLY. On a blank local chain the live 46630 addresses have no code, so the swap would
+        // revert unconditionally. Skip cleanly when not forked (PM has no code) so the default unfiltered
+        // `forge test` exits 0; this runs for real only under `--fork-url …robinhood.com` (kami's gate).
+        if (PM.code.length == 0) {
+            vm.skip(true);
+            return;
+        }
+
         PoolSwapTest router = new PoolSwapTest(IPoolManager(PM));
         PoolKey memory key = PoolKey({
             currency0: Currency.wrap(WETH),

@@ -41,7 +41,8 @@ contract VaultAccountingTest is Test {
             HYDE_BPS, // hydeBps
             NET_BPS, // NET_BPS (BPS_DENOM − liqBps)
             300, // MAX_SLIPPAGE_BPS
-            1800 // TWAP_WINDOW
+            1800, // TWAP_WINDOW
+            int24(200) // MAX_SETTLE_DEV_TICKS (FINDING-3)
         );
         vault.initFactory(address(this));
 

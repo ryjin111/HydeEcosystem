@@ -126,7 +126,8 @@ abstract contract HydeStackSetup is PosmTestSetup {
             HYDE_BPS,
             NET_BPS,
             MAX_SLIPPAGE,
-            TWAP_WINDOW
+            TWAP_WINDOW,
+            int24(200) // MAX_SETTLE_DEV_TICKS (FINDING-3), mirrors the compound add-gate band
         );
         require(address(vault) == vaultAddr, "VAULT_ADDR");
 

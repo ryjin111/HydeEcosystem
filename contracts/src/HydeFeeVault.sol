@@ -16,6 +16,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {TickMath as V4TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 
 import {IHydeVault} from "./interfaces/IHydeVault.sol";
 import {IHydeHook} from "./interfaces/IHydeHook.sol";
@@ -35,6 +36,7 @@ import {OracleLib} from "./libraries/OracleLib.sol";
 contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall {
     using SafeERC20 for IERC20;
     using BalanceDeltaLibrary for BalanceDelta;
+    using StateLibrary for IPoolManager;
 
     /* ─────────────────────────── immutables ────────────────────────────────── */
     IERC20 public immutable SETTLEMENT_TOKEN; // WETH (= wrappedNative)
@@ -51,6 +53,9 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
     uint16 public immutable NET_BPS; // == 9500
     uint16 public immutable MAX_SLIPPAGE_BPS; // default 300
     uint32 public immutable TWAP_WINDOW; // default 1800s
+    /// @notice (FINDING-3) max |spot − TWAP| tick deviation tolerated on the settle swap — refuse to
+    ///         swap at a manipulated spot, mirroring the collector's compound add-gate (INV-C4).
+    int24 public immutable MAX_SETTLE_DEV_TICKS;
 
     uint16 private constant BPS_DENOM = 10_000;
     uint24 private constant DYNAMIC_FEE_FLAG = 0x800000; // LPFeeLibrary.DYNAMIC_FEE_FLAG
@@ -74,6 +79,12 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
     /// @notice WETH owed to the creator / Hyde, claimable any time (pull-based).
     mapping(address => uint256) public creatorClaimable;
     mapping(address => uint256) public hydeClaimable;
+
+    /// @notice (FINDING-6) per-token carry of the Hyde-split rounding remainder (< NET_BPS). Makes the
+    ///         90/5/5 split PARTITION-INVARIANT: chunking a settle into many tiny calls yields the exact
+    ///         same cumulative creator/Hyde totals as one call (per-call floor alone systematically
+    ///         shorted Hyde by the sub-unit remainder). Applies to BOTH the WETH and LT legs.
+    mapping(address => uint256) public hydeSplitCarry;
 
     /// @notice the sole explicitly-tracked custody ledger, keyed by asset (global across tokens).
     mapping(address => uint256) public accountedBalance;
@@ -103,7 +114,8 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         uint16 _hydeBps,
         uint16 _netBps,
         uint16 _maxSlippageBps,
-        uint32 _twapWindow
+        uint32 _twapWindow,
+        int24 _maxSettleDevTicks
     ) {
         require(address(settlementToken) != address(0), "ZERO_WETH");
         require(collector != address(0), "ZERO_COLLECTOR");
@@ -117,6 +129,7 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         require(_netBps > _hydeBps && _netBps < BPS_DENOM, "NET_BPS");
         require(_maxSlippageBps < BPS_DENOM, "SLIPPAGE"); // floor can't be zeroed (INV-18)
         require(_twapWindow != 0, "ZERO_TWAP");
+        require(_maxSettleDevTicks > 0, "ZERO_DEV_TICKS"); // gate can't be disabled (FINDING-3)
 
         SETTLEMENT_TOKEN = settlementToken;
         COLLECTOR = collector;
@@ -128,6 +141,7 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
         NET_BPS = _netBps;
         MAX_SLIPPAGE_BPS = _maxSlippageBps;
         TWAP_WINDOW = _twapWindow;
+        MAX_SETTLE_DEV_TICKS = _maxSettleDevTicks;
         _deployer = msg.sender;
     }
 
@@ -203,7 +217,14 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
 
             // Oracle floor — the hook TWAP (interpolated at now−TWAP_WINDOW; reverts ORACLE_NOT_READY
             // until the window is spanned). The vault converts the mean tick → WETH quote.
-            int24 twapTick = HOOK.consult(_poolId(token), TWAP_WINDOW);
+            PoolId pid = _poolId(token);
+            int24 twapTick = HOOK.consult(pid, TWAP_WINDOW);
+            // (FINDING-3) Spot-vs-TWAP deviation gate — refuse the swap at a manipulated spot, mirroring
+            // the collector's compound add-gate. The TWAP floor alone lets a sustained push drag the
+            // floor down with the spot; this rejects when spot has been shoved off the TWAP.
+            (, int24 spot,,) = POOL_MANAGER.getSlot0(pid);
+            int24 dev = spot >= twapTick ? spot - twapTick : twapTick - spot;
+            require(dev <= MAX_SETTLE_DEV_TICKS, "SETTLE_DEV");
             uint256 twapQuote = OracleLib.getQuoteAtTick(twapTick, amountIn, token, address(SETTLEMENT_TOKEN));
             uint256 floor = Math.mulDiv(twapQuote, BPS_DENOM - MAX_SLIPPAGE_BPS, BPS_DENOM);
             uint256 minOut = floor > callerMinOut ? floor : callerMinOut; // tighten-only
@@ -218,9 +239,20 @@ contract HydeFeeVault is IHydeVault, IUnlockCallback, ReentrancyGuard, Multicall
 
         // (rev8) Split creator/Hyde ONLY (no holder leg). `wethAmt` is already the post-carve 95%
         // remainder, so `hydeBps/NET_BPS` = 500/9500 makes Hyde exactly 5% of the original notional and
-        // creator the 90% remainder. Rounding favors the creator (creatorCut = wethAmt − hydeCut, exact).
+        // creator the 90% remainder.
+        // (FINDING-6) Carry-corrected so the split is PARTITION-INVARIANT: hydeCut =
+        // floor((wethAmt·hydeBps + carry)/NET_BPS); the per-token carry banks the sub-unit remainder so
+        // fragmenting a settle into tiny chunks can't floor Hyde's share away. The mulmod remainder is
+        // < NET_BPS and the prior carry is < NET_BPS, so their sum is < 2·NET_BPS ⇒ at most one
+        // carry-over per call and the banked carry stays < NET_BPS.
         uint256 hydeCut = Math.mulDiv(wethAmt, hydeBps, NET_BPS);
-        uint256 creatorCut = wethAmt - hydeCut;
+        uint256 rem = mulmod(wethAmt, hydeBps, NET_BPS) + hydeSplitCarry[token];
+        if (rem >= NET_BPS) {
+            hydeCut += 1;
+            rem -= NET_BPS;
+        }
+        hydeSplitCarry[token] = rem;
+        uint256 creatorCut = wethAmt - hydeCut; // exact: creatorCut + hydeCut == wethAmt (solvency INV-27)
 
         creatorClaimable[token] += creatorCut;
         hydeClaimable[token] += hydeCut;

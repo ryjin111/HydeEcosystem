@@ -125,7 +125,12 @@ contract HydeTokenFactory is ReentrancyGuard {
     address public pendingOwner;
     bool public paused;
 
-    uint256 private _nonce; // clone-salt entropy
+    /// @notice (FINDING-8) PER-LAUNCHER clone-salt nonce. A single global counter let ANY concurrent
+    ///         launch increment the entropy between a user's `predictNext` preview and their `launch`,
+    ///         drifting them onto a different token address than the one they explicitly confirmed. Keyed
+    ///         by launcher, an unrelated sender can no longer perturb a user's predicted address (the salt
+    ///         already binds `msg.sender`, so cross-launcher collision was never possible either).
+    mapping(address => uint256) private _nonce;
 
     /* ─────────────────────────── events ────────────────────────────────────── */
     event LaunchFeePaid(address indexed payer, address indexed treasury, uint256 amount);
@@ -291,7 +296,7 @@ contract HydeTokenFactory is ReentrancyGuard {
         emit LaunchFeePaid(msg.sender, launchFeeTreasury, launchFeeAmount);
 
         // 2. deterministic EIP-1167 clone.
-        bytes32 salt = keccak256(abi.encode(msg.sender, lp.symbol, _nonce++));
+        bytes32 salt = keccak256(abi.encode(msg.sender, lp.symbol, _nonce[msg.sender]++));
         token = Clones.cloneDeterministic(IMPL, salt);
 
         // 3. open the vault namespace BEFORE the init mint (the mint's `sync` requires registration; INV-30).
@@ -409,7 +414,7 @@ contract HydeTokenFactory is ReentrancyGuard {
 
     /// @notice Predict the clone address for the CURRENT nonce (for UX / off-chain prep only).
     function predictNext(address launcher, string calldata symbol) external view returns (address) {
-        bytes32 salt = keccak256(abi.encode(launcher, symbol, _nonce));
+        bytes32 salt = keccak256(abi.encode(launcher, symbol, _nonce[launcher]));
         return Clones.predictDeterministicAddress(IMPL, salt, address(this));
     }
 

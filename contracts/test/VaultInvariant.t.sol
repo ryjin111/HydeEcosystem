@@ -118,7 +118,8 @@ contract VaultInvariantTest is Test {
             500, // hydeBps
             9500, // NET_BPS (BPS_DENOM − liqBps)
             300,
-            1800
+            1800,
+            int24(200) // MAX_SETTLE_DEV_TICKS (FINDING-3)
         );
         vault.initFactory(address(handler)); // test is the deployer → sets the handler as factory
         handler.wire(vault, 3, 4); // 3 tokens, 4 actors

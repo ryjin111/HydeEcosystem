@@ -293,27 +293,42 @@ contract HydeHook is IHooks, IHydeHook {
         if (dcum < 0 && dcum % win != 0) twapTick -= 1; // canonical OracleLibrary: round toward −∞
     }
 
-    /// @dev Wrap-safe search for the two stored observations bracketing `target`, then linear
-    ///      interpolation of the cumulative at `target`. Returns false if `target` predates the
-    ///      oldest retained observation (window not yet spanned).
+    /// @dev BINARY-SEARCH the observation ring for the pair bracketing `target`, then linearly
+    ///      interpolate the cumulative at `target`. O(log cardinality) — replaces the former
+    ///      O(cardinality) linear scan (FINDING-2), so a ring sized for the whole TWAP window is
+    ///      cheap to read and `settle`/`compound` can't be DoS'd by a churned ring. Returns false
+    ///      if `target` predates the oldest retained observation (window not yet spanned).
+    ///
+    ///      Ring timestamps increase monotonically oldest→newest; the ring fills forward and slot 0
+    ///      is seeded at activation, so before it wraps the oldest is slot 0, after wrap it is the
+    ///      slot just past `newest`. Every slot in [oldest, newest] is initialized (no gaps).
     function _interpolateAtTarget(PoolId id, uint32 target) internal view returns (bool ok, int56 cum) {
         uint16 card = cardinality;
         uint16 newest = ringIndex[id];
-        for (uint16 k = 0; k < card; k++) {
-            uint16 iA = uint16((uint256(newest) + card - k) % card); // newer
-            uint16 iB = uint16((uint256(newest) + card - k - 1) % card); // older
-            Obs memory a = obs[id][iA];
-            Obs memory b = obs[id][iB];
-            if (b.ts == 0) continue; // uninitialized older slot
-            if (b.ts <= target && target <= a.ts) {
-                if (target == b.ts) return (true, b.cum);
-                if (target == a.ts || a.ts == b.ts) return (true, a.cum);
-                int56 span = int56(uint56(a.ts - b.ts));
-                int56 into = int56(uint56(target - b.ts));
-                return (true, b.cum + (a.cum - b.cum) * into / span);
-            }
+        uint16 next = uint16((uint256(newest) + 1) % card);
+        bool wrapped = obs[id][next].ts != 0;
+        uint16 oldest = wrapped ? next : 0;
+        uint256 count = wrapped ? card : (uint256(newest) + 1);
+
+        // Window not spanned by stored history → caller reverts ORACLE_NOT_READY.
+        if (target < obs[id][oldest].ts) return (false, 0);
+
+        // Largest logical position p in [0, count-1] whose obs.ts ≤ target. The caller only reaches
+        // here with target < newest.ts (idle case handled by extrapolation), so p < count-1 ⇒ the
+        // newer neighbor `a` always exists — no wrap-past-newest edge.
+        uint256 lo = 0;
+        uint256 hi = count - 1;
+        while (lo < hi) {
+            uint256 mid = (lo + hi + 1) >> 1;
+            if (obs[id][uint16((uint256(oldest) + mid) % card)].ts <= target) lo = mid;
+            else hi = mid - 1;
         }
-        return (false, 0);
+        Obs memory b = obs[id][uint16((uint256(oldest) + lo) % card)]; // beforeOrAt (older)
+        Obs memory a = obs[id][uint16((uint256(oldest) + lo + 1) % card)]; // atOrAfter (newer)
+        if (target == b.ts) return (true, b.cum);
+        int56 span = int56(uint56(a.ts - b.ts));
+        int56 into = int56(uint56(target - b.ts));
+        return (true, b.cum + (a.cum - b.cum) * into / span);
     }
 
     /* ─────────────────────── unused hooks (mined out; revert) ───────────────── */

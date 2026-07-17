@@ -78,6 +78,12 @@ contract HydeFeeCollector {
     ///         NFT — there is NO owner sweep/drain/withdraw selector for these balances (INV-C6).
     mapping(address => uint256) public pendingLiqLT;
     mapping(address => uint256) public pendingLiqWETH;
+    /// @notice (FINDING-7) per-token, per-asset carry of the in-kind carve rounding remainder
+    ///         (< BPS_DENOM). Makes the 5% `liqBps` carve PARTITION-INVARIANT: fragmenting harvests into
+    ///         tiny sub-carve chunks yields the same cumulative `pendingLiq` as one harvest (per-call
+    ///         floor alone shorted the liquidity carve and over-forwarded the remainder to the vault).
+    mapping(address => uint256) public carveCarryLT;
+    mapping(address => uint256) public carveCarryWETH;
     /// @notice lifetime added into the locked position (currency0/currency1), for the frontend meter.
     mapping(address => uint256) public totalCompounded0;
     mapping(address => uint256) public totalCompounded1;
@@ -209,8 +215,10 @@ contract HydeFeeCollector {
         // (rev8) In-kind liqBps carve — retain 5% of EACH harvested asset, note the remainder. Exact
         // conservation (INV-C7): dLT = liqLT + noted_LT, dWETH = liqWETH + noted_WETH (subtraction, not a
         // second mulDiv), so nothing is created or dropped — every wei is queued or noted.
-        uint256 liqLT = Math.mulDiv(ltIn, liqBps, BPS_DENOM);
-        uint256 liqWETH = Math.mulDiv(wethIn, liqBps, BPS_DENOM);
+        // (FINDING-7) carry-corrected carve — PARTITION-INVARIANT per asset (see `_carve`). Independent
+        // LT/WETH carries so neither side's rounding can be griefed to 0 via fragmented harvests.
+        uint256 liqLT = _carve(ltIn, carveCarryLT, token);
+        uint256 liqWETH = _carve(wethIn, carveCarryWETH, token);
         pendingLiqLT[token] += liqLT;
         pendingLiqWETH[token] += liqWETH;
 
@@ -301,6 +309,25 @@ contract HydeFeeCollector {
     }
 
     /* ─────────────────────────── internals ─────────────────────────────────── */
+    /// @dev (FINDING-7) Carve `liqBps` of `amount` with a per-token remainder carry so the carve is
+    ///      PARTITION-INVARIANT: carveOut = floor((amount·liqBps + carry)/BPS_DENOM); the banked carry
+    ///      (< BPS_DENOM) releases one unit once the sub-carve remainders accumulate past a whole. The
+    ///      mulmod remainder is < BPS_DENOM and the prior carry is < BPS_DENOM ⇒ ≤1 carry-over per call.
+    ///      Guarantees `carveOut ≤ amount` (so `noteX = amount − carveOut` never underflows) and exact
+    ///      conservation (carveOut + noteX == amount every call).
+    function _carve(uint256 amount, mapping(address => uint256) storage carry, address token)
+        private
+        returns (uint256 carveOut)
+    {
+        carveOut = Math.mulDiv(amount, liqBps, BPS_DENOM);
+        uint256 rem = mulmod(amount, liqBps, BPS_DENOM) + carry[token];
+        if (rem >= BPS_DENOM) {
+            carveOut += 1;
+            rem -= BPS_DENOM;
+        }
+        carry[token] = rem;
+    }
+
     /// @dev Hand one harvested asset to the vault: approve exact → vault pulls+measures → reset to 0.
     function _note(address token, address asset, uint256 amount) private {
         IERC20(asset).forceApprove(address(VAULT), amount);
