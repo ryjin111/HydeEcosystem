@@ -9,11 +9,39 @@ import {
 } from "../utils/dopplerLaunch";
 import { simulateHydeLaunch, executeHydeLaunch, type HydeLaunchStep } from "../utils/hydeLaunch";
 import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET } from "../utils/constants";
+import { preCheckImageFile, AVATAR_SIZE } from "../utils/imageValidation";
 import { TokenImage } from "./TokenImage";
 
 /* ─── component ────────────────────────────────────────────────────────────── */
 
 const RH_TESTNET_ID = ROBINHOOD_TESTNET.id;
+
+/**
+ * Resize/center-crop any picked image to an exact AVATAR_SIZE² PNG (kami locked spec).
+ * Re-encoding through a canvas both normalizes dimensions (so the server's exact-500×500 gate
+ * always passes for a legit image) AND rasterizes — any vector/script content is flattened to
+ * pixels. The server still independently validates the uploaded bytes.
+ */
+async function toAvatarBlob(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const S = AVATAR_SIZE;
+    const canvas = document.createElement("canvas");
+    canvas.width = S;
+    canvas.height = S;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no 2d context");
+    const scale = Math.max(S / bitmap.width, S / bitmap.height); // cover
+    const w = bitmap.width * scale;
+    const h = bitmap.height * scale;
+    ctx.drawImage(bitmap, (S - w) / 2, (S - h) / 2, w, h);
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/png"),
+    );
+  } finally {
+    bitmap.close?.();
+  }
+}
 
 /** Toast copy for each step of the testnet own-stack launch (faucet → approve → launch). */
 const HYDE_STEP_LABEL: Record<HydeLaunchStep, string> = {
@@ -41,6 +69,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [uploading,  setUploading]  = useState(false);
   const [launched,   setLaunched]   = useState<{ token: string; tx: string } | null>(null);
   const [recipientConfirmed, setRecipientConfirmed] = useState(false);
 
@@ -50,25 +79,49 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   // A preview belongs to exactly one input set — any edit (or network flip) invalidates it
   useEffect(() => { setPreview(null); setRecipientConfirmed(false); setPreviewError(null); }, [name, symbol, imageUrl, description, chainId]);
 
-  // Small images embed straight into the on-chain metadata (data URI) — no
-  // pinning service, no server, permanent. Size-gated: tokenURI is calldata.
+  // Upload-only (v1): the chosen file is pinned to IPFS by our own server gate
+  // (/api/pin-image — 2 MB cap + magic-byte raster sniff, browser MIME never trusted),
+  // and we store ONLY the returned ipfs://CID as the token image. No on-chain embed,
+  // no pasted URLs/data URIs — one flow, one validator, content-addressed + immutable.
   // (Doppler rail only — own-stack HydeERC20 stores no tokenURI, so testnet hides this.)
-  const MAX_EMBED_BYTES = 24 * 1024;
-  const handleImageFile = (file: File | undefined) => {
+  const handleImageFile = async (file: File | undefined) => {
     if (!file) return;
-    if (!/^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(file.type)) {
-      toast.error("Use a PNG, JPG, GIF, WebP or SVG image."); return;
+    const pre = preCheckImageFile(file); // fast UX pre-check; server is authoritative
+    if (!pre.ok) { toast.error(pre.error); return; }
+    setUploading(true);
+    const toastId = "hyde-pin";
+    toast.loading("Preparing & pinning image…", { id: toastId });
+    let blob: Blob;
+    try {
+      blob = await toAvatarBlob(file); // exact 500×500 PNG (rasterized, dimension-normalized)
+    } catch {
+      toast.error("Couldn't read that image — try a different PNG or JPG.", { id: toastId });
+      setUploading(false);
+      return;
     }
-    if (file.size > MAX_EMBED_BYTES) {
-      toast.error("Image too large to store on-chain (max 24 KB) — paste an image URL instead."); return;
+    try {
+      const res = await fetch("/api/pin-image", { method: "POST", headers: { "Content-Type": "image/png" }, body: blob });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(
+          res.status === 503
+            ? "Image uploads aren't available yet — you can launch without an image."
+            : (data?.error || "Upload failed."),
+          { id: toastId, duration: 6000 },
+        );
+        return;
+      }
+      setImageUrl(data.uri as string); // ipfs://<cid>
+      toast.success("Image pinned to IPFS.", { id: toastId });
+    } catch {
+      toast.error("Upload failed — check your connection.", { id: toastId });
+    } finally {
+      setUploading(false);
     }
-    const reader = new FileReader();
-    reader.onload = () => setImageUrl(reader.result as string);
-    reader.readAsDataURL(file);
   };
 
-  const imageUrlValid = !imageUrl
-    || /^https:\/\/.+/.test(imageUrl) || /^ipfs:\/\/.+/.test(imageUrl) || /^data:image\//.test(imageUrl);
+  // imageUrl is either "" or a pinned ipfs://CID — the only accepted shape in upload-only v1.
+  const hasImage = imageUrl.startsWith("ipfs://");
 
   const chainMismatch = isConnected && walletChainId !== chainId;
   const formValid = !!name.trim() && !!symbol.trim();
@@ -267,28 +320,21 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         <>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-pcs-textSub">Token Image <span className="text-pcs-textDim font-normal">(optional)</span></label>
-            <div className="flex items-center gap-2">
-              <input
-                className="input flex-1 font-code"
-                placeholder="https:// or ipfs:// image URL"
-                value={imageUrl.startsWith("data:") ? "" : imageUrl}
-                onChange={(e) => setImageUrl(e.target.value.trim())}
-                disabled={imageUrl.startsWith("data:")}
-              />
+            {!hasImage ? (
               <label
-                className="text-xs font-semibold px-3 py-2 rounded-xl cursor-pointer transition flex-shrink-0"
-                style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
+                className={`text-xs font-semibold px-3 py-2.5 rounded-xl transition flex items-center justify-center gap-2 ${uploading ? "opacity-60 cursor-wait" : "cursor-pointer"}`}
+                style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0", border: "1px dashed rgba(46,159,230,0.35)" }}
               >
-                Upload
+                {uploading ? "Pinning to IPFS…" : "Upload image"}
                 <input
                   type="file"
-                  accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                  accept="image/png,image/jpeg"
                   className="hidden"
+                  disabled={uploading}
                   onChange={(e) => handleImageFile(e.target.files?.[0])}
                 />
               </label>
-            </div>
-            {imageUrl && imageUrlValid && (
+            ) : (
               <div className="flex items-center gap-2 mt-1">
                 <TokenImage
                   src={imageUrl}
@@ -296,11 +342,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
                   className="h-10 w-10 rounded-full flex-shrink-0 text-sm"
                   style={{ border: "1px solid #22252D" }}
                 />
-                <p className="text-[11px] text-pcs-textDim flex-1">
-                  {imageUrl.startsWith("data:")
-                    ? "Embedded — stored permanently on-chain with the token."
-                    : "Referenced by URL in the on-chain metadata."}
-                </p>
+                <p className="text-[11px] text-pcs-textDim flex-1">On IPFS · content-addressed (immutable).</p>
                 <button
                   className="text-[11px] text-pcs-textDim hover:text-pcs-text transition"
                   onClick={() => setImageUrl("")}
@@ -309,10 +351,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
                 </button>
               </div>
             )}
-            {imageUrl && !imageUrlValid && (
-              <p className="text-[11px]" style={{ color: "#E8A33D" }}>Must be an https://, ipfs:// or uploaded image.</p>
-            )}
-            <p className="text-[10px] text-pcs-textDim">Uploads up to 24 KB are embedded on-chain forever; larger images should be hosted and pasted as a URL.</p>
+            <p className="text-[10px] text-pcs-textDim">PNG or JPG · auto-cropped to 500×500 · pinned to IPFS, not stored on-chain.</p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -358,7 +397,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           <div className="flex justify-between items-center text-xs">
             <span className="text-pcs-textDim">Token</span>
             <span className="text-pcs-text font-medium flex items-center gap-2">
-              {!isTestnet && imageUrl && imageUrlValid && (
+              {!isTestnet && hasImage && (
                 <TokenImage src={imageUrl} symbol={symbol} className="h-5 w-5 rounded-full text-[8px]" style={{ border: "1px solid #22252D" }} />
               )}
               {name.trim()} <span className="font-code">{symbol.trim()}</span>
@@ -368,7 +407,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             <div className="flex justify-between text-xs">
               <span className="text-pcs-textDim">Metadata</span>
               <span className="text-pcs-text font-medium">
-                {[imageUrl ? (imageUrl.startsWith("data:") ? "image embedded on-chain" : "image by URL") : null,
+                {[hasImage ? "image on IPFS" : null,
                   description ? "description" : null].filter(Boolean).join(" + ")}
               </span>
             </div>
@@ -443,7 +482,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         <button
           className="btn-neon w-full py-3 text-sm"
           onClick={handlePreview}
-          disabled={!formValid || (!isTestnet && !imageUrlValid) || previewing}
+          disabled={!formValid || previewing || uploading}
         >
           {previewing ? "Simulating…" : "Preview Launch"}
         </button>
