@@ -14,7 +14,7 @@ import {
  * The launchpad's LIVE own-stack path — launches go through OUR HydeTokenFactory
  * (not Doppler). One `launch(LaunchParams{name,symbol,presetId})` atomically:
  * clones HydeERC20, seeds all 1B single-sided into the LT-only range, and hands
- * the position NFT to the collector's PERMANENT custody (the un-ruggable, grows-
+ * the position NFT to the collector's PERMANENT custody (the permanently-locked, grows-
  * every-trade LP). `creator := msg.sender` and is immutable.
  *
  * Fee: a flat $1 in the mock USDG (6-dec) charged to the launch-fee treasury,

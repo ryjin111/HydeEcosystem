@@ -1,6 +1,6 @@
 # Security Policy
 
-Hyde is an un-ruggable token launchpad built on Uniswap V4. Because it handles
+Hyde is a token launchpad built on Uniswap V4. Because it handles
 value, we take security reports seriously.
 
 ## Current deployment status

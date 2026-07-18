@@ -1,8 +1,8 @@
 # Contributing to Hyde Ecosystem
 
-Thanks for your interest. Hyde is an own-stack, un-ruggable token launchpad on
-Uniswap V4 (contracts + a Vite/React frontend). This guide covers how to build,
-test, and propose changes.
+Thanks for your interest. Hyde is a token launchpad on Uniswap V4 (contracts +
+a Vite/React frontend). This guide covers how to build, test, and propose
+changes.
 
 Please also read the [Code of Conduct](CODE_OF_CONDUCT.md). Security issues have
 their own private path — see [SECURITY.md](SECURITY.md), **do not** file them as

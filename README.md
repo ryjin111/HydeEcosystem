@@ -1,6 +1,6 @@
 # Hyde Ecosystem
 
-**An own-stack, un-ruggable token launchpad built on Uniswap V4.**
+**A token launchpad built on Uniswap V4.**
 
 Hyde lets anyone launch an ERC-20 whose entire supply is seeded into a single, permanently custody-locked V4 liquidity position. There is no team allocation, no pre-mint, no mint/burn/pause, and no path for anyone — including the creator or the protocol — to pull the liquidity. Trading fees are split **90% creator / 5% Hyde / 5% permanently auto-compounded back into the locked position**, so the liquidity floor only ever grows.
 

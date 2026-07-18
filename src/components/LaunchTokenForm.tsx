@@ -244,7 +244,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#34C77B" }}>● LIVE · HYDE OWN-STACK</p>
             <p className="mt-1 font-mono text-[11px]" style={{ color: "#8A93A2" }}>
               Launches route through YOUR HydeTokenFactory — all 1B single-sided-seeded, the position NFT held in
-              the collector's permanent custody (un-ruggable, grows as it earns fees) · anti-snipe max-wallet.
+              the collector's permanent custody (permanently locked, grows as it earns fees) · anti-snipe max-wallet.
             </p>
           </div>
         </>
@@ -284,7 +284,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           <div className="rounded-xl px-4 py-3" style={{ background: "rgba(224,163,46,0.06)", border: "1px solid rgba(224,163,46,0.25)" }}>
             <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>COMING · HYDE STACK</p>
             <p className="mt-1 font-mono text-[11px]" style={{ color: "#8A93A2" }}>
-              $1 flat launch fee · 90% creator · 5% Hyde · 5% auto-locked liquidity (un-ruggable, grows as it earns fees) · anti-snipe max-wallet
+              $1 flat launch fee · 90% creator · 5% Hyde · 5% auto-locked liquidity (permanently locked, grows as it earns fees) · anti-snipe max-wallet
             </p>
           </div>
         </>

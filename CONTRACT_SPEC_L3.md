@@ -74,7 +74,7 @@ post-audit findings (spec==code). **Push/deploy gates on:** (1) FINDING-1 hook-a
 - **LP-lock:** custody-only on Hyde's seeded v4 position NFT; **no** hook removal-revert (would brick fee-collect + trap
   external LPs). **Supply constant 1e9** (no mint/burn). **(rev8) The 5% auto-compound adds INTO this same NFT** — it
   grows the locked position, `add-only`, with **no decrease/transfer/burn path** → the compounded depth is
-  un-ruggable by construction (same custody surface, no new NFT, no range-roll).
+  custody-locked by construction (same custody surface, no new NFT, no range-roll).
 
 ---
 
@@ -437,7 +437,7 @@ strands or loses the pending in-kind funds (they remain conserved + locked, re-a
     funds, or force a bad add. INV-C1..C6.
 14. **(rev8) Pending in-kind custody** → `pendingLiqLT`/`pendingLiqWETH` have **no** owner sweep/withdraw/transfer
     selector (custody-locked like the NFT); the compounded liquidity lands in the add-only NFT and can never be
-    decreased/removed → the 5% liquidity leg is un-ruggable end-to-end. INV-C6/C8.
+    decreased/removed → the 5% liquidity leg is custody-locked end-to-end. INV-C6/C8.
 15. **(rev8) Liveness of an unflushable pending** → if spot sits wrong-side of the range with only wrong-side pending,
     `getLiquidityForAmounts` returns 0 → `DUST_ACCUMULATE` skip; the pending stays **conserved + locked**, honestly
     surfaced as "queued — not yet liquidity" (never counted in the hero `lockedLiquidity`). Bounded only by cumulative
