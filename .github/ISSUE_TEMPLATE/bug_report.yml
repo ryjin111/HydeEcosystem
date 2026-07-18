@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a problem with the Hyde launchpad UI, the contracts, or the tests.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. **Do not report security vulnerabilities here** —
+        use the private path in [SECURITY.md](../blob/main/SECURITY.md).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the project?
+      options:
+        - Frontend (launchpad UI)
+        - Contracts (Solidity / Foundry tests)
+        - Serverless API (IPFS pin / rate limit)
+        - Docs / README
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I ..., I expected ..., but instead ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps. For contracts, a failing `forge test` (plain, no `--match` filter) is ideal.
+      placeholder: |
+        1. Run `npm ci && npm run dev`
+        2. Connect a wallet on Robinhood Testnet (46630)
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: chain
+    attributes:
+      label: Network / chain (if relevant)
+      placeholder: "Robinhood Testnet (46630)"
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Node version (`node -v`), browser/wallet, and — for contracts — `forge --version`.
+      placeholder: |
+        - OS:
+        - Node:
+        - Browser / wallet:
+        - forge --version:
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / console output
+      description: Paste any error text or console output. This will be rendered as code.
+      render: shell

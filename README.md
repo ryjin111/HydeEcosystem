@@ -30,7 +30,7 @@ The protocol contracts, the launchpad frontend, and the security audit in this r
 ## What We Built
 
 ### Smart contracts (`contracts/`) — own Uniswap V4 stack
-Five core contracts, ~55 Foundry tests run against a fork of **real Uniswap V4** on Robinhood Chain.
+Five core contracts with **56 Foundry test/invariant functions** (55 pass · 1 skipped). They run against **real Uniswap V4 core + periphery deployed in a local Foundry harness** (via v4-core's `Deployers`) — **not a chain fork**. A single *optional* smoke test (`TestnetForkSmoke`) forks a live testnet when `TESTNET_RPC` is set, and skips cleanly otherwise.
 
 | Contract | Role |
 |---|---|
@@ -78,16 +78,17 @@ All of these are `internal constant`s in **`contracts/script/DeployHydeStack.s.s
 | **Base (steady-state) fee** | `10_000` (**1%**) | pips | `≤ startFee` | `BASE_FEE` | Deploy-time → immutable | The normal swap fee the anti-snipe tax decays down to. |
 | **Fee hard cap** | `50_000` (**5%**) | pips | `≤ MAX_LP_FEE` (100%) | `MAX_LP_FEE_CAP` | Deploy-time → immutable | Absolute ceiling — the swap fee can **never** exceed this, ever. Blocks a "fee to 100%" honeypot. |
 | **Anti-snipe window** | `300` (**5 min**) | seconds | `> 0` | `ANTI_SNIPE_WINDOW` | Deploy-time → immutable | How long the 3%→1% decay runs. So: **trading fee = 3% at launch → 1% over 5 minutes.** |
-| **Max wallet** | `100` (**1%**) | bps | `0 < bps ≤ 300` (≤3%) | `MAX_WALLET_BPS` | Deploy-time → immutable | Caps how much one wallet can **buy/receive** early. **Receive-only — never blocks a sell.** |
+| **Max wallet** | `100` (**1%**) | bps | `0 < bps ≤ 300` (≤3%) | `MAX_WALLET_BPS` | Deploy-time → immutable | Caps the balance a wallet may **receive** early — applies to **any receipt (a buy *or* an incoming transfer)** and bounds the recipient's resulting balance. **Recipient-side only — never blocks a sell or any outgoing transfer.** |
 | **Max-wallet window** | `300` (**5 min**) | seconds | `0 < w ≤ 3600` (≤1h) | `MAX_WALLET_WINDOW` | Deploy-time → immutable | How long the 1% cap applies, then it lifts forever. |
-| **Fee split** | `9500 / 500 / 500` (**90 / 5 / 5**) | bps | `NET_BPS + liqBps == 10_000` (**deploy assert**) | `NET_BPS` / `HYDE_BPS` / `LIQ_BPS` | Deploy-time → immutable | 90% creator · 5% Hyde · 5% auto-compounded into permanently-locked liquidity. Can't be re-pointed. |
+| **Fee split (economic)** | **90 / 5 / 5** = `9000 / 500 / 500` bps of the fee notional | bps | `hydeBps == 500` **and** `liqBps == 500` (ctor `require`, hard-coded) · `NET_BPS + liqBps == 10_000` (deploy assert) | `HYDE_BPS` / `LIQ_BPS` (both fixed at `500` in Solidity) · `NET_BPS` (= the `9500` remainder) | **Solidity-hard-coded** — changing it needs a **code change + re-audit**, *not* just a new deploy constant | 90% creator · 5% Hyde · 5% auto-compounded into the permanently-locked position. `NET_BPS=9500` is the *post-liq-carve remainder* / vault split **denominator**, **not** the creator's share. |
 | **Settle slippage floor** | `300` (**3%**) | bps | permissionless backstop | `MAX_SLIPPAGE` | Deploy-time → immutable | Floor on the one fee→WETH swap; a keeper can pass a tighter bound. |
 | **TWAP window** | `1800` (**30 min**) | seconds | `CARDINALITY (2048) > window` | `TWAP_WINDOW` | Deploy-time → immutable | Oracle averaging window backing the fee/settle price floors. |
 
 **In plain terms:**
 - **Yes, there is an anti-snipe tax:** the swap fee starts at **3%** and decays to **1%** over the first **5 minutes** — snipers pay the most, normal traders pay 1%.
-- **Yes, there is a max wallet:** one wallet can hold at most **1% of supply for the first 5 minutes**, and it only limits **buying** — it can **never** stop you selling. No blacklist, no transfer-pause, no owner setter.
-- The **90/5/5 split is immutable** and cross-checked at deploy, so it can't silently drift.
+- **Yes, there is a max wallet:** for the first **5 minutes**, no wallet may **receive** more than **1% of supply** — this bounds the *recipient's* balance on **any receipt (a buy *or* an incoming transfer)**. It can **never** stop you selling or sending tokens out. No blacklist, no transfer-pause, no owner setter.
+- **On the split numbers:** the *economic* split is **90% creator / 5% Hyde / 5% liquidity** (`9000 / 500 / 500` bps of the original fee). `HYDE_BPS` and `LIQ_BPS` are **hard-coded to `500` in the contract constructors** (`require(_hydeBps == 500)` / `require(_liqBps == 500)`); `NET_BPS = 9500` is the *post-liquidity-carve remainder* the vault uses as its split **denominator** (`hydeBps / NET_BPS = 500 / 9500` = exactly 5% of the original notional), **not** the creator's share. Because those shares are `require`-locked in Solidity, **changing the split is a code change + re-audit — not merely a new deploy constant.**
+- The **90/5/5 split is immutable** and cross-checked at deploy (`NET_BPS + liqBps == 10_000`), so it can't silently drift.
 - The factory's *only* owner power is `pause`/`unpause` of **new launches**, and it's **renounceable** — set `owner = 0` and even that disappears, making the whole stack permanently immutable and publicly verifiable.
 - Making any of the above **changeable at runtime would remove an immutability guarantee**, so it is *intentionally not implemented*. It would require a separate threat-model/spec decision before being added.
 
@@ -120,7 +121,7 @@ The design was pressure-tested against real 2025/2023 DeFi exploits. Each attack
 
 ### Findings caught & fixed during internal review
 
-The AI-agent review surfaced and patched these **before** any deploy. Findings F2–F8 were fixed and pushed in `efedd1a`; the full matrix lives in [`AUDIT_HANDOFF.md`](AUDIT_HANDOFF.md) and [`CONTRACT_SPEC_L3.md`](CONTRACT_SPEC_L3.md).
+The AI-agent review surfaced and patched these **before** any deploy. Findings F2–F8 are fixed in the contracts on `main`; the full matrix lives in [`AUDIT_HANDOFF.md`](AUDIT_HANDOFF.md) and [`CONTRACT_SPEC_L3.md`](CONTRACT_SPEC_L3.md).
 
 - **F1 — Hook flag-bit trap (honeypot-for-LPs).** A hook deployed to an address with a stray remove/add/donate permission bit would trap external LP removals. **Fix:** the hook address is mined to *exactly* the 4 required permission bits, and both the factory ctor and hook ctor assert it fail-closed. Negative test proves a remove-bit hook traps `decreaseLiquidity` while the correct one doesn't.
 - **F2 — Oracle liveness DoS (griefable `settle`/`compound`).** With a TWAP window measured in seconds on a 2s-block chain, a too-small oracle ring couldn't span the window → `consult` reverted `ORACLE_NOT_READY` → DoS on any active pool. Naively raising ring cardinality just traded a ring-DoS for an O(cardinality) on-chain gas-DoS. **Fix:** binary-search the oracle ring (Uniswap V3 `OracleLibrary` pattern) **and** size the ring against the window in seconds (same-second swaps coalesce → block-time-independent).
@@ -143,7 +144,7 @@ This project was built and audited end-to-end by an autonomous multi-agent team,
 - **Reviewer** — independent adversarial audit; owned the pass/fail gate and the push.
 - **Designer** — UX, honesty of claims, and visual/trust surface.
 
-The review was adversarial by design (each finding had to be *refuted or confirmed* by an independent pass, not just re-found), and it ran the contracts against a **fork of real Uniswap V4** on the target chain rather than mocks. The output is the finding set above plus an external-audit handoff package.
+The review was adversarial by design (each finding had to be *refuted or confirmed* by an independent pass, not just re-found), and it ran the contracts against **real Uniswap V4 core + periphery deployed in a local Foundry harness** — not mocks, and not a chain fork. The output is the finding set above plus an external-audit handoff package.
 
 > **Honesty note:** this is an *internal* AI-agent review, not a substitute for a professional external audit. An independent external audit is the explicit gate before any mainnet value is deployed.
 
@@ -187,8 +188,8 @@ cd HydeEcosystem
 ### 2. Run the frontend (the launchpad UI)
 
 ```bash
-npm install     # installs dependencies (one time; takes a minute)
-npm run dev      # starts the local dev server
+npm ci          # installs the exact locked dependencies from package-lock.json (one time; ~a minute)
+npm run dev     # starts the local dev server
 ```
 
 Then open the URL it prints (usually **http://localhost:5173**) in your browser. You should see the Hyde launchpad. It's already wired to the **live own-stack factory on Robinhood Testnet (chain 46630)** — connect a wallet on that network and you can launch/trade against real testnet contracts, no config needed.
@@ -207,7 +208,7 @@ npm run preview  # serves that production build locally to verify it
 ```bash
 cd contracts
 forge install    # fetches contract dependencies (one time)
-forge test       # runs the full suite (~55 tests) against a real Uniswap V4 fork
+forge test       # runs the full suite (56 test/invariant fns) against real V4 deployed locally
 ```
 
 > ⚠️ **Run plain `forge test`** (no `--match` filter). A `--match*` filter sparse-prunes `ForceCompile.sol` and breaks `vm.getCode` at setUp. Fork tests are gated behind an RPC env var and skip cleanly if it's unset — a clean run is ~55 pass / 1 skip.
@@ -221,6 +222,10 @@ forge test       # runs the full suite (~55 tests) against a real Uniswap V4 for
 | `VITE_IPFS_GATEWAY` | frontend | Optional | IPFS read gateway for token art. Defaults to `https://ipfs.io/ipfs/`. |
 | `TESTNET_RPC` | contract fork tests | Optional | RPC URL for the on-chain fork tests. Unset → those tests skip cleanly. |
 | `FILEBASE_KEY` / `FILEBASE_SECRET` / `FILEBASE_BUCKET` | Vercel serverless (`api/pin-image`) | Prod only | Server-side IPFS pinning secrets. **Never** prefix with `VITE_` (that would leak them into public client JS). Set in Vercel, not in the repo. |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Vercel serverless (`api/_ratelimit`) | Prod only | Vercel KV / Upstash-compatible REST credentials that back the per-IP pin **rate limiter**. If unset, the credentialed pin endpoint **fails closed** (refuses to pin) — this is deliberate so the paid Filebase key can't be abused. Set in Vercel. |
+| `PIN_RATE_LIMIT` / `PIN_RATE_WINDOW_SEC` | Vercel serverless (`api/_ratelimit`) | Optional | Pin requests allowed per window / window length in seconds. Have safe defaults (**20** requests per **3600s**); bounds are validated so a bad value can't defeat the limiter. |
+
+> This table covers the vars the code actually reads. For local development you need **none** of them (the frontend runs on public defaults); the server-only vars matter solely for the deployed Vercel pin/rate-limit flow.
 
 ### 5. Expected output (so you know it worked)
 
@@ -234,7 +239,7 @@ forge test       # runs the full suite (~55 tests) against a real Uniswap V4 for
 - **`Port 5173 is in use`** → another dev server is running; stop it, or Vite will offer the next free port.
 - **Wallet shows nothing / can't launch** → make sure your wallet is on **Robinhood Testnet (chain 46630)**; the live own-stack factory lives there.
 - **`command not found: forge`** → Foundry isn't installed. See [Foundry install](https://book.getfoundry.sh/getting-started/installation).
-- **npm install fails** → check `node -v` is ≥ 20; delete `node_modules` + `package-lock.json` and retry.
+- **`npm ci` fails** → check `node -v` is ≥ 20, then remove `node_modules/` and re-run `npm ci`. **Don't delete `package-lock.json`** — `npm ci` needs it for a reproducible install. (Only if the lockfile is genuinely out of sync should you run `npm install` to regenerate it.)
 
 > ⚠️ **Mainnet safety warning.** These contracts are **internally reviewed but NOT externally audited**, and are **not deployed with real value on Robinhood Chain mainnet (4663)**. Do **not** deploy or point this at mainnet with real funds until the external-audit gate is cleared. Testnet (46630) only.
 
@@ -248,7 +253,7 @@ forge test       # runs the full suite (~55 tests) against a real Uniswap V4 for
 contracts/            # Foundry project — the own-stack V4 contracts
   src/                #   HydeTokenFactory, HydeERC20, HydeFeeCollector,
                       #   HydeFeeVault, HydeHook + interfaces/ + libraries/
-  test/               #   ~55 tests vs a real V4 fork (Compound, HookExternalLP,
+  test/               #   56 test/invariant fns vs real V4 deployed locally (Compound, HookExternalLP,
                       #   AntiRug, Factory, Lifecycle, VaultInvariant, ...)
   script/             #   DeployHydeStack.s.sol, LaunchSmoke.s.sol
 src/                  # Vite + React frontend
