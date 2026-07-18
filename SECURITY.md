@@ -19,11 +19,14 @@ Treat nothing here as production-safe until that external-audit gate is cleared.
 **Please do not open a public issue for a security vulnerability.** Public
 disclosure of an unfixed flaw in a live-value contract can put funds at risk.
 
-Instead, report it privately via GitHub:
+Report it privately — do **not** use a public issue:
 
-1. Go to the repository's **Security → Advisories → "Report a vulnerability"**
-   ([private security advisory](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)), or
-2. Contact the maintainer **[@ryjin111](https://github.com/ryjin111)** directly.
+1. **Preferred:** open a private report on this repo — **Security → Advisories →
+   "Report a vulnerability"**. Private vulnerability reporting is **enabled**, so
+   this is a confidential channel visible only to the maintainer. (See GitHub's
+   [private vulnerability reporting docs](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability).)
+2. If you can't use that, **DM [@clintmod111 on X](https://x.com/clintmod111)**
+   (the contact on the maintainer's GitHub profile) to arrange disclosure.
 
 Please include:
 

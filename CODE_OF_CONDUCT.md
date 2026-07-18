@@ -59,10 +59,9 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement — the repository
-maintainer **[@ryjin111](https://github.com/ryjin111)** (via a GitHub direct
-message or a private security advisory). All complaints will be reviewed and
-investigated promptly and fairly.
+reported to the repository maintainer by **DM to [@clintmod111 on X](https://x.com/clintmod111)**
+(the contact published on the maintainer's GitHub profile). All complaints will
+be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.
