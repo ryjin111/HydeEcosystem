@@ -240,7 +240,11 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
                   </div>
                 </>
               ) : (
-                <p className="max-w-sm text-pcs-textSub">{gtChecked ? "The live chart appears once this pool is indexed on GeckoTerminal (usually within a few minutes of launch). Until then it trades on its Hyde auction curve." : "Checking for a live chart…"}</p>
+                <p className="max-w-sm text-pcs-textSub">{!gtChecked
+                  ? "Checking for a live chart…"
+                  : network.id === ROBINHOOD_MAINNET_ID
+                    ? "The live chart appears once this pool is indexed on GeckoTerminal (usually within a few minutes of launch). Until then it trades on its Hyde auction curve."
+                    : "No external price chart on testnet — GeckoTerminal indexes Robinhood mainnet only. This token trades live on its Hyde auction curve, on-chain."}</p>
               )}
             </div>
           )}

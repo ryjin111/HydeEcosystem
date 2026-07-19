@@ -338,9 +338,10 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
  * `factory` is set reads own-stack data (mainnet's is unset → own-stack tiles stay "coming"). */
 export const RH_TESTNET_ID = 46630;
 const HYDE_TESTNET_FACTORY = ROBINHOOD_TESTNET.factory as `0x${string}`;
-// Block the factory was deployed at (46630) — bounds every LaunchCreated scan so we never getLogs from
-// block 0 (kami A-blocker #1/#2). Update this together with ROBINHOOD_TESTNET.factory on any redeploy.
-const HYDE_TESTNET_FACTORY_DEPLOY_BLOCK = 91399234n;
+// Factory CREATION block on 46630 (verified via Blockscout, kami 22877) — a safe lower bound (no
+// LaunchCreated can precede the factory's own deploy) that bounds every scan so we never getLogs from
+// block 0. Update this together with ROBINHOOD_TESTNET.factory + api/_ownstack.js on any redeploy.
+const HYDE_TESTNET_FACTORY_DEPLOY_BLOCK = 90409075n;
 const LAUNCH_CREATED = parseAbiItem(
   "event LaunchCreated(address indexed token, address indexed creator, bytes32 indexed poolId, uint256 tokenId, uint256 presetId)"
 );
