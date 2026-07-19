@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { LaunchTokenForm } from "../components/LaunchTokenForm";
+import { TokenImage } from "../components/TokenImage";
+import { fetchLaunchMeta } from "../utils/launchMeta";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 
@@ -41,109 +44,121 @@ export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr:
   const bt = pool.baseToken;
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
   const graduated = pool.type === "v2";
-  const liq = pool.dollarLiquidity != null ? parseFloat(pool.dollarLiquidity) : null;
-  const vol = pool.volumeUsd != null ? parseFloat(pool.volumeUsd) : null;
   const hasMcap = pool.marketCapUsd != null && pool.marketCapUsd > 0;
-  const hasLiq = liq != null && liq > 0;
-  const hasVol = vol != null && vol > 0;
-  // A DEXScreener pair exists (real seed mcap) but no trades yet — the clustered pre-trade
-  // seed caps get a "new" marker so identical-looking values don't read as a placeholder (shiro).
+  const hasPrice = pool.priceUsd != null && pool.priceUsd > 0;
+  const hasVol = pool.volumeUsd != null && parseFloat(pool.volumeUsd) > 0;
+  // A real seed mcap with no trades yet gets a "new" marker so identical pre-trade caps
+  // don't read as a placeholder (shiro).
   const untraded = hasMcap && !hasVol;
+
+  // Image-forward look (clint / pump-style): own-stack tokens carry their image in the launch-meta
+  // index (fail-neutral read → monogram). Mainnet chains return null here and use the monogram too.
+  const [image, setImage] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchLaunchMeta(pool.chainId, bt.address).then((m) => { if (!cancelled) setImage(m?.image || null); });
+    return () => { cancelled = true; };
+  }, [pool.chainId, bt.address]);
+
+  // One-tap copy of the token's contract address (clint).
+  const [copied, setCopied] = useState(false);
+  const copyAddr = () => {
+    navigator.clipboard?.writeText(bt.address);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
 
   return (
     <div
-      className="rounded-2xl p-5 flex flex-col gap-4 border transition hover:border-pcs-primary/40"
+      className="rounded-2xl overflow-hidden flex flex-col border transition hover:border-pcs-primary/40"
       style={{ background: "#121419", borderColor: "#22252D" }}
     >
-      {/* Token identity — name gets the full width; only the status pill sits beside it */}
-      <div className="flex items-start gap-3">
-        <div
-          className="h-12 w-12 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0"
-          style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
-        >
-          {bt.symbol.slice(0, 2).toUpperCase()}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="font-display text-[15px] font-semibold text-pcs-text truncate leading-tight">{bt.name}</p>
-          <p className="text-xs text-pcs-textDim mt-0.5">${bt.symbol}</p>
-        </div>
+      {/* Image-forward header — the token image leads the card (pump-style). TokenImage falls back to a
+          colored monogram when there's no image or it fails to load; the status pill overlays it. */}
+      <div className="relative">
+        <TokenImage src={image} symbol={bt.symbol} className="h-40 w-full text-4xl" style={{ borderRadius: 0, borderWidth: 0 }} />
         <span
-          className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide flex-shrink-0"
-          style={{
-            background: graduated ? "rgba(52,199,123,0.12)" : "rgba(46,159,230,0.14)",
-            color: graduated ? "#34C77B" : "#54B4F0",
-          }}
+          className="absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
+          style={{ background: graduated ? "rgba(52,199,123,0.92)" : "rgba(46,159,230,0.92)", color: "#0B0D10" }}
         >
           {graduated ? "Graduated" : "Live"}
         </span>
       </div>
 
-      {/* Market metrics — ALWAYS rendered so every card has the same silhouette (shiro: no empty
-          gaps). All $ values are real, sourced from the DEXScreener pair; never fabricated. */}
-      {hasMcap ? (
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.03)" }}>
-            <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap</p>
-            <p className="text-base font-semibold text-pcs-text tabular-nums">
-              {fmtUsd(pool.marketCapUsd as number)}
-              {untraded && <span className="ml-1.5 text-[10px] font-medium text-pcs-textDim uppercase tracking-wide">· new</span>}
-            </p>
-          </div>
-          <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.03)" }}>
-            {hasLiq ? (
-              <>
-                <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Liquidity</p>
-                <p className="text-base font-semibold text-pcs-text tabular-nums">{fmtUsd(liq as number)}</p>
-              </>
-            ) : (
-              <>
-                <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">24h volume</p>
-                <p className="text-base font-semibold text-pcs-text tabular-nums">
-                  {hasVol ? fmtUsd(vol as number) : <span className="text-pcs-textDim font-medium">No trades yet</span>}
-                </p>
-              </>
-            )}
-          </div>
+      <div className="p-4 flex flex-col gap-3">
+        {/* Name + ticker */}
+        <div className="min-w-0">
+          <p className="font-display text-[15px] font-semibold text-pcs-text truncate leading-tight">{bt.name}</p>
+          <p className="text-xs text-pcs-textDim mt-0.5">${bt.symbol}</p>
         </div>
-      ) : (
-        // No DEXScreener pair yet (brand-new / not indexed). Honest fallback, same height as the
-        // grid above so the card silhouette stays consistent — not a fabricated number.
-        <div className="rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.03)" }}>
-          <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap</p>
-          <p className="text-sm font-medium text-pcs-textDim">New launch · not yet indexed</p>
-        </div>
-      )}
 
-      {/* Curve progress — real % of the launch inventory BOUGHT, on-chain. "Bought" reads clearer than
-          "sold" (it's buyers pulling tokens off the curve); the tooltip flags it's a live two-way level
-          — rises on net buys, dips on net sells — so the breathing isn't a surprise (shiro 21736). */}
-      {!graduated && pool.progress !== null && (
-        <div title="% of the launch curve bought so far — rises on net buys, dips on net sells (a live level, not a one-way counter)">
-          <div className="flex justify-between text-[10px] text-pcs-textDim mb-1">
-            <span>Curve bought</span>
-            <span className="tabular-nums">{pool.progress < 1 && pool.progress > 0 ? "<1" : Math.round(pool.progress)}%</span>
-          </div>
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
-            <div
-              className="h-full rounded-full"
-              style={{ width: `${Math.max(pool.progress, pool.progress > 0 ? 2 : 0)}%`, background: "#2E9FE6" }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Footer — chain lives here (subtle) instead of a per-card pill that crushed the name */}
-      <div className="flex items-center justify-between mt-auto">
-        <span className="text-xs text-pcs-textDim truncate">{chainLabel} · {timeAgo(pool.createdAt)}</span>
+        {/* Contract address — truncated + one-tap copy (clint). Real keyboard-focusable button. */}
         <button
-          onClick={() => onTrade(bt.address, pool.chainId)}
-          className="text-xs font-semibold px-4 py-2 rounded-lg transition flex-shrink-0"
-          style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.20)")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.12)")}
+          onClick={copyAddr}
+          title="Copy contract address"
+          aria-label={`Copy contract address ${bt.address}`}
+          className="flex items-center gap-1.5 w-fit text-[11px] font-mono text-pcs-textDim hover:text-pcs-textSub focus:text-pcs-textSub outline-none transition"
         >
-          Trade →
+          <span>{bt.address.slice(0, 6)}&hellip;{bt.address.slice(-4)}</span>
+          <span className="text-[10px]" style={{ color: copied ? "#34C77B" : undefined }}>{copied ? "✓ copied" : "⧉"}</span>
         </button>
+
+        {/* Market cap + price — real values only; honest "Not indexed" when unpriced, never $0.00 (kami). */}
+        {hasMcap || hasPrice ? (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap</p>
+              <p className="text-sm font-semibold text-pcs-text tabular-nums truncate">
+                {hasMcap ? fmtUsd(pool.marketCapUsd as number) : <span className="text-pcs-textDim font-medium">Not indexed</span>}
+                {untraded && hasMcap && <span className="ml-1 text-[9px] font-medium text-pcs-textDim uppercase">new</span>}
+              </p>
+            </div>
+            <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Price</p>
+              <p className="text-sm font-semibold text-pcs-text tabular-nums truncate">
+                {hasPrice ? fmtUsd(pool.priceUsd as number) : <span className="text-pcs-textDim font-medium">Not indexed</span>}
+              </p>
+            </div>
+          </div>
+        ) : (
+          // Neither mcap nor price is third-party indexed (brand-new / testnet own-stack). Honest single
+          // row — never a fabricated $0.00 (kami acceptance).
+          <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap &middot; price</p>
+            <p className="text-sm font-medium text-pcs-textDim">New launch &middot; not yet indexed</p>
+          </div>
+        )}
+
+        {/* Curve progress — real % of the launch inventory BOUGHT, on-chain (non-graduated). Tooltip
+            flags it's a live two-way level (rises on net buys, dips on net sells) — shiro 21736. */}
+        {!graduated && pool.progress !== null && (
+          <div title="% of the launch curve bought so far — rises on net buys, dips on net sells (a live level, not a one-way counter)">
+            <div className="flex justify-between text-[10px] text-pcs-textDim mb-1">
+              <span>Curve bought</span>
+              <span className="tabular-nums">{pool.progress < 1 && pool.progress > 0 ? "<1" : Math.round(pool.progress)}%</span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${Math.max(pool.progress, pool.progress > 0 ? 2 : 0)}%`, background: "#2E9FE6" }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Footer — chain + age + Trade */}
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-xs text-pcs-textDim truncate">{chainLabel} · {timeAgo(pool.createdAt)}</span>
+          <button
+            onClick={() => onTrade(bt.address, pool.chainId)}
+            className="text-xs font-semibold px-4 py-2 rounded-lg transition flex-shrink-0"
+            style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.20)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.12)")}
+          >
+            Trade →
+          </button>
+        </div>
       </div>
     </div>
   );
