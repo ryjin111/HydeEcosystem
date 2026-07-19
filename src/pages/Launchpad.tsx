@@ -29,6 +29,7 @@ function timeAgo(iso: string): string {
 
 const CHAIN_LABELS: Record<number, string> = {
   4663: "Robinhood Chain",
+  46630: "Robinhood Testnet",
 };
 
 /** Bigger launch card (clint 21605): the token NAME + $TICKER read in full (no more "A…" crush),

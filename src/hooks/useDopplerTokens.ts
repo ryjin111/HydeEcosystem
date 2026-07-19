@@ -308,20 +308,22 @@ export async function isHydeLaunch(address: `0x${string}`): Promise<boolean> {
 }
 
 /** Single-token read for /token/:address — works for launches OUTSIDE the board
- *  page. Fails to null (honest not-found), never throws/blanks the page. */
-export function useHydeToken(address?: string): { pool: DopplerPool | null; loading: boolean } {
+ *  page. Network-aware: mainnet reads the Doppler rail, testnet reads our own-stack via the testnet
+ *  client (fetchTestnetLaunchToken below). Fails to null (honest not-found), never blanks the page. */
+export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN_ID): { pool: DopplerPool | null; loading: boolean } {
   const [pool, setPool] = useState<DopplerPool | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
-    fetchLaunchToken(address as `0x${string}`)
+    const fetcher = chainId === RH_TESTNET_ID ? fetchTestnetLaunchToken : fetchLaunchToken;
+    fetcher(address as `0x${string}`)
       .then((p) => { if (!cancelled) setPool(p); })
       .catch(() => { if (!cancelled) setPool(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [address]);
+  }, [address, chainId]);
   return { pool, loading };
 }
 
@@ -430,6 +432,29 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
     seen.add(k);
     return true;
   });
+}
+
+/** Single own-stack (46630) launch read for /token/:address — reads name/symbol via the TESTNET
+ *  client so a testnet token page never falls back to mainnet data (clint #4 cross-chain bleed).
+ *  Testnet isn't third-party indexed → price/graduation stay null (honest). Fails to null. */
+export async function fetchTestnetLaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
+  const meta = await testnetClient.multicall({
+    contracts: [
+      { address, abi: ERC20_META_ABI, functionName: "name" } as const,
+      { address, abi: ERC20_META_ABI, functionName: "symbol" } as const,
+    ],
+  }).catch(() => null);
+  const name = meta?.[0]?.result as string | undefined;
+  const symbol = meta?.[1]?.result as string | undefined;
+  if (!name || !symbol) return null;
+  return {
+    address, chainId: RH_TESTNET_ID,
+    baseToken: { address, name, symbol, decimals: 18 },
+    quoteToken: { address: ROBINHOOD_TESTNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    type: "v4", dollarLiquidity: null, volumeUsd: null, marketCapUsd: null, priceUsd: null,
+    createdAt: new Date(0).toISOString(), // exact create time unindexed on the single-read path
+    progress: null,
+  };
 }
 
 /** Full pool objects for the Launchpad explore tab and trending carousel. Network-aware: Robinhood

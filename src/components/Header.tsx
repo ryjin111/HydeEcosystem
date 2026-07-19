@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import toast from "react-hot-toast";
 import { useAccount, useBalance, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { ConnectorAlreadyConnectedError } from "wagmi";
@@ -28,10 +28,28 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
     chainId: selectedNetwork.id
   });
 
-  const chainMismatch = useMemo(
-    () => isConnected && chainId !== selectedNetwork.id,
-    [isConnected, chainId, selectedNetwork.id]
+  // A chain is "supported" when Hyde offers it (present in the network switcher). We FOLLOW the
+  // wallet's chain instead of nagging: connect on testnet → the whole app (board, launch form,
+  // history) switches to testnet; connect on mainnet → mainnet. So "Wrong network" now fires ONLY
+  // for a chain Hyde doesn't support at all — testnet↔mainnet is never "wrong" (clint #4 + #6).
+  const walletChainSupported = useMemo(
+    () => isConnected && networks.some((n) => n.id === chainId),
+    [isConnected, networks, chainId]
   );
+  const onUnsupportedChain = isConnected && !walletChainSupported;
+
+  // Auto-follow the wallet's chain the moment it (newly) lands on a supported Hyde chain, so the app
+  // "corresponds to the chain you're on." Keyed off the wallet chain via a ref so a manual dropdown
+  // pick still holds until the next ACTUAL wallet-chain change — we don't fight the user's selection.
+  const prevWalletChain = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (isConnected && chainId !== undefined && chainId !== prevWalletChain.current) {
+      if (networks.some((n) => n.id === chainId) && chainId !== selectedNetwork.id) {
+        onNetworkChange(chainId);
+      }
+    }
+    prevWalletChain.current = isConnected ? chainId : undefined;
+  }, [isConnected, chainId, networks, selectedNetwork.id, onNetworkChange]);
 
   const connectWallet = async () => {
     const injectedConnector = connectors[0];
@@ -51,6 +69,19 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
     try {
       await switchChainAsync({ chainId: selectedNetwork.id });
       toast.success(`Switched to ${selectedNetwork.name}`);
+    } catch {
+      toast.error("Switch network rejected");
+    }
+  };
+
+  // Network dropdown (shiro rule): DISCONNECTED → a free browse selector (just sets the view).
+  // CONNECTED → the wallet is the single source of truth, so picking a network REQUESTS a wallet
+  // chain-switch; selectedNetwork then follows the wallet via the auto-follow effect above. On reject
+  // nothing changes, so the control snaps back to mirroring the wallet chain (no two-brain divergence).
+  const handleNetworkSelect = async (id: number) => {
+    if (!isConnected || id === chainId) { onNetworkChange(id); return; }
+    try {
+      await switchChainAsync({ chainId: id });
     } catch {
       toast.error("Switch network rejected");
     }
@@ -109,7 +140,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
         <div className="flex items-center gap-2">
           <select
             value={selectedNetwork.id}
-            onChange={(e) => onNetworkChange(Number(e.target.value))}
+            onChange={(e) => handleNetworkSelect(Number(e.target.value))}
             className="rounded-xl bg-pcs-card px-3 py-1.5 text-xs font-medium text-pcs-textSub outline-none cursor-pointer"
             style={{ border: '1px solid #22252D' }}
           >
@@ -143,8 +174,9 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
         </div>
       </header>
 
-      {/* Chain mismatch banner */}
-      {chainMismatch && (
+      {/* Unsupported-network banner — only when the wallet is on a chain Hyde doesn't support at all.
+          Any supported chain (Robinhood mainnet ↔ testnet) is fine and the app follows it silently. */}
+      {onUnsupportedChain && (
         <div className="mx-auto max-w-[420px] px-4 mt-3">
           <div
             className="flex items-center justify-between gap-3 rounded-xl px-4 py-2.5"
@@ -155,8 +187,8 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
               <svg className="h-4 w-4 shrink-0 text-pcs-failure" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
               </svg>
-              <span className="text-sm font-medium text-pcs-failure">Wrong network</span>
-              <span className="hidden sm:block text-xs text-pcs-textDim truncate">— connect to {selectedNetwork.name}</span>
+              <span className="text-sm font-medium text-pcs-failure">Unsupported network</span>
+              <span className="hidden sm:block text-xs text-pcs-textDim truncate">— switch to {selectedNetwork.name}</span>
             </div>
 
             {/* Right: action button */}

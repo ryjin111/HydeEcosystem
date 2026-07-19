@@ -117,9 +117,13 @@ export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; childr
    lookup is a NEUTRAL state, never an app error (kami gate). Never a blanket claim. */
 export type VerifyStatus = 'verified' | 'unverified' | 'pending';
 export function VerifiedBadge({ status }: { status: VerifyStatus }) {
-  if (status === 'verified') return <Badge tone="success">✓ Verified</Badge>;
-  if (status === 'unverified') return <Badge tone="neutral">Unverified</Badge>;
-  return <Badge tone="neutral">Verification: —</Badge>;
+  // Tooltip is explicit that this reflects ONLY Blockscout source-verification of the token's
+  // contract — never a Hyde safety endorsement (kami boundary). Applies everywhere the badge renders.
+  if (status === 'verified')
+    return <span className="inline-flex" title="Contract source verified on Blockscout"><Badge tone="success">✓ Verified</Badge></span>;
+  if (status === 'unverified')
+    return <span className="inline-flex" title="Contract source not verified on Blockscout"><Badge tone="neutral">Unverified</Badge></span>;
+  return <span className="inline-flex" title="Contract verification status unavailable"><Badge tone="neutral">Verification: —</Badge></span>;
 }
 
 /* ---------------- Live trades ticker (shell; feed wired later) ---------------- */

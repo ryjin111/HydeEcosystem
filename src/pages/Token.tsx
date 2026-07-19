@@ -113,7 +113,9 @@ const short = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
 
 export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
   const { address = "" } = useParams();
-  const { pools } = useHydeLaunches();
+  // Chain-scoped to the active network (clint #4): a testnet token reads the own-stack factory, a
+  // mainnet token reads the Doppler rail — never cross-chain data.
+  const { pools } = useHydeLaunches(network.id);
   const verify = useVerifiedStatus(address, network.id);
   const { pair } = useDexPair(address);
   const { gtPool, gtChecked } = useGeckoPool(address);
@@ -130,7 +132,7 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
   // Prefer the board pool (richer: precise graduation %); else read the token
   // directly by address so launches OUTSIDE the newest-60 page still render.
   const boardPool = useMemo(() => pools.find((p) => p.address.toLowerCase() === address.toLowerCase()), [pools, address]);
-  const { pool: fetchedPool, loading: tokenLoading } = useHydeToken(address);
+  const { pool: fetchedPool, loading: tokenLoading } = useHydeToken(address, network.id);
   const pool = boardPool ?? fetchedPool;
 
   if (tokenLoading && !boardPool) return <div className="py-20 text-center text-pcs-textSub">Loading token…</div>;
@@ -157,7 +159,7 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
             <div className="min-w-0 flex-1">
               <h1 className="truncate font-display text-2xl font-bold text-pcs-text">{pool.baseToken.name} <span className="font-mono text-sm text-pcs-textSub">${sym}</span></h1>
               <div className="mt-1 flex items-center gap-2">
-                <Link to="/trust" title="How Hyde verification + safety works"><VerifiedBadge status={verify} /></Link>
+                <VerifiedBadge status={verify} />
                 <Badge tone={graduated ? "success" : "accent"}>{graduated ? "Graduated" : "Auction"}</Badge>
               </div>
             </div>
