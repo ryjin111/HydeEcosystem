@@ -272,8 +272,8 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         >
           <span className="text-base">🧪</span>
           <span>
-            <span className="font-semibold">TESTNET — Robinhood 46630.</span> The LIVE Hyde own-stack sandbox
-            (our own contracts · custody-locked LP). Play money only — no real funds.
+            <span className="font-semibold">TESTNET — Robinhood 46630.</span> Live sandbox · custody-locked LP.
+            Play money only — no real funds.
           </span>
         </div>
       )}
@@ -283,8 +283,8 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         <h1 className="font-display text-2xl font-semibold text-pcs-text">Launchpad</h1>
         <p className="text-sm text-pcs-textSub mt-1">
           {isTestnet
-            ? "Live launches on the Hyde own-stack (Robinhood Testnet) — your factory, your custody-locked liquidity."
-            : "Live token launches on Robinhood Chain — Hyde own-stack launching soon."}
+            ? "Live launches on Robinhood Testnet — custody-locked liquidity."
+            : "Live token launches on Robinhood Chain."}
         </p>
       </div>
 
@@ -358,10 +358,10 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
               ? "Loading…"
               : effView === "mine"
                 ? `${shown.length} of your launch${shown.length !== 1 ? "es" : ""}`
-                : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched ${isTestnet ? "on the Hyde own-stack" : "on Robinhood Chain"}`}
+                : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched ${isTestnet ? "on Robinhood Testnet" : "on Robinhood Chain"}`}
           </p>
           <p className="text-[11px] text-pcs-textDim/70 mt-0.5 mb-4">
-            {isTestnet ? "Live on-chain reads · own-stack factory (not third-party indexed)" : "Market data via DEXScreener"}
+            {isTestnet ? "Live on-chain reads · factory data (not third-party indexed)" : "Market data via DEXScreener"}
           </p>
 
           {/* Empty states — connect prompt (My Launches, disconnected) / no-launches / your-none */}

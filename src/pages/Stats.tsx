@@ -72,7 +72,7 @@ export function StatsPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }
             Platform stats are aggregated for <span className="font-medium text-pcs-text">Robinhood Chain</span> only.
           </p>
           <p className="mt-1 text-[13px] text-pcs-textDim">
-            The testnet own-stack sandbox isn&rsquo;t aggregated here — switch to Robinhood Chain to view them.
+            The testnet sandbox isn&rsquo;t aggregated here — switch to Robinhood Chain to view platform stats.
           </p>
         </div>
       </div>
@@ -235,20 +235,20 @@ function MainnetStats({ navigate }: { navigate: ReturnType<typeof useNavigate> }
 
       {/* ── ZONE 2 · OWN STACK · LAUNCHING SOON ───────────────────────────── */}
       <h2 className="mb-3 mt-10 text-[11px] font-semibold uppercase tracking-wide text-pcs-textDim">
-        Powered by our own stack · Launching soon
+        Hyde launch model · Launching soon
       </h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <AtDeployCard
           title="Total auto-injected LP"
-          detail="The 5% permanently-locked auto-compound — own-stack only, $0 today. Flips to a live counter at deploy."
+          detail="The 5% permanently-locked auto-compound — Hyde launches only, $0 today. Flips to a live counter at deploy."
         />
         <AtDeployCard
           title="Hydeout fees"
-          detail="Protocol's 5% — accrues only through the own-stack (live rail = 0% to Hyde)."
+          detail="Protocol's 5% — accrues only through Hyde launches (live rail = 0% to Hyde)."
         />
         <AtDeployCard
-          title="Our-stack launches"
-          detail="Tokens launched through the Hyde factory — none until the own-stack ships."
+          title="Hyde launches"
+          detail="Tokens launched through the Hyde factory — none until Hyde launches ship."
         />
       </div>
 
@@ -257,9 +257,9 @@ function MainnetStats({ navigate }: { navigate: ReturnType<typeof useNavigate> }
         <span className="font-semibold text-pcs-textSub">Honesty scoping:</span> Live tiles are real on-chain reads
         (launch count from unique on-chain Create events — never the page cap), timestamped so a cached value can&rsquo;t
         read as live. Volume is live (board-scoped 24h via DEXScreener, source-labeled); creator-paid shows
-        &ldquo;indexing&rdquo; until the stats-cron — never a fabricated &ldquo;$—&rdquo;. The own-stack tiles are genuinely $0
-        today (5% auto-LP, Hyde&rsquo;s 5% fee, our-stack launches don&rsquo;t exist on the Doppler rail) — shown as
-        &ldquo;at deploy,&rdquo; never a number, and they flip to real the moment the own-stack ships.
+        &ldquo;indexing&rdquo; until the stats-cron — never a fabricated &ldquo;$—&rdquo;. The Hyde-launch tiles are genuinely $0
+        today (5% auto-LP, Hyde&rsquo;s 5% fee, Hyde launches don&rsquo;t exist on the Doppler rail) — shown as
+        &ldquo;at deploy,&rdquo; never a number, and they flip to real when Hyde launches ship.
       </p>
     </div>
   );

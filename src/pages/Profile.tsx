@@ -114,7 +114,7 @@ export function ProfilePage() {
 
       <Card variant="panel">
         <SectionLabel>Launch history & portfolio value</SectionLabel>
-        <p className="mt-2 text-sm text-pcs-textSub">Full launch history and portfolio value arrive with Hyde-owned factory launches — on-chain creator attribution + token pricing land with the own-stack.</p>
+        <p className="mt-2 text-sm text-pcs-textSub">Full launch history and portfolio value arrive with Hyde factory launches — including on-chain creator attribution and token pricing.</p>
       </Card>
     </div>
   );

@@ -157,7 +157,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
     setPreviewError(null);
     const toastId = "hyde-preview";
     try {
-      toast.loading(isTestnet ? "Simulating launch on your own-stack…" : "Simulating launch on Robinhood Chain…", { id: toastId });
+      toast.loading(isTestnet ? "Simulating launch on Robinhood Testnet…" : "Simulating launch on Robinhood Chain…", { id: toastId });
       if (isTestnet) {
         const sim = await simulateHydeLaunch(publicClient as PublicClient, chainId, { name, symbol, creator: address });
         setPreview({ tokenAddress: sim.tokenAddress });
@@ -239,7 +239,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         <h2 className="font-display text-lg font-semibold text-pcs-text">Launch a Token</h2>
         <p className="text-xs text-pcs-textSub mt-1">
           {isTestnet
-            ? "Launch on the LIVE Hyde own-stack (Robinhood Testnet) — your factory, custody-locked liquidity from block 1."
+            ? "Launch on Robinhood Testnet — custody-locked liquidity from block 1."
             : "Price-discovery launch on Robinhood Chain — tradeable from the first block."}
         </p>
       </div>
@@ -275,9 +275,9 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
 
           {/* LIVE · own-stack — present-tense here because on testnet the Hyde stack IS deployed + running. */}
           <div className="rounded-xl px-4 py-3" style={{ background: "rgba(52,199,123,0.07)", border: "1px solid rgba(52,199,123,0.30)" }}>
-            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#34C77B" }}>● LIVE · HYDE OWN-STACK</p>
+            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#34C77B" }}>● LIVE · ROBINHOOD TESTNET</p>
             <p className="mt-1 font-mono text-[11px]" style={{ color: "#8A93A2" }}>
-              Launches route through YOUR HydeTokenFactory — all 1B single-sided-seeded, the position NFT held in
+              Launches route through HydeTokenFactory — all 1B single-sided-seeded, the position NFT held in
               the collector's permanent custody (permanently locked, grows as it earns fees) · anti-snipe max-wallet.
             </p>
           </div>
@@ -548,7 +548,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           <p className="text-pcs-text font-semibold">Token launched!</p>
           <p className="text-pcs-textDim">
             {isTestnet
-              ? "It's live on your own-stack pool now — all 1B seeded, liquidity custody-locked and growing as it earns fees."
+              ? "It's live on the launch pool now — all 1B seeded, liquidity custody-locked and growing as it earns fees."
               : "It's live on the launch curve now — liquidity graduates to a real pool as the curve completes."}
           </p>
           {launched.token && (

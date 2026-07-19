@@ -32,7 +32,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               <span style={{ color: "#54B4F0" }}>Liquidity locked forever.</span>
             </h1>
             <p className="text-sm text-pcs-textSub mt-5 leading-relaxed max-w-xl">
-              <span className="text-pcs-text font-medium">Live today on Robinhood Chain.</span> Hyde&rsquo;s own stack launches
+              <span className="text-pcs-text font-medium">Live today on Robinhood Chain.</span> Hyde launches
               soon &mdash; creators keep 90% of fees and 5% locks into liquidity <span className="text-pcs-text font-medium">nobody can pull</span> &mdash; designed to auto-compound.
               Proven in code, not promised.
             </p>
