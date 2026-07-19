@@ -11,6 +11,8 @@ import { isGatewayLive } from "../utils/constants";
 import { useHydeLaunches, useHydeToken } from "../hooks/useDopplerTokens";
 import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { V4SwapCard } from "../components/V4SwapCard";
+import { TokenImage } from "../components/TokenImage";
+import { fetchLaunchMeta, type LaunchMeta } from "../utils/launchMeta";
 import { Card, Button, Stat, Progress, Badge, VerifiedBadge, SectionLabel } from "../components/ui/kit";
 
 type Props = { network: NetworkConfig; tokens: TokenInfo[]; onAddCustomToken: (t: { address: `0x${string}`; symbol: string; name: string; decimals: number }) => void };
@@ -122,6 +124,14 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
   const { holders } = useTopHolders(address);
   const [copied, setCopied] = useState(false);
   const [chartLoad, setChartLoad] = useState(false); // don't auto-embed DEXScreener's raw UI
+  // Off-chain metadata (own-stack tokens store no tokenURI) — fetched by (chain, address); fail-neutral.
+  const [meta, setMeta] = useState<LaunchMeta | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setMeta(null);
+    if (address) fetchLaunchMeta(network.id, address).then((m) => { if (!cancelled) setMeta(m); });
+    return () => { cancelled = true; };
+  }, [address, network.id]);
   // Native-swap PREVIEW config (clint: buy any/lower amount). Configurable but NOT executable on the
   // current rail (own-stack not wired) — the live action stays "Trade on live pair" (casper boundary).
   const [tradeSide, setTradeSide] = useState<"buy" | "sell">("buy");
@@ -155,13 +165,20 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
       <div className="space-y-5">
         <Card>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-pcs-primary/40 to-pcs-cardLight font-display text-xl font-bold text-pcs-text">{sym.slice(0, 1).toUpperCase()}</div>
+            {meta?.image ? (
+              <TokenImage src={meta.image} symbol={sym} className="h-12 w-12 rounded-xl text-xl" style={{ border: "1px solid #22252D" }} />
+            ) : (
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-pcs-primary/40 to-pcs-cardLight font-display text-xl font-bold text-pcs-text">{sym.slice(0, 1).toUpperCase()}</div>
+            )}
             <div className="min-w-0 flex-1">
               <h1 className="truncate font-display text-2xl font-bold text-pcs-text">{pool.baseToken.name} <span className="font-mono text-sm text-pcs-textSub">${sym}</span></h1>
               <div className="mt-1 flex items-center gap-2">
                 <VerifiedBadge status={verify} />
                 <Badge tone={graduated ? "success" : "accent"}>{graduated ? "Graduated" : "Auction"}</Badge>
               </div>
+              {meta?.description && (
+                <p className="mt-2 text-xs text-pcs-textSub leading-relaxed">{meta.description}</p>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="ghost" size="sm" onClick={() => { navigator.clipboard?.writeText(pool.address); setCopied(true); setTimeout(() => setCopied(false), 1200); }}>{copied ? "Copied" : short(pool.address)}</Button>

@@ -10,6 +10,7 @@ import {
 import { simulateHydeLaunch, executeHydeLaunch, type HydeLaunchStep } from "../utils/hydeLaunch";
 import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET } from "../utils/constants";
 import { preCheckImageFile, AVATAR_SIZE } from "../utils/imageValidation";
+import { saveLaunchMeta } from "../utils/launchMeta";
 import { TokenImage } from "./TokenImage";
 
 /* ─── component ────────────────────────────────────────────────────────────── */
@@ -70,8 +71,30 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploading,  setUploading]  = useState(false);
-  const [launched,   setLaunched]   = useState<{ token: string; tx: string } | null>(null);
+  const [launched,   setLaunched]   = useState<{ token: string; tx: string; image: string; description: string } | null>(null);
   const [recipientConfirmed, setRecipientConfirmed] = useState(false);
+  // Own-stack metadata save (creator-signed, off-chain) — tracked separately from the launch so a
+  // metadata hiccup never implies the token failed. "error" arms an explicit retry (kami 22853).
+  const [metaState, setMetaState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [metaError, setMetaError] = useState<string | null>(null);
+
+  /** Sign + persist off-chain image/description for a just-launched own-stack token. Isolated from
+   *  the launch: on failure it flips to an explicit retry, the token stays live. */
+  const saveMetaFor = async (token: string, image: string, description: string) => {
+    if (!walletClient || !address) return;
+    setMetaState("saving");
+    setMetaError(null);
+    try {
+      await saveLaunchMeta(walletClient as WalletClient, address, { chainId, token, image, description });
+      setMetaState("saved");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const code = (err as { code?: number })?.code;
+      const cancelled = code === 4001 || /rejected|denied|cancell?ed/i.test(msg);
+      setMetaState("error");
+      setMetaError(cancelled ? "You cancelled the signature." : (msg.length > 140 ? msg.slice(0, 140) + "…" : msg));
+    }
+  };
 
   // Creator address is immutable on-chain — a stale confirmation or preview
   // must not survive a wallet switch
@@ -156,6 +179,8 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   const handleLaunch = async () => {
     if (!address || !publicClient || !walletClient || !preview) return;
     setSubmitting(true);
+    setMetaState("idle");
+    setMetaError(null);
     const toastId = "hyde-launch";
     try {
       let result: { tokenAddress: string; transactionHash: string };
@@ -177,8 +202,15 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         );
       }
       toast.success("Token launched!", { id: toastId, duration: 8000 });
-      setLaunched({ token: result.tokenAddress, tx: result.transactionHash });
+      const savedImage = imageUrl;
+      const savedDesc = description;
+      setLaunched({ token: result.tokenAddress, tx: result.transactionHash, image: savedImage, description: savedDesc });
       setName(""); setSymbol(""); setImageUrl(""); setDescription(""); setPreview(null); setRecipientConfirmed(false);
+      // Own-stack HydeERC20 stores no tokenURI → persist image/description off-chain (creator-signed).
+      // Kicked off AFTER the launch is confirmed; a failure only affects the metadata, never the token.
+      if (isTestnet && (savedImage.startsWith("ipfs://") || savedDesc.trim())) {
+        void saveMetaFor(result.tokenAddress, savedImage, savedDesc);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       const code = (err as { code?: number; cause?: { code?: number } })?.code
@@ -314,10 +346,10 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         />
       </div>
 
-      {/* Token image + description — Doppler rail only. Own-stack HydeERC20 stores no tokenURI, so on
-          testnet we hide these rather than silently drop them (honesty). */}
-      {!isTestnet ? (
-        <>
+      {/* Token image + description — optional on BOTH rails (clint #1). On the Doppler (mainnet) rail
+          these ride the on-chain tokenURI; on the own-stack (testnet) HydeERC20 has no tokenURI, so
+          they're saved as creator-signed OFF-CHAIN metadata after launch (image pinned to IPFS). */}
+      <>
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-pcs-textSub">Token Image <span className="text-pcs-textDim font-normal">(optional)</span></label>
             {!hasImage ? (
@@ -365,12 +397,13 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
               maxLength={280}
             />
           </div>
-        </>
-      ) : (
-        <p className="text-[11px] text-pcs-textDim -mt-1">
-          Own-stack tokens are name + symbol only (no on-chain image/description yet).
-        </p>
-      )}
+          {isTestnet && (
+            <p className="text-[11px] text-pcs-textDim -mt-1">
+              Optional — saved as off-chain metadata: the image is pinned to IPFS and indexed to your
+              token. After launch you&rsquo;ll sign a free message (no gas) to attach it.
+            </p>
+          )}
+      </>
 
       {/* Simulate failure — amber panel with the raw reason, launch stays dead */}
       {previewError && (
@@ -397,13 +430,13 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           <div className="flex justify-between items-center text-xs">
             <span className="text-pcs-textDim">Token</span>
             <span className="text-pcs-text font-medium flex items-center gap-2">
-              {!isTestnet && hasImage && (
+              {hasImage && (
                 <TokenImage src={imageUrl} symbol={symbol} className="h-5 w-5 rounded-full text-[8px]" style={{ border: "1px solid #22252D" }} />
               )}
               {name.trim()} <span className="font-code">{symbol.trim()}</span>
             </span>
           </div>
-          {!isTestnet && (imageUrl || description) && (
+          {(imageUrl || description) && (
             <div className="flex justify-between text-xs">
               <span className="text-pcs-textDim">Metadata</span>
               <span className="text-pcs-text font-medium">
@@ -537,6 +570,31 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           >
             View transaction →
           </a>
+
+          {/* Off-chain metadata save status — isolated from the launch (which already succeeded). */}
+          {isTestnet && (launched.image || launched.description.trim()) && (
+            <div className="mt-1 pt-2 text-[11px]" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              {metaState === "saving" && (
+                <p className="text-pcs-textDim">Saving image &amp; description… confirm the free signature in your wallet.</p>
+              )}
+              {metaState === "saved" && (
+                <p style={{ color: "#34C77B" }}>✓ Image &amp; description saved.</p>
+              )}
+              {metaState === "error" && (
+                <div className="flex flex-col gap-1.5">
+                  <p style={{ color: "#E8A33D" }}>Couldn&rsquo;t save the image/description — your token is live regardless; this is only its off-chain metadata.</p>
+                  {metaError && <p className="text-pcs-textDim break-all">{metaError}</p>}
+                  <button
+                    className="self-start rounded-lg px-3 py-1.5 text-xs font-semibold"
+                    style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
+                    onClick={() => saveMetaFor(launched.token, launched.image, launched.description)}
+                  >
+                    Retry signature
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
