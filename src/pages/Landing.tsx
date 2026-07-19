@@ -44,21 +44,33 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
         </div>
       </div>
 
-      {/* Trending strip — only rendered when REAL data exists; never ship empty outlines (shiro). */}
-      {trending.length > 0 && (
-        <>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-lg font-semibold text-pcs-text">Trending launches</h2>
-            <NavLink to="/launchpad?tab=explore" className="text-xs text-pcs-primary hover:underline">
-              View all &rarr;
-            </NavLink>
-          </div>
+      {/* Trending strip — a highlighted subset, shown only when there are enough launches that it's
+          distinct from the full list below (otherwise it would just duplicate it). */}
+      {pools.length > TRENDING_COUNT && (
+        <div className="mb-12">
+          <h2 className="font-display text-lg font-semibold text-pcs-text mb-4">Trending launches</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {trending.map((pool) => (
+              <PoolCard key={`trending-${pool.chainId}-${pool.address}`} pool={pool} onTrade={handleTrade} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* The rest of the launches (or all of them, when there's no separate trending strip). The
+          Landing is the browse-all home now (clint ①), so the launchpad's second tab is personal
+          "My Launches". Excludes the trending cards above so nothing is shown twice. */}
+      {pools.length > 0 && (
+        <div>
+          <h2 className="font-display text-lg font-semibold text-pcs-text mb-4">
+            {pools.length > TRENDING_COUNT ? "More launches" : "Launches"}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {(pools.length > TRENDING_COUNT ? pools.slice(TRENDING_COUNT) : pools).map((pool) => (
               <PoolCard key={`${pool.chainId}-${pool.address}`} pool={pool} onTrade={handleTrade} />
             ))}
           </div>
-        </>
+        </div>
       )}
     </div>
   );

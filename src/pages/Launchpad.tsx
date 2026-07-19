@@ -217,29 +217,27 @@ export function PoolCard({ pool, onTrade, showClaimable = false }: { pool: Doppl
 const RH_TESTNET_ID = 46630;
 
 export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
-  // Tab is URL-driven (?tab=launch|explore) so the sidebar "Launch a Token" reliably lands on the
-  // form even when the user is already on /launchpad viewing Explore. Default = launch.
+  // Tab is URL-driven (?tab=launch|mine) so the sidebar "Launch a Token" reliably lands on the form.
+  // The second tab is now "My Launches" (personal) — browsing all launches lives on the Landing (clint
+  // ①). Accept the legacy ?tab=explore so old links still land on the tab. Default = launch.
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab: "explore" | "launch" = searchParams.get("tab") === "explore" ? "explore" : "launch";
-  const setTab = (t: "explore" | "launch") => setSearchParams({ tab: t });
+  const tabParam = searchParams.get("tab");
+  const tab: "mine" | "launch" = tabParam === "mine" || tabParam === "explore" ? "mine" : "launch";
+  const setTab = (t: "mine" | "launch") => setSearchParams({ tab: t });
   // Network-aware: on Robinhood Testnet this reads the LIVE own-stack factory; else the Doppler rail.
   const isTestnet = chainId === RH_TESTNET_ID;
   const { pools, loading, refetch } = useHydeLaunches(chainId);
   const navigate = useNavigate();
   const { address } = useAccount();
 
-  // "My Launches" + claimable sort exist only on the own-stack (creator/creatorClaimable are null on
-  // the Doppler rail), so the filter is testnet-only; on mainnet the board stays "all".
-  const [view, setView] = useState<"all" | "mine">("all");
+  // My Launches = the connected wallet's own-stack launches (creator/creatorClaimable are null on the
+  // Doppler mainnet rail, so it's empty there). Sorted by claimable fees (desc) or market cap.
   const [sort, setSort] = useState<"claimable" | "mcap">("claimable");
-  const effView = isTestnet ? view : "all";
-
   const mine = useMemo(
     () => (address ? pools.filter((p) => p.creator && p.creator.toLowerCase() === address.toLowerCase()) : []),
     [pools, address]
   );
   const shown = useMemo(() => {
-    if (effView !== "mine") return pools; // "all" keeps the feed's recency order
     const arr = [...mine];
     if (sort === "claimable") {
       arr.sort((a, b) => {
@@ -252,7 +250,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       arr.sort((a, b) => (b.marketCapUsd ?? 0) - (a.marketCapUsd ?? 0) || a.address.localeCompare(b.address));
     }
     return arr;
-  }, [effView, mine, pools, sort]);
+  }, [mine, sort]);
 
   const handleTrade = (tokenAddress: string, poolChainId: number) => {
     if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
@@ -290,7 +288,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #1C1F26" }}>
-        {(["launch", "explore"] as const).map((t) => (
+        {(["launch", "mine"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -301,47 +299,29 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
                 : { color: "#5D6470" }
             }
           >
-            {t === "explore" ? "Explore Launches" : "Launch a Token"}
+            {t === "mine" ? "My Launches" : "Launch a Token"}
           </button>
         ))}
       </div>
 
-      {/* Explore tab */}
-      {tab === "explore" && (
+      {/* My Launches tab — the connected wallet's own launches (browsing everyone's lives on the
+          Landing now, clint ①). Empty on the Doppler mainnet rail (no creator attribution). */}
+      {tab === "mine" && (
         <div>
-          {/* Filter (All | My Launches) + sort — own-stack only, since creator/claimable don't exist on
-              the Doppler rail. Refresh on the right. */}
+          {/* Sort + refresh */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div className="flex flex-wrap items-center gap-3">
-              {isTestnet && (
-                <div className="flex gap-1 p-1 rounded-lg" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #1C1F26" }}>
-                  {(["all", "mine"] as const).map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => setView(v)}
-                      className="px-3 py-1.5 rounded-md text-xs font-semibold transition"
-                      style={effView === v ? { background: "rgba(46,159,230,0.14)", color: "#54B4F0" } : { color: "#5D6470" }}
-                    >
-                      {v === "all" ? "All launches" : "My Launches"}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {effView === "mine" && (
-                <label className="flex items-center gap-1.5 text-xs text-pcs-textDim">
-                  Sort
-                  <select
-                    value={sort}
-                    onChange={(e) => setSort(e.target.value as "claimable" | "mcap")}
-                    className="rounded-lg bg-pcs-card px-2 py-1 text-xs font-medium text-pcs-textSub outline-none cursor-pointer focus-visible:ring-2 focus-visible:ring-pcs-primary/70"
-                    style={{ border: "1px solid #22252D" }}
-                  >
-                    <option value="claimable">Claimable fees</option>
-                    <option value="mcap">Market cap</option>
-                  </select>
-                </label>
-              )}
-            </div>
+            <label className="flex items-center gap-1.5 text-xs text-pcs-textDim">
+              Sort
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as "claimable" | "mcap")}
+                className="rounded-lg bg-pcs-card px-2 py-1 text-xs font-medium text-pcs-textSub outline-none cursor-pointer focus-visible:ring-2 focus-visible:ring-pcs-primary/70"
+                style={{ border: "1px solid #22252D" }}
+              >
+                <option value="claimable">Claimable fees</option>
+                <option value="mcap">Market cap</option>
+              </select>
+            </label>
             <button
               onClick={refetch}
               className="text-xs text-pcs-primary hover:underline"
@@ -351,29 +331,22 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             </button>
           </div>
 
-          {/* Count + source line — view-aware. Mainnet $ figures are DEXScreener-priced; testnet isn't
-              third-party indexed, so it's pure on-chain reads (curve % live; no fabricated price). */}
           <p className="text-sm text-pcs-textDim">
-            {loading
-              ? "Loading…"
-              : effView === "mine"
-                ? `${shown.length} of your launch${shown.length !== 1 ? "es" : ""}`
-                : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched ${isTestnet ? "on Robinhood Testnet" : "on Robinhood Chain"}`}
+            {loading ? "Loading…" : `${shown.length} of your launch${shown.length !== 1 ? "es" : ""}`}
           </p>
           <p className="text-[11px] text-pcs-textDim/70 mt-0.5 mb-4">
-            {isTestnet ? "Live on-chain reads · factory data (not third-party indexed)" : "Market data via DEXScreener"}
+            {isTestnet ? "Live on-chain reads · your own launches" : "Own-stack launches show here (Robinhood Chain rail isn't attributed)"}
           </p>
 
-          {/* Empty states — connect prompt (My Launches, disconnected) / no-launches / your-none */}
-          {effView === "mine" && !address ? (
+          {/* Empty states — connect prompt (disconnected) / you-haven't-launched (connected, none) */}
+          {!address ? (
             <div className="rounded-2xl p-10 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
               <p className="text-pcs-textDim text-sm">Connect your wallet to see your launches.</p>
             </div>
           ) : !loading && shown.length === 0 ? (
             <div className="rounded-2xl p-10 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
-              <p className="text-pcs-textDim text-sm">
-                {effView === "mine" ? "You haven't launched any tokens yet." : "No launches found yet."}
-              </p>
+              <p className="text-pcs-textDim text-sm">You haven't launched any tokens yet.</p>
+              <p className="text-pcs-textDim text-xs mt-1">Browse everyone's launches on the home page.</p>
               <button onClick={() => setTab("launch")} className="btn-primary mt-4 px-5 py-2 text-sm">
                 Launch a Token
               </button>
@@ -385,7 +358,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
                   key={`${pool.chainId}-${pool.address}-${pool.baseToken.address}`}
                   pool={pool}
                   onTrade={handleTrade}
-                  showClaimable={effView === "mine"}
+                  showClaimable
                 />
               ))}
             </div>
