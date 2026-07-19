@@ -17,14 +17,19 @@ import { Card, Button, Stat, Progress, Badge, VerifiedBadge, SectionLabel } from
 
 type Props = { network: NetworkConfig; tokens: TokenInfo[]; onAddCustomToken: (t: { address: `0x${string}`; symbol: string; name: string; decimals: number }) => void };
 
+// DEXScreener / GeckoTerminal / Blockscout below index Robinhood MAINNET only. On any other chain
+// (e.g. the 46630 testnet own-stack) they must NOT run — a same-looking address could otherwise
+// surface a mainnet pair/chart/holders and even mark a testnet token "Graduated" (kami A-blocker #2).
+const ROBINHOOD_MAINNET_ID = 4663;
+
 // resolve the DEXScreener robinhood pair (fail neutral → null; never a wrong pair)
-function useDexPair(address?: string): { pair: string | null; checked: boolean } {
+function useDexPair(address?: string, chainId?: number): { pair: string | null; checked: boolean } {
   const [pair, setPair] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
   useEffect(() => {
-    if (!address) return;
-    let cancelled = false;
     setChecked(false); setPair(null);
+    if (!address || chainId !== ROBINHOOD_MAINNET_ID) { setChecked(true); return; } // mainnet-only source
+    let cancelled = false;
     fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -37,20 +42,20 @@ function useDexPair(address?: string): { pair: string | null; checked: boolean }
       })
       .catch(() => { if (!cancelled) setChecked(true); });
     return () => { cancelled = true; };
-  }, [address]);
+  }, [address, chainId]);
   return { pair, checked };
 }
 
 // Resolve this token's canonical GeckoTerminal pool (deepest reserve) for the chart embed.
 // GeckoTerminal indexes the 4663 Uniswap-V4 curve pools by poolId, so a chart exists ON the
 // auction curve — earlier than the DEXScreener graduation-only pair. Fail-neutral → null.
-function useGeckoPool(address?: string): { gtPool: string | null; gtChecked: boolean } {
+function useGeckoPool(address?: string, chainId?: number): { gtPool: string | null; gtChecked: boolean } {
   const [gtPool, setGtPool] = useState<string | null>(null);
   const [gtChecked, setGtChecked] = useState(false);
   useEffect(() => {
-    if (!address) return;
-    let cancelled = false;
     setGtChecked(false); setGtPool(null);
+    if (!address || chainId !== ROBINHOOD_MAINNET_ID) { setGtChecked(true); return; } // mainnet-only source
+    let cancelled = false;
     fetch(`https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/${address}/pools`, { headers: { accept: "application/json" } })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -63,7 +68,7 @@ function useGeckoPool(address?: string): { gtPool: string | null; gtChecked: boo
       })
       .catch(() => { if (!cancelled) setGtChecked(true); });
     return () => { cancelled = true; };
-  }, [address]);
+  }, [address, chainId]);
   return { gtPool, gtChecked };
 }
 
@@ -91,11 +96,12 @@ function fmtPrice(n: number): string {
 }
 
 type Holder = { address: string; value: string };
-function useTopHolders(address?: string): { holders: Holder[]; loading: boolean } {
+function useTopHolders(address?: string, chainId?: number): { holders: Holder[]; loading: boolean } {
   const [holders, setHolders] = useState<Holder[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    if (!address) return;
+    setHolders([]);
+    if (!address || chainId !== ROBINHOOD_MAINNET_ID) { setLoading(false); return; } // mainnet-only source
     let cancelled = false;
     setLoading(true);
     fetch(`https://robinhoodchain.blockscout.com/api/v2/tokens/${address}/holders`)
@@ -107,7 +113,7 @@ function useTopHolders(address?: string): { holders: Holder[]; loading: boolean 
       .catch(() => { /* fail neutral → empty */ })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [address]);
+  }, [address, chainId]);
   return { holders, loading };
 }
 
@@ -119,9 +125,9 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
   // mainnet token reads the Doppler rail — never cross-chain data.
   const { pools } = useHydeLaunches(network.id);
   const verify = useVerifiedStatus(address, network.id);
-  const { pair } = useDexPair(address);
-  const { gtPool, gtChecked } = useGeckoPool(address);
-  const { holders } = useTopHolders(address);
+  const { pair } = useDexPair(address, network.id);
+  const { gtPool, gtChecked } = useGeckoPool(address, network.id);
+  const { holders } = useTopHolders(address, network.id);
   const [copied, setCopied] = useState(false);
   const [chartLoad, setChartLoad] = useState(false); // don't auto-embed DEXScreener's raw UI
   // Off-chain metadata (own-stack tokens store no tokenURI) — fetched by (chain, address); fail-neutral.

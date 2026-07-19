@@ -54,10 +54,38 @@ function AtDeployCard({ title, detail }: { title: string; detail: string }) {
 
 /* ── page ─────────────────────────────────────────────────────────────────── */
 
-export function StatsPage() {
+export function StatsPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
+  const navigate = useNavigate();
+
+  // The aggregate is a Robinhood-Chain (mainnet Doppler) source — there is no testnet own-stack
+  // aggregator. On any non-mainnet chain, be explicit instead of showing mainnet numbers as if they
+  // were the connected chain's (kami A-blocker #4).
+  if (chainId !== ROBINHOOD_CHAIN_ID) {
+    return (
+      <div className="mx-auto w-full max-w-6xl px-4">
+        <div className="mb-8">
+          <h1 className="font-display text-2xl font-semibold text-pcs-text">Hydeout Stats</h1>
+          <p className="mt-1 text-sm text-pcs-textSub">On-chain transparency — real values, honestly sourced.</p>
+        </div>
+        <div className="rounded-2xl p-8 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
+          <p className="text-sm text-pcs-textSub">
+            Platform stats are aggregated for <span className="font-medium text-pcs-text">Robinhood Chain</span> only.
+          </p>
+          <p className="mt-1 text-[13px] text-pcs-textDim">
+            The testnet own-stack sandbox isn&rsquo;t aggregated here — switch to Robinhood Chain to view them.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return <MainnetStats navigate={navigate} />;
+}
+
+/** The real mainnet aggregate. Split out so the hooks only run on the chain they read (Robinhood 4663). */
+function MainnetStats({ navigate }: { navigate: ReturnType<typeof useNavigate> }) {
   const { pools } = useHydeLaunches();
   const { totalLaunched, updatedAt, loading: statsLoading } = useHydeStats();
-  const navigate = useNavigate();
 
   // Zone-1 real reads from the loaded (tracked) board set — N is DYNAMIC, never hardcoded.
   const trackedN = pools.length;

@@ -226,7 +226,9 @@ export function useHydeTokens(chainId: number): {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (chainId !== ROBINHOOD_CHAIN_ID) return;
+    // Clear stale mainnet tokens the moment we leave 4663 so a testnet view never carries mainnet
+    // launches (kami A-blocker #3). This swap-routing list is mainnet-only by design.
+    if (chainId !== ROBINHOOD_CHAIN_ID) { setTokens([]); setLoading(false); return; }
 
     let cancelled = false;
     setLoading(true);
@@ -314,8 +316,9 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
   const [pool, setPool] = useState<DopplerPool | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) { setLoading(false); return; }
+    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) { setPool(null); setLoading(false); return; }
     let cancelled = false;
+    setPool(null); // drop the prior token immediately on address/chain change (kami A-blocker #3)
     setLoading(true);
     const fetcher = chainId === RH_TESTNET_ID ? fetchTestnetLaunchToken : fetchLaunchToken;
     fetcher(address as `0x${string}`)
@@ -335,6 +338,9 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
  * `factory` is set reads own-stack data (mainnet's is unset → own-stack tiles stay "coming"). */
 export const RH_TESTNET_ID = 46630;
 const HYDE_TESTNET_FACTORY = ROBINHOOD_TESTNET.factory as `0x${string}`;
+// Block the factory was deployed at (46630) — bounds every LaunchCreated scan so we never getLogs from
+// block 0 (kami A-blocker #1/#2). Update this together with ROBINHOOD_TESTNET.factory on any redeploy.
+const HYDE_TESTNET_FACTORY_DEPLOY_BLOCK = 91399234n;
 const LAUNCH_CREATED = parseAbiItem(
   "event LaunchCreated(address indexed token, address indexed creator, bytes32 indexed poolId, uint256 tokenId, uint256 presetId)"
 );
@@ -438,6 +444,18 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
  *  client so a testnet token page never falls back to mainnet data (clint #4 cross-chain bleed).
  *  Testnet isn't third-party indexed → price/graduation stay null (honest). Fails to null. */
 export async function fetchTestnetLaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
+  // Authoritative attribution (kami A-blocker #1): must be a token minted by OUR factory — proven by an
+  // indexed LaunchCreated(token=address) event — NOT merely any 46630 ERC-20 that exposes name()/symbol().
+  // Bounded from the factory deploy block (never fromBlock 0).
+  const created = await testnetClient.getLogs({
+    address: HYDE_TESTNET_FACTORY,
+    event: LAUNCH_CREATED,
+    args: { token: address },
+    fromBlock: HYDE_TESTNET_FACTORY_DEPLOY_BLOCK,
+    toBlock: "latest",
+  }).catch(() => null);
+  if (!created || created.length === 0) return null; // not a Hyde own-stack launch → honest not-found
+
   const meta = await testnetClient.multicall({
     contracts: [
       { address, abi: ERC20_META_ABI, functionName: "name" } as const,
@@ -471,6 +489,7 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
 
   useEffect(() => {
     let cancelled = false;
+    setPools([]); // drop prior-chain launches immediately on a chain switch (kami A-blocker #3)
     setLoading(true);
 
     const fetcher = chainId === RH_TESTNET_ID ? fetchHydeFactoryPools : fetchHydePools;

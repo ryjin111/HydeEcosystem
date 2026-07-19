@@ -159,8 +159,10 @@ function App() {
               {/* DEX/farm cruft — made UNREACHABLE (redirect), not just unlinked (casper FINDING). */}
               <Route path="/farms" element={<Navigate to="/launchpad" replace />} />
               <Route path="/pools" element={<Navigate to="/launchpad" replace />} />
-              {/* Stats/transparency page — restored as a real aggregate (shiro mock 21675), not a board-relist. */}
-              <Route path="/stats" element={<StatsPage />} />
+              {/* Stats/transparency page — restored as a real aggregate (shiro mock 21675), not a board-relist.
+                  Chain-scoped (kami A-blocker #4): the aggregate is a mainnet Doppler source; on testnet it
+                  shows an explicit "not aggregated here" state rather than mainnet numbers. */}
+              <Route path="/stats" element={<StatsPage chainId={selectedNetwork.id} />} />
               {/* /trust (Security) page removed (clint 22844) — the catch-all redirects any typed /trust → /launchpad. */}
               {/* Landing (UI_CONSOLIDATION step 4) — hero + trending strip, not a 4th board copy. */}
               <Route path="/" element={<LandingPage chainId={selectedNetwork.id} />} />
