@@ -55,7 +55,7 @@ Five core contracts with **56 Foundry test/invariant functions** (55 pass · 1 s
 
 ## How It Works
 
-1. **Launch.** A creator calls `factory.launch()` (pays a flat ~$1 USDG fee). The factory CREATE2-clones a `HydeERC20`, mints the fixed 1e9 supply, and seeds **100%** of it single-sided into one Uniswap V4 position. **Zero** goes to the team or the creator's wallet.
+1. **Launch.** A creator calls `factory.launch()` and pays a flat **0.0004 ETH** fee — native ETH sent as `msg.value` in the single payable launch transaction (no ERC-20 approval, no faucet). The factory CREATE2-clones a `HydeERC20`, mints the fixed 1e9 supply, and seeds **100%** of it single-sided into one Uniswap V4 position. **Zero** goes to the team or the creator's wallet.
 2. **Lock.** That position NFT is transferred to `HydeFeeCollector`, which has **no** decrease/transfer/burn/sweep selector in its bytecode. The liquidity is locked by code, provable by codehash — not by a custodian who could change their mind.
 3. **Trade.** Swaps accrue fees inside the V4 pool. The hook applies an anti-snipe dynamic fee at launch and feeds a real-tick TWAP oracle every swap.
 4. **Settle & split.** `settle()` performs a single oracle-floored swap of the launch-token fee leg into WETH, then splits **90% creator / 5% Hyde**.
@@ -73,7 +73,7 @@ All of these are `internal constant`s in **`contracts/script/DeployHydeStack.s.s
 
 | Parameter | Current value | Unit | Allowed bound (enforced) | Where to change | Mutability | Security impact |
 |---|---|---|---|---|---|---|
-| **Launch fee** | `1_000_000` (**$1**) | USDG (6-dec) | `> 0` | `LAUNCH_FEE` | Deploy-time → immutable | Anti-spam/sybil on `launch()`; can't be raised on you post-deploy. |
+| **Launch fee** | `400_000_000_000_000` (**0.0004 ETH**) | native ETH — wei, via `msg.value` | `> 0` | `LAUNCH_FEE` | Deploy-time → immutable | Anti-spam/sybil on `launch()`; paid in one payable tx (no approval), exact-value (`BAD_FEE` on mismatch), forwarded to the launch-fee treasury (must be an EOA). Can't be raised on you post-deploy. |
 | **Anti-snipe start fee** | `30_000` (**3%**) | pips | `baseFee ≤ startFee ≤ maxLpFeeCap` | `START_FEE` | Deploy-time → immutable | The opening swap tax that prices out snipers/MEV; the highest fee anyone pays at t=0. |
 | **Base (steady-state) fee** | `10_000` (**1%**) | pips | `≤ startFee` | `BASE_FEE` | Deploy-time → immutable | The normal swap fee the anti-snipe tax decays down to. |
 | **Fee hard cap** | `50_000` (**5%**) | pips | `≤ MAX_LP_FEE` (100%) | `MAX_LP_FEE_CAP` | Deploy-time → immutable | Absolute ceiling — the swap fee can **never** exceed this, ever. Blocks a "fee to 100%" honeypot. |
@@ -275,5 +275,5 @@ api/                  # Vercel serverless routes (IPFS pin, rate limit)
 ## Status & Disclaimers
 
 - Contracts are **built and internally audited**, not externally audited and **not deployed with mainnet value**. Do not treat this as production-safe until the external audit gate is cleared.
-- WETH and USDG on Robinhood Chain 4663 are upgradeable proxies — an external trust assumption, disclosed.
+- WETH on Robinhood Chain 4663 is an upgradeable proxy — an external trust assumption, disclosed. (USDG is no longer a dependency — the launch fee is native ETH.)
 - Nothing here is financial advice. Launching or trading tokens carries risk.

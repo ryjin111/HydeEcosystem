@@ -66,8 +66,8 @@ post-audit findings (spec==code). **Push/deploy gates on:** (1) FINDING-1 hook-a
 - **Fee split (rev8): 90% creator / 5% Hyde / 5% locked-liquidity.** Creator + Hyde legs settle in WETH via
   `HydeFeeVault`; the **5% liquidity leg is retained IN-KIND (LT + WETH)** at the collector and auto-compounded into
   the permanently-locked position (no second swap). Holder-reward leg removed.
-- **Launch fee: $1 USDG** (6-dec ⇒ 1e6), atomic, before pool creation. Not part of 90/5/5.
-- **Pool: LT/WETH only, DYNAMIC-FEE**, `HydeHook` attached. WETH = `wrappedNative`; USDG = launch fee only.
+- **Launch fee: 0.0004 ETH** (native, 4e14 wei via `msg.value` — one payable tx, no approval/faucet), atomic, before pool creation. Not part of 90/5/5.
+- **Pool: LT/WETH only, DYNAMIC-FEE**, `HydeHook` attached. WETH = `wrappedNative`. The launch fee is native ETH (`msg.value`) — there is no ERC-20 fee token.
 - **Anti-snipe:** hook time-decay dynamic fee (economic) + token time-boxed max-wallet (accumulation cap).
 - **Graduation:** hook **swap-only gross WETH volume** counter; label-only (no unlock); threshold clint-pinned; stubbed
   until pinned.
@@ -84,7 +84,7 @@ post-audit findings (spec==code). **Push/deploy gates on:** (1) FINDING-1 hook-a
 | **`HydeERC20`** | cloned launch token; EIP-2612; time-boxed max-wallet; `sync` → vault | **UNCHANGED** |
 | **`HydeFeeVault`** | per-token WETH accounting: raw-fee custody, `settle`→WETH + **creator/Hyde split (NET_BPS 9500)**, creator/Hyde claim buckets, `accountedBalance` solvency | **(rev8) HOLDER/EPOCH MACHINERY + `sync` REMOVED; split is creator/Hyde only; settle swap + oracle UNCHANGED** |
 | **`HydeFeeCollector`** | custodies Hyde's v4 position NFT (custody-lock); permissionless `collect` = zero-liq fee-take → **retains 5% in-kind** → 95% to vault; permissionless **`compound`** adds pending LT+WETH into the locked NFT | **(rev8) EXTENDED: in-kind liqBps carve in `collect` + new `compound` + `pendingLiq*` custody** |
-| **`HydeTokenFactory`** | permissionless `launch`: $1 USDG, clone, hook pending-config, V4 `initialize`, single-sided seed, register | **REWRITTEN (V4)** |
+| **`HydeTokenFactory`** | permissionless `launch`: 0.0004 ETH (`msg.value`), clone, hook pending-config, V4 `initialize`, single-sided seed, register | **REWRITTEN (V4)** |
 | **`HydeHook` (NEW)** | per-pool V4 hook: `beforeInitialize` factory-auth · `afterInitialize` · `beforeSwap` dynamic fee · `afterSwap` oracle+volume | **NEW** |
 
 Flow (rev8): `launch` seeds an LT/WETH dynamic-fee pool with `HydeHook` → users trade (hook meters volume + oracle,
@@ -110,8 +110,8 @@ the LT ends up custodied inside `POOL_MANAGER` as the position's reserves. **Inv
 (sync-can't-brick) retired — `sync` no longer exists.**
 
 ## 3. `HydeTokenFactory` (V4)
-**Immutables:** `IMPL`, `COLLECTOR`, `VAULT`, `HOOK`, `POOL_MANAGER`, `POSITION_MANAGER`, `PERMIT2`, `stablecoin`(USDG),
-`launchFeeAmount`(1e6), `launchFeeTreasury`, `WETH`, `feeTierBase`, `tickSpacing`, `preset(...)`, **`MAX_SEED_DUST`
+**Immutables:** `IMPL`, `COLLECTOR`, `VAULT`, `HOOK`, `POOL_MANAGER`, `POSITION_MANAGER`, `PERMIT2`,
+`launchFeeAmount`(4e14 wei = 0.0004 ETH), `launchFeeTreasury`(EOA), `WETH`, `feeTierBase`, `tickSpacing`, `preset(...)`, **`MAX_SEED_DUST`
 (immutable seed-residual bound, §3 step 7)**, anti-snipe schedule (`startFee`,`baseFee`,`antiSnipeWindow`,`slope`),
 `maxWalletBps`,`maxWalletWindowSecs`, oracle `TWAP_WINDOW`+ring cardinality, `graduationThreshold`. **Constructor
 validates every allowed `preset` tuple `{sort, initialTick, tickLower, tickUpper}`** against the token-order/tick
@@ -119,9 +119,10 @@ alignment rules, the WETH-side-zero requirement, and residual `≤ MAX_SEED_DUST
 both sort branches) — only validated tuples are launchable. Owner (multisig): `pause`/`unpause` NEW launches only.
 **Chain-gate:** any zero immutable ⇒ not constructible.
 
-**`launch(LaunchParams{name,symbol,preset}) nonReentrant` — `creator := msg.sender`; single tx, all-or-revert:**
-1. `_chargeLaunchFee` — USDG `safeTransferFrom(msg.sender → launchFeeTreasury, 1e6)` + exact-received; (or Permit2
-   signature path). Revert ⇒ nothing.
+**`launch(LaunchParams{name,symbol,preset}) payable nonReentrant` — `creator := msg.sender`; single tx, all-or-revert:**
+1. `_chargeLaunchFee` — `require(msg.value == launchFeeAmount)` (`BAD_FEE`), then forward the exact native ETH via
+   `launchFeeTreasury.call{value: launchFeeAmount}("")` (`FEE_XFER_FAIL` on revert). No approval/faucet; a later revert
+   atomically rolls the fee back. `launchFeeTreasury` MUST be an EOA (or a payable contract whose `receive` can't revert).
 2. `token = Clones.cloneDeterministic(IMPL, salt=keccak256(msg.sender,symbol,nonce++))`.
 3. `VAULT.register(token, creator)` — **before** `initialize` (mint-`sync` must be accepted); opens namespace.
 4. **`HOOK.registerPendingPool(PoolKey, launchConfig)` — `onlyFactory` (constraint 4):** records the **exact** pending
@@ -390,7 +391,7 @@ int56 tickCumulative}` + `ringIndex[poolId]` (`cardinality` = a **manifest floor
 ## 5. Authority & immutability boundary
 | Actor | CAN | CANNOT |
 |---|---|---|
-| **Anyone** | `launch`($1 USDG), `collect`(zero-liq fee-take + 5% in-kind carve→vault), `settle`(TWAP-floored LT→WETH via vault), **`compound`(TWAP-gated in-kind add→locked NFT)**, `claimCreator`/`claimHyde`, `graduate`, **be an external LP (add/remove freely)** | change recipients/bps/schedule/threshold; move Hyde's LP; **withdraw the compounded liquidity or the pending in-kind balances**; mint/burn; brick trading; count a system swap as volume; front-run pool init; add liquidity at a TWAP-deviating spot |
+| **Anyone** | `launch`(0.0004 ETH `msg.value`), `collect`(zero-liq fee-take + 5% in-kind carve→vault), `settle`(TWAP-floored LT→WETH via vault), **`compound`(TWAP-gated in-kind add→locked NFT)**, `claimCreator`/`claimHyde`, `graduate`, **be an external LP (add/remove freely)** | change recipients/bps/schedule/threshold; move Hyde's LP; **withdraw the compounded liquidity or the pending in-kind balances**; mint/burn; brick trading; count a system swap as volume; front-run pool init; add liquidity at a TWAP-deviating spot |
 | **Factory owner** | pause/unpause NEW launches | anything on a live token/LP/fees/hook/vault |
 | **Creator / Hyde** | claim 90% / 5% WETH (fixed recipients) | exceed share; touch the other's bucket; touch the 5% liquidity leg |
 | **`HydeHook`** | set dynamic fee, meter volume, record oracle | hold funds, take a swap delta, block liquidity removal, authorize a non-factory init |
@@ -398,7 +399,7 @@ int56 tickCumulative}` + `ringIndex[poolId]` (`cardinality` = a **manifest floor
 | **`HydeFeeCollector`** | custody NFT, `collect`, carve 5% in-kind, `compound` (add-only into own NFT) | remove/transfer/burn the position or its liquidity; sweep/withdraw `pendingLiq*`; add above the pending cap; add off-TWAP |
 
 ## 6. Failure-mode / revert catalog
-USDG fee fail / not-constructible; permit fail; `initialize` non-factory or twice or stale/foreign config
+`BAD_FEE` (wrong `msg.value`) / `FEE_XFER_FAIL` (reverting treasury) / post-fee-revert atomic rollback / not-constructible; `initialize` non-factory or twice or stale/foreign config
 (`beforeInitialize`); `collect`/`noteRaw` non-collector or shortfall; `settle` deadline/`amountIn==0`/over-rawFees/
 `ORACLE_NOT_READY`/`wethOut<minOut`/unsettled-delta; **(rev8) `compound` `ORACLE_NOT_READY` (window not spanned) /
 `TWAP_DEVIATION` (spot off TWAP) / `DUST_ACCUMULATE` (liquidityΔ < `MIN_ADD_LIQUIDITY` — a benign skip, not a fund
@@ -513,7 +514,7 @@ presets) swept to the exempt collector — the bound is enforced/measured, never
   — record the mined address + exact flag bits + codehash in the manifest.
 - **Manifest (V4 refresh of `DEPLOY_MANIFEST_4663.md`):** PoolManager/PositionManager/UniversalRouter/Permit2/StateView
   + **official V4Quoter `0x8dc178ef…`** (+ hashes); the **mined HydeHook address + codehash + EXACT flag bits (FINDING-1
-  decode asserted)**; WETH/USDG + decimals; anti-snipe schedule; `graduationThreshold`; `TWAP_WINDOW`/ring cardinality/
+  decode asserted)**; WETH + decimals; native-ETH launch fee (`launchFeeAmount`/`launchFeeTreasury`); anti-snipe schedule; `graduationThreshold`; `TWAP_WINDOW`/ring cardinality/
   `MAX_SLIPPAGE_BPS`; per-pool `feeProtocol` recorded + monitored; treasuries + owner multisig (clint). gojo/kami co-sign.
 - **(rev8.3) Settle-keeper — OPS DEPENDENCY, honest framing (casper 21523):** a keeper that calls `settle` with a tight,
   live-computed `callerMinOut` (`minOut = max(TWAP-floor, callerMinOut)`, tighten-only) minimizes fee-leg MEV. **The

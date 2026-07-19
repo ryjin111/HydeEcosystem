@@ -93,7 +93,7 @@ holds** and spend its budget going deeper, not re-deriving what we already patch
 3. **Seed:** post-seed `factory`/`vault` LT balances == 0; measured dust ≤ `MAX_SEED_DUST`; `ownerOf(tokenId)==COLLECTOR`.
 
 ## 7. Trust assumptions / known accepted risks (disclose to the auditor)
-- **WETH + USDG on Robinhood Chain 4663 are upgradeable proxies** — external trust assumption (clint to ack).
+- **WETH on Robinhood Chain 4663 is an upgradeable proxy** — external trust assumption (clint to ack). (USDG is no longer a dependency — the launch fee is native ETH.)
 - **V4 governance-settable protocol fee** — recorded/monitored per pool at deploy.
 - **Settle-keeper is an OPS optimization, NOT a liveness dependency** — the contract is safe without it (3% permissionless
   slippage backstop); keeper just tightens `callerMinOut`.
@@ -106,7 +106,7 @@ reverts + remove-bit trap demo) · `AntiRug.t` (immutable bps, forbidden selecto
 `HydeERC20.t` (max-wallet never blocks sells).
 
 ## 9. Deploy parameters — ⚠️ TBD, pending clint (feed BOTH the audit scope and the deploy)
-- `hydeoutTreasury` (receives 5%) · `launchFeeTreasury` ($1 USDG) · factory-owner multisig
+- `hydeoutTreasury` (receives 5%) · `launchFeeTreasury` (receives the **0.0004 ETH** native launch fee — MUST be an EOA, since the fee is forwarded with a raw `.call`) · factory-owner multisig
 - anti-snipe schedule (`startFee`/`baseFee`/`antiSnipeWindow`) · `maxWalletBps`/`maxWalletWindowSecs`
 - `graduationThreshold` (or keep stubbed) · `MAX_SLIPPAGE_BPS` (default 300) · `MAX_SEED_DUST` · `TWAP_WINDOW`/ring
   cardinality
@@ -121,7 +121,7 @@ adapter boundary already coded) → own-stack live.
 HydeERC20 impl 1,078,888 · StateView 654,433 · HydeFeeVault 2,164,855 · HydeFeeCollector 2,230,434 · HydeHook 1,470,311
 (CREATE2 mining is off-chain = 0 gas) · HydeTokenFactory 2,498,760 · initFactory ×3 132,452 · tx bases ~189,000 →
 **~10.42M gas full stack** (~8.5M if StateView/impl reused). At Robinhood-4663 live gas ~0.05 gwei ≈ **0.0005 ETH (~$1.5)**;
-≤0.1 gwei ≈ 0.001 ETH. **First launch** (`factory.launch`) ≈ 1.19M gas ≈ 0.00006 ETH + the $1 USDG fee. **Fund the
+≤0.1 gwei ≈ 0.001 ETH. **First launch** (`factory.launch`) ≈ 1.19M gas ≈ 0.00006 ETH + the **0.0004 ETH** native launch fee (`msg.value`). **Fund the
 deployer ~0.01 ETH** (native 4663) = 10–20× headroom over the stack deploy + several launches. (Numbers are bytecode-
 dominated so representative; prod immutables don't move them.)
 
