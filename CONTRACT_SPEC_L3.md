@@ -120,9 +120,10 @@ both sort branches) — only validated tuples are launchable. Owner (multisig): 
 **Chain-gate:** any zero immutable ⇒ not constructible.
 
 **`launch(LaunchParams{name,symbol,preset}) payable nonReentrant` — `creator := msg.sender`; single tx, all-or-revert:**
-1. `_chargeLaunchFee` — `require(msg.value == launchFeeAmount)` (`BAD_FEE`), then forward the exact native ETH via
-   `launchFeeTreasury.call{value: launchFeeAmount}("")` (`FEE_XFER_FAIL` on revert). No approval/faucet; a later revert
-   atomically rolls the fee back. `launchFeeTreasury` MUST be an EOA (or a payable contract whose `receive` can't revert).
+1. Inline **fee block** in `launch()` — `require(msg.value == launchFeeAmount)` (`BAD_FEE`), then forward the exact native
+   ETH via `launchFeeTreasury.call{value: launchFeeAmount}("")` (`FEE_XFER_FAIL` on revert). No approval/faucet; a later
+   revert atomically rolls the fee back. `launchFeeTreasury` MUST be a plain EOA — `DeployHydeStack` enforces
+   `launchTreasury != address(0) && launchTreasury.code.length == 0` pre-broadcast.
 2. `token = Clones.cloneDeterministic(IMPL, salt=keccak256(msg.sender,symbol,nonce++))`.
 3. `VAULT.register(token, creator)` — **before** `initialize` (mint-`sync` must be accepted); opens namespace.
 4. **`HOOK.registerPendingPool(PoolKey, launchConfig)` — `onlyFactory` (constraint 4):** records the **exact** pending
