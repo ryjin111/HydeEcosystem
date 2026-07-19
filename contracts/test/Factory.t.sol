@@ -83,7 +83,9 @@ contract FactoryTest is HydeStackSetup {
         vm.deal(creator, LAUNCH_FEE);
         uint256 treBefore = LAUNCH_TREASURY.balance;
         vm.prank(creator);
-        vm.expectRevert(); // reverts at VAULT.register (f is not the vault's bound factory)
+        // Pinned to the intended POST-fee failure: VAULT.register is onlyFactory and f is unwired, so it
+        // reverts ONLY_FACTORY at step 3 — proving the tx got past the step-1 fee before unwinding.
+        vm.expectRevert(bytes("ONLY_FACTORY"));
         f.launch{value: LAUNCH_FEE}(HydeTokenFactory.LaunchParams({name: "RB", symbol: "RB", presetId: 0}));
         // Fee call happened at step 1, then the tx reverted: every ETH balance is restored.
         assertEq(LAUNCH_TREASURY.balance, treBefore, "treasury unchanged after rollback");

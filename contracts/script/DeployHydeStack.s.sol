@@ -187,7 +187,7 @@ contract DeployHydeStack is Script, HydeDeployConfig {
         // a raw `.call`; a contract treasury can revert (FEE_XFER_FAIL bricks launches) or burn gas to
         // grief them — the EOA invariant can't be enforced on-chain, so it's checked here, pre-broadcast.
         address launchTreasury = vm.envAddress("LAUNCH_TREASURY");
-        require(launchTreasury.code.length == 0, "LAUNCH_TREASURY_NOT_EOA");
+        require(launchTreasury != address(0) && launchTreasury.code.length == 0, "LAUNCH_TREASURY_NOT_EOA");
         e.launchTreasury = launchTreasury;
         e.factoryOwner = vm.envOr("FACTORY_OWNER", deployer);
 
