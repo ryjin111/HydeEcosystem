@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPublicClient, http, defineChain, parseAbiItem } from "viem";
 import type { TokenInfo } from "../utils/constants";
-import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, DOPPLER_CONTRACTS_BY_CHAIN } from "../utils/constants";
+import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, DOPPLER_CONTRACTS_BY_CHAIN, ROBINHOOD_TESTNET_VAULT, hydeVaultAbi } from "../utils/constants";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
 const ROBINHOOD_CHAIN_ID = 4663;
@@ -354,7 +354,7 @@ const rhTestnetChain = defineChain({
 });
 const testnetClient = createPublicClient({ chain: rhTestnetChain, transport: http() });
 
-type LaunchLog = { args: { token: `0x${string}` }; blockNumber: bigint | null };
+type LaunchLog = { args: { token: `0x${string}`; creator: `0x${string}` }; blockNumber: bigint | null };
 
 /** Own-stack launches on 46630 — from `LaunchCreated` off our factory. Same enrichment shape as the
  *  Doppler board (name/symbol/curve %), minus third-party price data (testnet isn't indexed → null). */
@@ -398,6 +398,13 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
       { address: token, abi: ERC20_META_ABI, functionName: "balanceOf", args: [POOL_MANAGER] } as const,
     ]),
   });
+  // Creator-claimable WETH per token from the fresh vault — ONE batched multicall (no per-render RPC
+  // waterfall), fail-neutral: any read failure leaves that token's claimable null, never fabricated.
+  const claimRes = await testnetClient.multicall({
+    contracts: tokens.map((token) => ({
+      address: ROBINHOOD_TESTNET_VAULT, abi: hydeVaultAbi, functionName: "creatorClaimable", args: [token],
+    } as const)),
+  }).catch(() => null);
   const uniqueBlocks = [...new Set(logs.map((l) => l.blockNumber ?? 0n))];
   const blockTimes = new Map(
     (await Promise.all(uniqueBlocks.map((bn) => testnetClient.getBlock({ blockNumber: bn })))).map((b) => [b.number, Number(b.timestamp)])
@@ -417,6 +424,7 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
       progress = Math.min(100, Number((sold * 10000n) / initial) / 100);
     }
     const ts = blockTimes.get(log.blockNumber ?? 0n);
+    const claim = claimRes?.[i];
     return {
       address: token,
       chainId: RH_TESTNET_ID,
@@ -429,6 +437,8 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
       priceUsd: null,
       createdAt: new Date((ts ?? 0) * 1000).toISOString(),
       progress,
+      creator: log.args.creator as string,
+      creatorClaimable: claim && claim.status === "success" ? (claim.result as bigint).toString() : null,
     };
   });
   const nonNull = pools.filter((p): p is DopplerPool => p !== null);

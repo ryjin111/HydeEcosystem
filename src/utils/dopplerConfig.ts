@@ -25,4 +25,10 @@ export type DopplerPool = {
   createdAt: string;
   /** Curve progress toward graduation, 0–100 (100 = graduated). Null when unknown. */
   progress: number | null;
+  /** Own-stack launch creator (from `LaunchCreated.creator`). Null for non-own-stack (Doppler) pools —
+   *  used by "My Launches" to filter to the connected wallet (Phase 2). */
+  creator?: string | null;
+  /** Creator-claimable WETH in wei, as a decimal string (vault `creatorClaimable(token)`). Null when
+   *  not own-stack or the read failed (fail-neutral, never fabricated). */
+  creatorClaimable?: string | null;
 };

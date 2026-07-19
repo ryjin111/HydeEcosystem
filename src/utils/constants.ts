@@ -281,6 +281,16 @@ export const ROBINHOOD_STATE_VIEW = "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b"
  *  track ROBINHOOD_TESTNET.factory on any redeploy — the old StateView cannot quote the new pool. */
 export const ROBINHOOD_TESTNET_STATE_VIEW = "0x81d5A6B7433420F7011612771eA74Ef71e239206" as Address;
 
+/** HydeFeeVault on Robinhood Testnet (46630) — part of the fresh 0.0004-ETH own-stack deploy (block
+ *  91418522). Source of the creator's claimable WETH (`creatorClaimable(token)`) for "My Launches".
+ *  MUST track ROBINHOOD_TESTNET.factory on any redeploy. */
+export const ROBINHOOD_TESTNET_VAULT = "0xF6318a4C874E9D2EBE627B05A247AD9d6401731C" as Address;
+
+/** Minimal HydeFeeVault surface — the per-token creator-claimable WETH (public mapping getter). */
+export const hydeVaultAbi = [
+  { type: "function", name: "creatorClaimable", stateMutability: "view", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+] as const;
+
 // Template encoding config for auto payload generation.
 // Adjust ABI parameter lists and command byte to match your deployed V4 periphery.
 export const V4_ENCODING_TEMPLATES: V4EncodingTemplates = {
