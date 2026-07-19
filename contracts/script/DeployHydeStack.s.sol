@@ -49,7 +49,7 @@ abstract contract HydeDeployConfig {
     uint256 internal constant GRAD_THRESHOLD = 0; // label-only; graduate is stubbed
     uint16 internal constant MAX_WALLET_BPS = 100; // 1% (test)
     uint64 internal constant MAX_WALLET_WINDOW = 300;
-    uint256 internal constant LAUNCH_FEE = 1e6; // $1 (6-dec USDG)
+    uint256 internal constant LAUNCH_FEE = 0.0004 ether; // flat native-ETH launch fee (4e14 wei)
     int24 internal constant C0_INIT = -60_000;
     int24 internal constant C0_LOWER = 0;
     int24 internal constant C0_UPPER = 60_000;
@@ -71,10 +71,9 @@ abstract contract HydeDeployConfig {
 ///         vault/collector/hook are created BY THIS CONTRACT, `new HydeHook{salt}` CREATE2s with `this` as
 ///         the deployer (not Foundry's 0x4e59 proxy), and `this` is the consistent `_deployer` that can call
 ///         the one-shot `initFactory` on all three. Mirrors the proven harness (HydeStackSetup) exactly.
-///         Fixed sandbox deploy order → deterministic nonces (weth1·usdg2·impl3·stateView4·vault5·collector6).
+///         Fixed sandbox deploy order → deterministic nonces (impl1·stateView2·vault3·collector4·hook5·factory6).
 contract HydeStackDeployer is HydeDeployConfig {
     address public weth;
-    address public usdg;
     address public impl;
     address public stateView;
     address public vault;
@@ -88,7 +87,6 @@ contract HydeStackDeployer is HydeDeployConfig {
         IAllowanceTransfer permit2;
         address universalRouter;
         address weth; // REAL testnet WETH for the live deploy (or a script-deployed mock)
-        address usdg; // real testnet USDG (faucet) or a script-deployed mock
         address hydeTreasury;
         address launchTreasury;
         address factoryOwner;
@@ -97,10 +95,9 @@ contract HydeStackDeployer is HydeDeployConfig {
     }
 
     constructor(Ext memory e) {
-        // WETH/USDG come in as params (real testnet addrs or script-deployed mocks) so the LIVE deploy
+        // WETH comes in as a param (real testnet addr or a script-deployed mock) so the LIVE deploy
         // points at the real WETH — clint's faucet-ETH → wrap → trade works against the real pool.
         weth = e.weth;
-        usdg = e.usdg;
         impl = address(new HydeERC20()); // nonce 1
         stateView = address(new StateView(e.manager)); // nonce 2 (46630 has no canonical StateView)
 
@@ -148,7 +145,6 @@ contract HydeStackDeployer is HydeDeployConfig {
             poolManager: address(e.manager),
             positionManager: address(e.posm),
             permit2: address(e.permit2),
-            usdg: usdg,
             launchFeeAmount: LAUNCH_FEE,
             launchFeeTreasury: e.launchTreasury,
             weth: weth,
@@ -195,10 +191,7 @@ contract DeployHydeStack is Script, HydeDeployConfig {
         // so the Deployer-address prediction below accounts for their nonces.
         address weth = vm.envOr("WETH", address(0));
         if (weth == address(0)) weth = address(new MockERC20("Wrapped Ether", "WETH", 18));
-        address usdg = vm.envOr("USDG", address(0));
-        if (usdg == address(0)) usdg = address(new MockERC20("Global Dollar", "USDG", 6));
         e.weth = weth;
-        e.usdg = usdg;
 
         // The EOA deploys the Deployer next → addr = CREATE(EOA, currentNonce). Inside it: impl(1),
         // stateView(2), vault(3) — mine the hook against that predicted vault + the resolved weth.
@@ -219,7 +212,6 @@ contract DeployHydeStack is Script, HydeDeployConfig {
         console2.log("== Hyde own-stack deployed (46630 testnet) ==");
         console2.log("Deployer    ", address(d));
         console2.log("WETH        ", d.weth());
-        console2.log("USDG        ", d.usdg());
         console2.log("HydeERC20   ", d.impl());
         console2.log("StateView   ", d.stateView());
         console2.log("Vault       ", d.vault());

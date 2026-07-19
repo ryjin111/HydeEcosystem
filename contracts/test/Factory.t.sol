@@ -8,7 +8,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 /// @notice Factory-focused tests (§3, fee-model-independent): seed correctness on BOTH address-sort
-///         branches (INV-52), constructor preset validation, the $1 USDG fee, exempt set, and the
+///         branches (INV-52), constructor preset validation, the flat native-ETH fee, exempt set, and the
 ///         register-before-mint ordering (INV-30). Forces the LT/WETH sort by placing the WETH mock at a
 ///         very low / very high address so every clone lands above / below it.
 contract FactoryTest is HydeStackSetup {
@@ -44,20 +44,35 @@ contract FactoryTest is HydeStackSetup {
         assertGe(IERC20(token).balanceOf(address(manager)), 1_000_000_000e18 - MAX_SEED_DUST, "pooled LT");
     }
 
-    // ── $1 USDG launch fee ──────────────────────────────────────────────────
+    // ── flat native-ETH launch fee ───────────────────────────────────────────
 
     function test_launch_fee_charged_to_treasury() public {
-        uint256 before = usdg.balanceOf(LAUNCH_TREASURY);
+        uint256 before = LAUNCH_TREASURY.balance;
         _launch(creator, "Fee", "FEE");
-        assertEq(usdg.balanceOf(LAUNCH_TREASURY) - before, LAUNCH_FEE, "fee to treasury");
+        assertEq(LAUNCH_TREASURY.balance - before, LAUNCH_FEE, "fee to treasury");
     }
 
-    function test_launch_reverts_without_fee_approval() public {
-        usdg.mint(creator, LAUNCH_FEE); // funded but NOT approved
-        vm.startPrank(creator);
-        vm.expectRevert();
-        factory.launch(HydeTokenFactory.LaunchParams({name: "No", symbol: "NO", presetId: 0}));
-        vm.stopPrank();
+    function test_launch_reverts_on_wrong_fee_value() public {
+        // Exact value required — too little OR too much reverts BAD_FEE (no refund, no stuck excess).
+        vm.deal(creator, 1 ether);
+        vm.prank(creator);
+        vm.expectRevert(bytes("BAD_FEE"));
+        factory.launch{value: LAUNCH_FEE - 1}(HydeTokenFactory.LaunchParams({name: "No", symbol: "NO", presetId: 0}));
+        vm.prank(creator);
+        vm.expectRevert(bytes("BAD_FEE"));
+        factory.launch{value: LAUNCH_FEE + 1}(HydeTokenFactory.LaunchParams({name: "No", symbol: "NO", presetId: 0}));
+    }
+
+    function test_launch_reverts_when_treasury_rejects_eth() public {
+        // The fee is forwarded at step 1 (before any vault/mint), so an UNWIRED factory whose treasury
+        // reverts on receive still exercises the guard: the launch reverts FEE_XFER_FAIL.
+        HydeTokenFactory.ConstructorParams memory p = _ctorParams();
+        p.launchFeeTreasury = address(new RejectEth());
+        HydeTokenFactory f = new HydeTokenFactory(p, _validPresets());
+        vm.deal(creator, LAUNCH_FEE);
+        vm.prank(creator);
+        vm.expectRevert(bytes("FEE_XFER_FAIL"));
+        f.launch{value: LAUNCH_FEE}(HydeTokenFactory.LaunchParams({name: "X", symbol: "X", presetId: 0}));
     }
 
     // ── exempt set (§2) ─────────────────────────────────────────────────────
@@ -121,7 +136,6 @@ contract FactoryTest is HydeStackSetup {
             poolManager: address(manager),
             positionManager: address(lpm),
             permit2: address(permit2),
-            usdg: address(usdg),
             launchFeeAmount: LAUNCH_FEE,
             launchFeeTreasury: LAUNCH_TREASURY,
             weth: address(weth),
@@ -133,5 +147,21 @@ contract FactoryTest is HydeStackSetup {
             graduationThreshold: GRAD_THRESHOLD,
             owner: FACTORY_OWNER
         });
+    }
+
+    /// @dev The single valid preset (both sort branches), reused for constructor tests.
+    function _validPresets() internal pure returns (HydeTokenFactory.PresetInput[] memory presets) {
+        presets = new HydeTokenFactory.PresetInput[](1);
+        presets[0] = HydeTokenFactory.PresetInput({
+            initialTick0: C0_INIT, tickLower0: C0_LOWER, tickUpper0: C0_UPPER,
+            initialTick1: C1_INIT, tickLower1: C1_LOWER, tickUpper1: C1_UPPER
+        });
+    }
+}
+
+/// @dev A treasury that rejects ETH on receive — forces the factory's FEE_XFER_FAIL guard.
+contract RejectEth {
+    receive() external payable {
+        revert("REJECT");
     }
 }

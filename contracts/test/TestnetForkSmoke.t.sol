@@ -42,7 +42,6 @@ contract TestnetForkSmoke is Test, HydeDeployConfig {
     IPoolManager internal manager;
     IPositionManager internal lpm;
     MockERC20 internal weth;
-    MockERC20 internal usdg;
     HydeTokenFactory internal factory;
     HydeFeeCollector internal collector;
     HydeFeeVault internal vault;
@@ -61,11 +60,10 @@ contract TestnetForkSmoke is Test, HydeDeployConfig {
         manager = IPoolManager(POOL_MANAGER);
         lpm = IPositionManager(payable(POSITION_MANAGER));
 
-        // Live-config parity: REAL testnet WETH (what the broadcast uses) + a mock USDG for the $1 fee.
-        MockERC20 mockUsdg = new MockERC20("Global Dollar", "USDG", 6);
+        // Live-config parity: REAL testnet WETH (what the broadcast uses). The launch fee is native ETH.
 
         // Mine the hook against the (test-contract) deployer + the vault it WILL create (nonce 3: the
-        // Deployer deploys impl(1)·stateView(2)·vault(3) now that weth/usdg are params, not internal).
+        // Deployer deploys impl(1)·stateView(2)·vault(3) — weth is a param, not internal).
         address dAddr = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
         address vaultA = _create1(dAddr, 3);
         bytes memory hookArgs =
@@ -79,7 +77,6 @@ contract TestnetForkSmoke is Test, HydeDeployConfig {
             permit2: IAllowanceTransfer(PERMIT2),
             universalRouter: UNIVERSAL_ROUTER,
             weth: REAL_WETH,
-            usdg: address(mockUsdg),
             hydeTreasury: makeAddr("hydeTreasury"),
             launchTreasury: makeAddr("launchTreasury"),
             factoryOwner: makeAddr("factoryOwner"),
@@ -89,7 +86,6 @@ contract TestnetForkSmoke is Test, HydeDeployConfig {
         d = new HydeStackDeployer(e);
 
         weth = MockERC20(d.weth());
-        usdg = MockERC20(d.usdg());
         factory = HydeTokenFactory(d.factory());
         collector = HydeFeeCollector(d.collector());
         vault = HydeFeeVault(d.vault());
@@ -145,11 +141,11 @@ contract TestnetForkSmoke is Test, HydeDeployConfig {
         internal
         returns (address token, uint256 tokenId)
     {
-        usdg.mint(who, LAUNCH_FEE);
-        vm.startPrank(who);
-        usdg.approve(address(factory), LAUNCH_FEE);
-        (token, tokenId) = factory.launch(HydeTokenFactory.LaunchParams({name: name, symbol: symbol, presetId: 0}));
-        vm.stopPrank();
+        vm.deal(who, LAUNCH_FEE);
+        vm.prank(who);
+        (token, tokenId) = factory.launch{value: LAUNCH_FEE}(
+            HydeTokenFactory.LaunchParams({name: name, symbol: symbol, presetId: 0})
+        );
     }
 
     function _key(address token) internal view returns (PoolKey memory) {

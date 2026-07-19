@@ -49,7 +49,7 @@ interface IHydeCollectorBps {
 }
 
 /// @title HydeTokenFactory — permissionless fair-launch orchestrator (CONTRACT_SPEC_L3.md §3 · V4)
-/// @notice A single `launch` atomically (all-or-revert): charges the $1 USDG launch fee, EIP-1167-clones
+/// @notice A single `launch` atomically (all-or-revert): charges the flat native-ETH launch fee (msg.value), EIP-1167-clones
 ///         `HydeERC20`, registers the token in the vault (BEFORE the init mint, INV-30), one-shot-registers
 ///         the exact pending LT/WETH pool in the hook, mints 1B to the factory (the exempt seeder),
 ///         initializes the dynamic-fee V4 pool (hook-authed init), single-sided-seeds all 1B of LT into a
@@ -79,8 +79,7 @@ contract HydeTokenFactory is ReentrancyGuard {
     IPoolManager public immutable POOL_MANAGER;
     IPositionManager public immutable POSITION_MANAGER;
     IAllowanceTransfer public immutable PERMIT2;
-    IERC20 public immutable USDG; // launch-fee stablecoin (6-dec)
-    uint256 public immutable launchFeeAmount; // 1e6 == $1
+    uint256 public immutable launchFeeAmount; // native-ETH fee in wei (0.0004 ETH == 4e14)
     address public immutable launchFeeTreasury;
     address public immutable WETH; // sole pool numéraire
     address public immutable UNIVERSAL_ROUTER; // exempt-set member (§2)
@@ -151,7 +150,6 @@ contract HydeTokenFactory is ReentrancyGuard {
         address poolManager;
         address positionManager;
         address permit2;
-        address usdg;
         uint256 launchFeeAmount;
         address launchFeeTreasury;
         address weth;
@@ -173,7 +171,6 @@ contract HydeTokenFactory is ReentrancyGuard {
         require(p.poolManager != address(0), "ZERO_POOL_MANAGER");
         require(p.positionManager != address(0), "ZERO_POSITION_MANAGER");
         require(p.permit2 != address(0), "ZERO_PERMIT2");
-        require(p.usdg != address(0), "ZERO_USDG");
         require(p.launchFeeAmount > 0, "ZERO_FEE");
         require(p.launchFeeTreasury != address(0), "ZERO_FEE_TREASURY");
         require(p.weth != address(0), "ZERO_WETH");
@@ -210,7 +207,6 @@ contract HydeTokenFactory is ReentrancyGuard {
         POOL_MANAGER = IPoolManager(p.poolManager);
         POSITION_MANAGER = IPositionManager(p.positionManager);
         PERMIT2 = IAllowanceTransfer(p.permit2);
-        USDG = IERC20(p.usdg);
         launchFeeAmount = p.launchFeeAmount;
         launchFeeTreasury = p.launchFeeTreasury;
         WETH = p.weth;
@@ -283,16 +279,19 @@ contract HydeTokenFactory is ReentrancyGuard {
     }
 
     /// @notice Permissionless launch. `creator := msg.sender`; single tx, all-or-revert (§3 steps 1–9).
-    ///         Requires prior USDG approval to this factory for `launchFeeAmount` (see `launch` fee step).
-    function launch(LaunchParams calldata lp) external nonReentrant returns (address token, uint256 tokenId) {
+    ///         Charges a flat native-ETH fee via `msg.value` (exactly `launchFeeAmount`) — no approval and
+    ///         no faucet, so the whole launch is ONE wallet transaction.
+    function launch(LaunchParams calldata lp) external payable nonReentrant returns (address token, uint256 tokenId) {
         require(!paused, "PAUSED");
         require(lp.presetId < _presets.length, "BAD_PRESET");
         address creator = msg.sender;
 
-        // 1. $1 USDG fee straight to the launch-fee treasury; exact-received (rejects fee-on-transfer short).
-        uint256 balBefore = USDG.balanceOf(launchFeeTreasury);
-        USDG.safeTransferFrom(msg.sender, launchFeeTreasury, launchFeeAmount);
-        require(USDG.balanceOf(launchFeeTreasury) - balBefore == launchFeeAmount, "FEE_SHORTFALL");
+        // 1. flat native-ETH fee → the launch-fee treasury. EXACT amount: no refund path, no excess stuck
+        //    in the factory, a single external call (guarded by nonReentrant). INVARIANT: launchFeeTreasury
+        //    MUST be an EOA (or a payable contract whose receive() can't revert) — an EOA .call always succeeds.
+        require(msg.value == launchFeeAmount, "BAD_FEE");
+        (bool feeOk,) = launchFeeTreasury.call{value: launchFeeAmount}("");
+        require(feeOk, "FEE_XFER_FAIL");
         emit LaunchFeePaid(msg.sender, launchFeeTreasury, launchFeeAmount);
 
         // 2. deterministic EIP-1167 clone.

@@ -28,15 +28,12 @@ contract AntiRugTest is HydeStackSetup {
         (address token, uint256 tokenId) = _launch(creator, "Live", "LIVE");
         _buy(buyer, token, 3e18);
 
-        // Owner pauses. A NEW launch now reverts...
+        // Owner pauses. A NEW launch now reverts (PAUSED is checked before the fee, so no value needed)...
         vm.prank(FACTORY_OWNER);
         factory.pause();
-        usdg.mint(attacker, LAUNCH_FEE);
-        vm.startPrank(attacker);
-        usdg.approve(address(factory), LAUNCH_FEE);
+        vm.prank(attacker);
         vm.expectRevert(bytes("PAUSED"));
         factory.launch(HydeTokenFactory_LaunchParams("Nope", "NOPE"));
-        vm.stopPrank();
 
         // ...but the ALREADY-LIVE token is completely unaffected: still trades, LP still custodied.
         assertEq(IERC721(address(lpm)).ownerOf(tokenId), address(collector), "LP still locked while paused");

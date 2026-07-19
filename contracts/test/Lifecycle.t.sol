@@ -19,8 +19,8 @@ contract LifecycleTest is HydeStackSetup {
     function test_launch_seeds_locked_single_sided_position() public {
         (address token, uint256 tokenId) = _launch(creator, "Pawmie", "PAWM");
 
-        // $1 USDG fee landed in the launch treasury.
-        assertEq(usdg.balanceOf(LAUNCH_TREASURY), LAUNCH_FEE, "launch fee");
+        // The flat native-ETH fee landed in the launch treasury.
+        assertEq(LAUNCH_TREASURY.balance, LAUNCH_FEE, "launch fee");
 
         // Position NFT is in the collector's PERMANENT custody (INV-4/52).
         assertEq(IERC721(address(lpm)).ownerOf(tokenId), address(collector), "custody");

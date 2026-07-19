@@ -49,7 +49,7 @@ abstract contract HydeStackSetup is PosmTestSetup {
     uint256 internal constant GRAD_THRESHOLD = 0; // label-only; graduate is stubbed
     uint16 internal constant MAX_WALLET_BPS = 100; // 1%
     uint64 internal constant MAX_WALLET_WINDOW = 300;
-    uint256 internal constant LAUNCH_FEE = 1e6; // $1 (6-dec USDG)
+    uint256 internal constant LAUNCH_FEE = 0.0004 ether; // flat native-ETH launch fee (4e14 wei)
 
     // single validated preset (mirror-image single-sided legs for both sort branches)
     int24 internal constant C0_INIT = -60_000;
@@ -65,7 +65,6 @@ abstract contract HydeStackSetup is PosmTestSetup {
 
     /* ─────────────────────────── deployed handles ──────────────────────────── */
     MockERC20 internal weth;
-    MockERC20 internal usdg;
     HydeERC20 internal impl;
     HydeFeeVault internal vault;
     HydeFeeCollector internal collector;
@@ -88,7 +87,6 @@ abstract contract HydeStackSetup is PosmTestSetup {
     }
 
     function _deployHydeStackWithWeth(address forcedWeth) internal {
-        usdg = new MockERC20("Global Dollar", "USDG", 6);
         impl = new HydeERC20();
         if (forcedWeth == address(0)) {
             weth = new MockERC20("Wrapped Ether", "WETH", 18);
@@ -164,7 +162,6 @@ abstract contract HydeStackSetup is PosmTestSetup {
             poolManager: address(manager),
             positionManager: address(lpm),
             permit2: address(permit2),
-            usdg: address(usdg),
             launchFeeAmount: LAUNCH_FEE,
             launchFeeTreasury: LAUNCH_TREASURY,
             weth: address(weth),
@@ -194,17 +191,16 @@ abstract contract HydeStackSetup is PosmTestSetup {
     }
 
     /* ─────────────────────────── helpers ───────────────────────────────────── */
-    /// @dev Launch a token from `creator` (funds + approves the $1 USDG fee first).
+    /// @dev Launch a token from `creator` (funds the flat native-ETH fee first — one payable tx, no approval).
     function _launch(address creator, string memory name, string memory symbol)
         internal
         returns (address token, uint256 tokenId)
     {
-        usdg.mint(creator, LAUNCH_FEE);
-        vm.startPrank(creator);
-        usdg.approve(address(factory), LAUNCH_FEE);
-        (token, tokenId) =
-            factory.launch(HydeTokenFactory.LaunchParams({name: name, symbol: symbol, presetId: 0}));
-        vm.stopPrank();
+        vm.deal(creator, LAUNCH_FEE);
+        vm.prank(creator);
+        (token, tokenId) = factory.launch{value: LAUNCH_FEE}(
+            HydeTokenFactory.LaunchParams({name: name, symbol: symbol, presetId: 0})
+        );
     }
 
     /// @dev The launch's pool key (currencies sorted, dynamic fee, HOOK).
