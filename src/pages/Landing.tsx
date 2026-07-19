@@ -40,13 +40,6 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               <NavLink to="/launchpad?tab=launch" className="btn-primary px-6 py-3 text-sm font-semibold rounded-xl">
                 Launch a Token
               </NavLink>
-              <NavLink
-                to="/launchpad?tab=explore"
-                className="px-6 py-3 text-sm font-semibold rounded-xl transition"
-                style={{ background: "rgba(255,255,255,0.05)", color: "#EDEFF3", border: "1px solid #22252D" }}
-              >
-                Explore Launches &rarr;
-              </NavLink>
             </div>
         </div>
       </div>
