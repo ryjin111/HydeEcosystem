@@ -181,7 +181,12 @@ contract DeployHydeStack is Script, HydeDeployConfig {
         e.posm = IPositionManager(payable(vm.envAddress("POSITION_MANAGER")));
         e.permit2 = IAllowanceTransfer(vm.envAddress("PERMIT2"));
         e.universalRouter = vm.envAddress("UNIVERSAL_ROUTER");
-        e.hydeTreasury = vm.envOr("HYDE_TREASURY", deployer);
+        // HYDE_TREASURY (the 5% protocol-fee recipient) is MANDATORY — a financial recipient must never
+        // silently inherit the deployer (gojo/kami 22977-22978). NOT EOA-constrained: claimHyde pays WETH
+        // via SafeERC20.safeTransfer, so a contract/multisig protocol treasury is valid + safer for custody.
+        address hydeTreasury = vm.envAddress("HYDE_TREASURY");
+        require(hydeTreasury != address(0), "HYDE_TREASURY_ZERO");
+        e.hydeTreasury = hydeTreasury;
         // LAUNCH_TREASURY is MANDATORY (no deployer fallback — an omitted env must never silently route
         // every launch fee to the deployer) and MUST be a plain EOA. The native-ETH fee is forwarded with
         // a raw `.call`; a contract treasury can revert (FEE_XFER_FAIL bricks launches) or burn gas to
