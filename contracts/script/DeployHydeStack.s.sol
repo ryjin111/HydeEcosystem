@@ -182,13 +182,19 @@ contract DeployHydeStack is Script, HydeDeployConfig {
         e.permit2 = IAllowanceTransfer(vm.envAddress("PERMIT2"));
         e.universalRouter = vm.envAddress("UNIVERSAL_ROUTER");
         e.hydeTreasury = vm.envOr("HYDE_TREASURY", deployer);
-        e.launchTreasury = vm.envOr("LAUNCH_TREASURY", deployer);
+        // LAUNCH_TREASURY is MANDATORY (no deployer fallback — an omitted env must never silently route
+        // every launch fee to the deployer) and MUST be a plain EOA. The native-ETH fee is forwarded with
+        // a raw `.call`; a contract treasury can revert (FEE_XFER_FAIL bricks launches) or burn gas to
+        // grief them — the EOA invariant can't be enforced on-chain, so it's checked here, pre-broadcast.
+        address launchTreasury = vm.envAddress("LAUNCH_TREASURY");
+        require(launchTreasury.code.length == 0, "LAUNCH_TREASURY_NOT_EOA");
+        e.launchTreasury = launchTreasury;
         e.factoryOwner = vm.envOr("FACTORY_OWNER", deployer);
 
         vm.startBroadcast(pk);
 
-        // Resolve WETH/USDG (REAL testnet addrs via env, else script-deployed mocks) inside the broadcast
-        // so the Deployer-address prediction below accounts for their nonces.
+        // Resolve WETH (REAL testnet addr via env, else a script-deployed mock) inside the broadcast so
+        // the Deployer-address prediction below accounts for its nonce.
         address weth = vm.envOr("WETH", address(0));
         if (weth == address(0)) weth = address(new MockERC20("Wrapped Ether", "WETH", 18));
         e.weth = weth;

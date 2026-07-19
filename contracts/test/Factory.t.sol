@@ -75,6 +75,22 @@ contract FactoryTest is HydeStackSetup {
         f.launch{value: LAUNCH_FEE}(HydeTokenFactory.LaunchParams({name: "X", symbol: "X", presetId: 0}));
     }
 
+    function test_launch_atomic_rollback_after_fee_call() public {
+        // A launch that reverts AFTER the fee is forwarded must roll the fee back too (EVM atomicity).
+        // An UNWIRED factory (never initFactory'd into the vault) passes step-1 fee to a valid EOA
+        // treasury, then reverts at step-3 VAULT.register (onlyFactory) — proving no ETH sticks anywhere.
+        HydeTokenFactory f = new HydeTokenFactory(_ctorParams(), _validPresets());
+        vm.deal(creator, LAUNCH_FEE);
+        uint256 treBefore = LAUNCH_TREASURY.balance;
+        vm.prank(creator);
+        vm.expectRevert(); // reverts at VAULT.register (f is not the vault's bound factory)
+        f.launch{value: LAUNCH_FEE}(HydeTokenFactory.LaunchParams({name: "RB", symbol: "RB", presetId: 0}));
+        // Fee call happened at step 1, then the tx reverted: every ETH balance is restored.
+        assertEq(LAUNCH_TREASURY.balance, treBefore, "treasury unchanged after rollback");
+        assertEq(address(f).balance, 0, "factory holds no ETH");
+        assertEq(creator.balance, LAUNCH_FEE, "creator's ETH returned");
+    }
+
     // ── exempt set (§2) ─────────────────────────────────────────────────────
 
     function test_exempt_set_is_the_frozen_infra_set() public {
