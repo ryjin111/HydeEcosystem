@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAccount } from "wagmi";
+import { formatEther } from "viem";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { LaunchTokenForm } from "../components/LaunchTokenForm";
@@ -28,6 +30,24 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+/** Creator-claimable WETH (vault wei as a decimal string) → BigInt, fail-neutral to 0n for sorting. */
+function claimableBig(wei: string | null | undefined): bigint {
+  try { return BigInt(wei ?? "0"); } catch { return 0n; }
+}
+
+/** Claimable WETH display. Honest: null read = "Unavailable"; a real "0" = settled-zero (legit, not
+ *  fabricated); otherwise the WETH amount (kami acceptance — never invent a value). */
+function fmtClaimable(wei: string | null | undefined): string {
+  if (wei == null) return "Unavailable";
+  try {
+    const n = parseFloat(formatEther(BigInt(wei)));
+    if (n === 0) return "0 WETH";
+    return `${n < 0.0001 ? n.toExponential(2) : n.toFixed(4)} WETH`;
+  } catch {
+    return "Unavailable";
+  }
+}
+
 /* ─── Pool card (Explore tab) ─────────────────────────────────────────────── */
 
 const CHAIN_LABELS: Record<number, string> = {
@@ -40,7 +60,7 @@ const CHAIN_LABELS: Record<number, string> = {
  *  same chain (stated in the page/footer), and repeating it was what squeezed the name column.
  *  Metrics are honesty-gated: MCAP/Liquidity render ONLY when the DEXScreener pair is real
  *  (graduated + indexed); curve-stage tokens show the on-chain curve % instead — never a fake $. */
-export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void }) {
+export function PoolCard({ pool, onTrade, showClaimable = false }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void; showClaimable?: boolean }) {
   const bt = pool.baseToken;
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
   const graduated = pool.type === "v2";
@@ -60,12 +80,18 @@ export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr:
     return () => { cancelled = true; };
   }, [pool.chainId, bt.address]);
 
-  // One-tap copy of the token's contract address (clint).
-  const [copied, setCopied] = useState(false);
-  const copyAddr = () => {
-    navigator.clipboard?.writeText(bt.address);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
+  // One-tap copy of the token's contract address (clint). Async + honest: success is shown only after
+  // the Clipboard write actually resolves; an absent/rejected API shows "copy failed", never a false
+  // "✓ copied" (kami).
+  const [copyState, setCopyState] = useState<"idle" | "ok" | "fail">("idle");
+  const copyAddr = async () => {
+    try {
+      await navigator.clipboard.writeText(bt.address);
+      setCopyState("ok");
+    } catch {
+      setCopyState("fail");
+    }
+    setTimeout(() => setCopyState("idle"), 1400);
   };
 
   return (
@@ -97,10 +123,15 @@ export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr:
           onClick={copyAddr}
           title="Copy contract address"
           aria-label={`Copy contract address ${bt.address}`}
-          className="flex items-center gap-1.5 w-fit text-[11px] font-mono text-pcs-textDim hover:text-pcs-textSub focus:text-pcs-textSub outline-none transition"
+          className="flex items-center gap-1.5 w-fit rounded-md -mx-1 px-1 text-[11px] font-mono text-pcs-textDim hover:text-pcs-textSub transition focus:outline-none focus-visible:ring-2 focus-visible:ring-pcs-primary/70"
         >
           <span>{bt.address.slice(0, 6)}&hellip;{bt.address.slice(-4)}</span>
-          <span className="text-[10px]" style={{ color: copied ? "#34C77B" : undefined }}>{copied ? "✓ copied" : "⧉"}</span>
+          <span
+            className="text-[10px]"
+            style={{ color: copyState === "ok" ? "#34C77B" : copyState === "fail" ? "#E8A33D" : undefined }}
+          >
+            {copyState === "ok" ? "✓ copied" : copyState === "fail" ? "copy failed" : "⧉"}
+          </span>
         </button>
 
         {/* Market cap + price — real values only; honest "Not indexed" when unpriced, never $0.00 (kami). */}
@@ -126,6 +157,23 @@ export function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr:
           <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
             <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap &middot; price</p>
             <p className="text-sm font-medium text-pcs-textDim">New launch &middot; not yet indexed</p>
+          </div>
+        )}
+
+        {/* Claimable creator fees — shown only on My Launches. Real WETH from the vault; honest
+            "Unavailable" for a null read, "0 WETH" for a real settled-zero — never fabricated (kami). */}
+        {showClaimable && (
+          <div
+            className="flex items-center justify-between rounded-xl px-3 py-2"
+            style={{ background: "rgba(52,199,123,0.06)", border: "1px solid rgba(52,199,123,0.22)" }}
+          >
+            <span className="text-[10px] uppercase tracking-wide text-pcs-textDim">Claimable fees</span>
+            <span
+              className="text-sm font-semibold tabular-nums"
+              style={{ color: claimableBig(pool.creatorClaimable) > 0n ? "#34C77B" : "#7A828E" }}
+            >
+              {fmtClaimable(pool.creatorClaimable)}
+            </span>
           </div>
         )}
 
@@ -178,6 +226,33 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   const isTestnet = chainId === RH_TESTNET_ID;
   const { pools, loading, refetch } = useHydeLaunches(chainId);
   const navigate = useNavigate();
+  const { address } = useAccount();
+
+  // "My Launches" + claimable sort exist only on the own-stack (creator/creatorClaimable are null on
+  // the Doppler rail), so the filter is testnet-only; on mainnet the board stays "all".
+  const [view, setView] = useState<"all" | "mine">("all");
+  const [sort, setSort] = useState<"claimable" | "mcap">("claimable");
+  const effView = isTestnet ? view : "all";
+
+  const mine = useMemo(
+    () => (address ? pools.filter((p) => p.creator && p.creator.toLowerCase() === address.toLowerCase()) : []),
+    [pools, address]
+  );
+  const shown = useMemo(() => {
+    if (effView !== "mine") return pools; // "all" keeps the feed's recency order
+    const arr = [...mine];
+    if (sort === "claimable") {
+      arr.sort((a, b) => {
+        const av = claimableBig(a.creatorClaimable), bv = claimableBig(b.creatorClaimable);
+        if (bv > av) return 1;
+        if (bv < av) return -1;
+        return a.address.localeCompare(b.address); // stable tie order
+      });
+    } else {
+      arr.sort((a, b) => (b.marketCapUsd ?? 0) - (a.marketCapUsd ?? 0) || a.address.localeCompare(b.address));
+    }
+    return arr;
+  }, [effView, mine, pools, sort]);
 
   const handleTrade = (tokenAddress: string, poolChainId: number) => {
     if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
@@ -234,20 +309,38 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       {/* Explore tab */}
       {tab === "explore" && (
         <div>
-          {/* Provenance lives in the page subtitle above (honest rail note); no fee split is stated for
-              the live Doppler-rail tokens — the 90/5-locked story is future-tense on the Landing only. */}
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <p className="text-sm text-pcs-textDim">
-                {loading
-                  ? "Loading…"
-                  : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched ${isTestnet ? "on the Hyde own-stack" : "on Robinhood Chain"}`}
-              </p>
-              {/* Source attribution. Mainnet $ figures are DEXScreener-priced; testnet isn't third-party
-                  indexed, so it's pure on-chain reads (curve % live; no fabricated price). */}
-              <p className="text-[11px] text-pcs-textDim/70 mt-0.5">
-                {isTestnet ? "Live on-chain reads · own-stack factory (not third-party indexed)" : "Market data via DEXScreener"}
-              </p>
+          {/* Filter (All | My Launches) + sort — own-stack only, since creator/claimable don't exist on
+              the Doppler rail. Refresh on the right. */}
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {isTestnet && (
+                <div className="flex gap-1 p-1 rounded-lg" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #1C1F26" }}>
+                  {(["all", "mine"] as const).map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setView(v)}
+                      className="px-3 py-1.5 rounded-md text-xs font-semibold transition"
+                      style={effView === v ? { background: "rgba(46,159,230,0.14)", color: "#54B4F0" } : { color: "#5D6470" }}
+                    >
+                      {v === "all" ? "All launches" : "My Launches"}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {effView === "mine" && (
+                <label className="flex items-center gap-1.5 text-xs text-pcs-textDim">
+                  Sort
+                  <select
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value as "claimable" | "mcap")}
+                    className="rounded-lg bg-pcs-card px-2 py-1 text-xs font-medium text-pcs-textSub outline-none cursor-pointer focus-visible:ring-2 focus-visible:ring-pcs-primary/70"
+                    style={{ border: "1px solid #22252D" }}
+                  >
+                    <option value="claimable">Claimable fees</option>
+                    <option value="mcap">Market cap</option>
+                  </select>
+                </label>
+              )}
             </div>
             <button
               onClick={refetch}
@@ -258,33 +351,45 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             </button>
           </div>
 
-          {!loading && pools.length === 0 && (
-            <div
-              className="rounded-2xl p-10 text-center"
-              style={{ background: "#121419", border: "1px solid #22252D" }}
-            >
-              <p className="text-pcs-textDim text-sm">No launches found yet.</p>
-              <p className="text-pcs-textDim text-xs mt-1">
-                Be the first to launch a token on Robinhood Chain!
+          {/* Count + source line — view-aware. Mainnet $ figures are DEXScreener-priced; testnet isn't
+              third-party indexed, so it's pure on-chain reads (curve % live; no fabricated price). */}
+          <p className="text-sm text-pcs-textDim">
+            {loading
+              ? "Loading…"
+              : effView === "mine"
+                ? `${shown.length} of your launch${shown.length !== 1 ? "es" : ""}`
+                : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched ${isTestnet ? "on the Hyde own-stack" : "on Robinhood Chain"}`}
+          </p>
+          <p className="text-[11px] text-pcs-textDim/70 mt-0.5 mb-4">
+            {isTestnet ? "Live on-chain reads · own-stack factory (not third-party indexed)" : "Market data via DEXScreener"}
+          </p>
+
+          {/* Empty states — connect prompt (My Launches, disconnected) / no-launches / your-none */}
+          {effView === "mine" && !address ? (
+            <div className="rounded-2xl p-10 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
+              <p className="text-pcs-textDim text-sm">Connect your wallet to see your launches.</p>
+            </div>
+          ) : !loading && shown.length === 0 ? (
+            <div className="rounded-2xl p-10 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
+              <p className="text-pcs-textDim text-sm">
+                {effView === "mine" ? "You haven't launched any tokens yet." : "No launches found yet."}
               </p>
-              <button
-                onClick={() => setTab("launch")}
-                className="btn-primary mt-4 px-5 py-2 text-sm"
-              >
+              <button onClick={() => setTab("launch")} className="btn-primary mt-4 px-5 py-2 text-sm">
                 Launch a Token
               </button>
             </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {shown.map((pool) => (
+                <PoolCard
+                  key={`${pool.chainId}-${pool.address}-${pool.baseToken.address}`}
+                  pool={pool}
+                  onTrade={handleTrade}
+                  showClaimable={effView === "mine"}
+                />
+              ))}
+            </div>
           )}
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pools.map((pool) => (
-              <PoolCard
-                key={`${pool.chainId}-${pool.address}-${pool.baseToken.address}`}
-                pool={pool}
-                onTrade={handleTrade}
-              />
-            ))}
-          </div>
         </div>
       )}
 
