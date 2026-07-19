@@ -55,8 +55,12 @@ export async function saveLaunchMeta(
   account: `0x${string}`,
   p: { chainId: number; token: string; image: string; description: string }
 ): Promise<void> {
+  // Normalize BEFORE signing so the signed message == the POST body == what the server stores
+  // (kami B-blocker #4): a trimmed description can't produce an empty box downstream.
+  const image = p.image || "";
+  const description = p.description.trim();
   const issuedAt = Math.floor(Date.now() / 1000);
-  const message = buildLaunchMetaMessage({ ...p, issuedAt });
+  const message = buildLaunchMetaMessage({ chainId: p.chainId, token: p.token, image, description, issuedAt });
   const signature = await walletClient.signMessage({ account, message });
   const res = await fetch("/api/launch-meta", {
     method: "POST",
@@ -64,8 +68,8 @@ export async function saveLaunchMeta(
     body: JSON.stringify({
       chainId: p.chainId,
       token: p.token,
-      image: p.image,
-      description: p.description,
+      image,
+      description,
       issuedAt,
       signature,
     }),

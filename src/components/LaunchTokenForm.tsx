@@ -81,7 +81,11 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   /** Sign + persist off-chain image/description for a just-launched own-stack token. Isolated from
    *  the launch: on failure it flips to an explicit retry, the token stays live. */
   const saveMetaFor = async (token: string, image: string, description: string) => {
-    if (!walletClient || !address) return;
+    if (!walletClient || !address) {
+      setMetaState("error");
+      setMetaError("Wallet not connected — reconnect and hit retry.");
+      return;
+    }
     setMetaState("saving");
     setMetaError(null);
     try {

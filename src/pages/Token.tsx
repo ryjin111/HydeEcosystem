@@ -182,7 +182,7 @@ export function TokenPage({ network, tokens, onAddCustomToken }: Props) {
                 <VerifiedBadge status={verify} />
                 <Badge tone={graduated ? "success" : "accent"}>{graduated ? "Graduated" : "Auction"}</Badge>
               </div>
-              {meta?.description && (
+              {meta?.description?.trim() && (
                 <p className="mt-2 text-xs text-pcs-textSub leading-relaxed">{meta.description}</p>
               )}
             </div>
