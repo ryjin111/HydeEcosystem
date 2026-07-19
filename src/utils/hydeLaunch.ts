@@ -3,26 +3,18 @@ import { parseEventLogs } from "viem";
 import {
   V4_CONTRACTS_BY_CHAIN,
   ROBINHOOD_TESTNET,
-  ROBINHOOD_TESTNET_USDG,
   hydeTokenFactoryAbi,
-  mockUsdgAbi,
-  erc20Abi,
 } from "./constants";
 
 /* ─── Hyde own-stack launch lane (Robinhood Testnet 46630) ───────────────────
  *
- * The launchpad's LIVE own-stack path — launches go through OUR HydeTokenFactory
- * (not Doppler). One `launch(LaunchParams{name,symbol,presetId})` atomically:
- * clones HydeERC20, seeds all 1B single-sided into the LT-only range, and hands
- * the position NFT to the collector's PERMANENT custody (the permanently-locked, grows-
- * every-trade LP). `creator := msg.sender` and is immutable.
+ * The launchpad's LIVE own-stack path — launches go through OUR HydeTokenFactory (not Doppler).
+ * One PAYABLE `launch(LaunchParams{name,symbol,presetId})` call atomically: charges a flat native-ETH
+ * fee (msg.value), clones HydeERC20, seeds all 1B single-sided into the LT-only range, and hands the
+ * position NFT to the collector's PERMANENT custody. `creator := msg.sender` and is immutable.
  *
- * Fee: a flat $1 in the mock USDG (6-dec) charged to the launch-fee treasury,
- * with prior USDG approval to the factory. On this sandbox the USDG `mint` is a
- * public faucet, so the UI tops the creator up to the fee before approving.
- *
- * Sequence (each a wallet tx): [faucet USDG if short] → [approve USDG if short]
- * → launch. Gas is paid in testnet ETH (creator's own — testnet faucet).
+ * Fee: a flat 0.0004 ETH paid as `msg.value` on the launch call — NO ERC-20 approval and NO faucet,
+ * so the whole launch is ONE wallet transaction. Gas is paid in testnet ETH (creator's own).
  */
 
 export const HYDE_TESTNET_CHAIN_ID = ROBINHOOD_TESTNET.id; // 46630
@@ -36,11 +28,6 @@ function factoryAddress(chainId: number): Address {
   return f;
 }
 
-function usdgAddress(chainId: number): Address {
-  if (chainId !== HYDE_TESTNET_CHAIN_ID) throw new Error(`Mock USDG faucet only on Robinhood Testnet (got ${chainId})`);
-  return ROBINHOOD_TESTNET_USDG;
-}
-
 export type HydeLaunchInput = {
   name: string;
   symbol: string;
@@ -51,22 +38,18 @@ export type HydeLaunchInput = {
 export type HydeLaunchPreview = {
   /** Deterministic clone address for the creator's NEXT launch of this symbol (from `predictNext`). */
   tokenAddress: Address;
-  /** $1 launch fee in USDG base units (6-dec). */
+  /** Flat native-ETH launch fee in wei (from `launchFeeAmount`). */
   feeAmount: bigint;
-  /** Creator's current USDG balance — the UI faucets the shortfall before approving. */
-  usdgBalance: bigint;
-  needsFaucet: boolean;
-  needsApproval: boolean;
 };
 
-/** Read-only pre-flight: predicts the clone address + fee/approval state. No wallet needed. */
+/** Read-only pre-flight: predicts the clone address + reads the flat fee. Fee/prediction only — no
+ *  wallet balance/allowance read (the wallet rejects an underfunded tx; kami 22958). */
 export async function simulateHydeLaunch(
   publicClient: PublicClient,
   chainId: number,
   input: HydeLaunchInput
 ): Promise<HydeLaunchPreview> {
   const factory = factoryAddress(chainId);
-  const usdg = usdgAddress(chainId);
 
   const [paused, feeAmount, tokenAddress] = await Promise.all([
     publicClient.readContract({ address: factory, abi: hydeTokenFactoryAbi, functionName: "paused" }),
@@ -78,21 +61,10 @@ export async function simulateHydeLaunch(
   ]);
   if (paused) throw new Error("Launches are paused on this factory.");
 
-  const [usdgBalance, allowance] = await Promise.all([
-    publicClient.readContract({ address: usdg, abi: erc20Abi, functionName: "balanceOf", args: [input.creator] }),
-    publicClient.readContract({ address: usdg, abi: erc20Abi, functionName: "allowance", args: [input.creator, factory] }),
-  ]);
-
-  return {
-    tokenAddress: tokenAddress as Address,
-    feeAmount: feeAmount as bigint,
-    usdgBalance: usdgBalance as bigint,
-    needsFaucet: (usdgBalance as bigint) < (feeAmount as bigint),
-    needsApproval: (allowance as bigint) < (feeAmount as bigint),
-  };
+  return { tokenAddress: tokenAddress as Address, feeAmount: feeAmount as bigint };
 }
 
-export type HydeLaunchStep = "faucet" | "approve" | "launch" | "confirm";
+export type HydeLaunchStep = "launch" | "confirm";
 
 export type HydeLaunchResult = {
   tokenAddress: Address;
@@ -101,8 +73,8 @@ export type HydeLaunchResult = {
 };
 
 /**
- * Faucet-top-up USDG (if short) → approve (if short) → launch. `onStep` fires
- * before each wallet action so the UI can narrate the multi-tx flow.
+ * Single payable launch: the flat native-ETH fee rides as `msg.value` — no faucet, no approval.
+ * `onStep` fires before the wallet action and before the confirmation wait so the UI can narrate.
  */
 export async function executeHydeLaunch(
   publicClient: PublicClient,
@@ -112,7 +84,6 @@ export async function executeHydeLaunch(
   onStep?: (step: HydeLaunchStep) => void
 ): Promise<HydeLaunchResult> {
   const factory = factoryAddress(chainId);
-  const usdg = usdgAddress(chainId);
   const account = input.creator;
   const chain = walletClient.chain;
 
@@ -120,38 +91,12 @@ export async function executeHydeLaunch(
     address: factory, abi: hydeTokenFactoryAbi, functionName: "launchFeeAmount",
   })) as bigint;
 
-  // 1. Faucet the mock USDG up to the fee if the creator is short (sandbox-only public mint).
-  const balance = (await publicClient.readContract({
-    address: usdg, abi: erc20Abi, functionName: "balanceOf", args: [account],
-  })) as bigint;
-  if (balance < feeAmount) {
-    onStep?.("faucet");
-    const mintHash = await walletClient.writeContract({
-      address: usdg, abi: mockUsdgAbi, functionName: "mint",
-      args: [account, feeAmount - balance], account, chain,
-    });
-    await publicClient.waitForTransactionReceipt({ hash: mintHash });
-  }
-
-  // 2. Approve the factory to pull the $1 fee if the allowance is short.
-  const allowance = (await publicClient.readContract({
-    address: usdg, abi: erc20Abi, functionName: "allowance", args: [account, factory],
-  })) as bigint;
-  if (allowance < feeAmount) {
-    onStep?.("approve");
-    const approveHash = await walletClient.writeContract({
-      address: usdg, abi: erc20Abi, functionName: "approve",
-      args: [factory, feeAmount], account, chain,
-    });
-    await publicClient.waitForTransactionReceipt({ hash: approveHash });
-  }
-
-  // 3. Launch — creator := msg.sender, single tx, all-or-revert.
+  // ONE tx: creator := msg.sender, the flat fee rides as msg.value, all-or-revert.
   onStep?.("launch");
   const launchHash = await walletClient.writeContract({
     address: factory, abi: hydeTokenFactoryAbi, functionName: "launch",
     args: [{ name: input.name.trim(), symbol: input.symbol.trim(), presetId: HYDE_DEFAULT_PRESET_ID }],
-    account, chain,
+    value: feeAmount, account, chain,
   });
   onStep?.("confirm");
   const receipt = await publicClient.waitForTransactionReceipt({ hash: launchHash });

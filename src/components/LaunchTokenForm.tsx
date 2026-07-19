@@ -44,10 +44,8 @@ async function toAvatarBlob(file: File): Promise<Blob> {
   }
 }
 
-/** Toast copy for each step of the testnet own-stack launch (faucet → approve → launch). */
+/** Toast copy for the testnet own-stack launch — now a single payable tx (no faucet/approve). */
 const HYDE_STEP_LABEL: Record<HydeLaunchStep, string> = {
-  faucet: "Funding $1 test USDG (faucet)…",
-  approve: "Approve the $1 launch fee…",
   launch: "Confirm launch in wallet…",
   confirm: "Launching through your factory…",
 };
@@ -189,7 +187,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
     try {
       let result: { tokenAddress: string; transactionHash: string };
       if (isTestnet) {
-        toast.loading(HYDE_STEP_LABEL.faucet, { id: toastId });
+        toast.loading(HYDE_STEP_LABEL.launch, { id: toastId });
         result = await executeHydeLaunch(
           publicClient as PublicClient,
           walletClient as WalletClient,
@@ -259,7 +257,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             </div>
             <div className="flex justify-between text-pcs-textDim">
               <span>Launch fee</span>
-              <span className="text-pcs-text font-medium">$1 flat (test USDG — auto-funded)</span>
+              <span className="text-pcs-text font-medium">0.0004 ETH flat</span>
             </div>
             <div className="flex justify-between text-pcs-textDim">
               <span>Trading fees</span>
@@ -271,7 +269,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             </div>
             <div className="flex justify-between text-pcs-textDim">
               <span>Initial cost</span>
-              <span className="text-pcs-text font-medium">$1 test USDG + gas</span>
+              <span className="text-pcs-text font-medium">0.0004 ETH + gas</span>
             </div>
           </div>
 
@@ -320,7 +318,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           <div className="rounded-xl px-4 py-3" style={{ background: "rgba(224,163,46,0.06)", border: "1px solid rgba(224,163,46,0.25)" }}>
             <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>COMING · HYDE STACK</p>
             <p className="mt-1 font-mono text-[11px]" style={{ color: "#8A93A2" }}>
-              $1 flat launch fee · 90% creator · 5% Hyde · 5% auto-locked liquidity (permanently locked, grows as it earns fees) · anti-snipe max-wallet
+              0.0004 ETH flat launch fee · 90% creator · 5% Hyde · 5% auto-locked liquidity (permanently locked, grows as it earns fees) · anti-snipe max-wallet
             </p>
           </div>
         </>
@@ -470,10 +468,10 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           <div className="flex flex-col gap-0.5">
             <div className="flex justify-between text-xs">
               <span className="text-pcs-textDim">Launch fee</span>
-              <span className="text-pcs-text font-medium">{isTestnet ? "$1 flat (test USDG · auto-funded)" : "3% → 1% over the first hour"}</span>
+              <span className="text-pcs-text font-medium">{isTestnet ? "0.0004 ETH flat" : "3% → 1% over the first hour"}</span>
             </div>
             <p className="text-[11px] text-pcs-textDim">{isTestnet
-              ? "The $1 test USDG is faucet-funded + approved automatically before launch."
+              ? "The 0.0004 ETH fee is paid directly in your launch transaction — one tx, no approval."
               : "High early fee = sniping is unprofitable by design."}</p>
           </div>
 

@@ -6,8 +6,8 @@
 export const OWNSTACK = {
   46630: {
     rpc: "https://rpc.testnet.chain.robinhood.com",
-    factory: "0x136914042064972913D54f024CccBA049C8cF03F",
-    deploymentBlock: 90409075n, // factory CREATION block (Blockscout-verified, kami 22877) — safe lower bound
+    factory: "0x6607BE76A0F8C44AadB5DF3bb13AcD29fb3Ade2C",
+    deploymentBlock: 91418522n, // NEW 0.0004-ETH factory creation block (deploy tx 0x0e58fc6f…)
   },
 };
 

@@ -81,7 +81,7 @@ export const ROBINHOOD_TESTNET: NetworkConfig = {
   currencySymbol: "ETH",
   // LIVE Hyde OWN-STACK factory (deployed 46630). The launchpad reads its LaunchCreated events here —
   // this is our own contracts, NOT Doppler. (mainnet still rides the Doppler rail until its own deploy.)
-  factory: "0x136914042064972913D54f024CccBA049C8cF03F" as Address,
+  factory: "0x6607BE76A0F8C44AadB5DF3bb13AcD29fb3Ade2C" as Address,
   router: PLACEHOLDER_ROUTER,
   weth: "0x7943e237c7F95DA44E0301572D358911207852Fa",
   tokens: ROBINHOOD_TESTNET_TOKENS,
@@ -188,7 +188,7 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     positionManager:  "0x58daec3116aae6D93017bAAea7749052E8a04fA7" as Address,
     permit2:          "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway:          PLACEHOLDER_V4_GATEWAY, // no HydeV4Gateway on testnet — swaps route via the canonical UniversalRouter (above)
-    hydeTokenFactory: "0x136914042064972913D54f024CccBA049C8cF03F" as Address,
+    hydeTokenFactory: "0x6607BE76A0F8C44AadB5DF3bb13AcD29fb3Ade2C" as Address,
   },
   [PHAROS_ATLANTIC_TESTNET.id]: {
     poolManager: PLACEHOLDER_V4_POOL_MANAGER,
@@ -276,9 +276,10 @@ export const DOPPLER_CONTRACTS_BY_CHAIN: Record<number, DopplerContracts> = {
 /** StateView (read-only V4 pool state) on Robinhood mainnet — Blockscout-verified, poolManager() cross-checked. */
 export const ROBINHOOD_STATE_VIEW = "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b" as Address;
 
-/** StateView on Robinhood Testnet (46630) — part of the Hyde own-stack deploy. Used for pool reads +
- *  quote fallback where the canonical V4Quoter isn't deployed on this chain. */
-export const ROBINHOOD_TESTNET_STATE_VIEW = "0x94Aaf8D4548D957deB8618fcAb5c21577002036E" as Address;
+/** StateView on Robinhood Testnet (46630) — part of the fresh 0.0004-ETH own-stack deploy (block 91418522).
+ *  Used for pool reads + quote fallback where the canonical V4Quoter isn't deployed on this chain. MUST
+ *  track ROBINHOOD_TESTNET.factory on any redeploy — the old StateView cannot quote the new pool. */
+export const ROBINHOOD_TESTNET_STATE_VIEW = "0x81d5A6B7433420F7011612771eA74Ef71e239206" as Address;
 
 // Template encoding config for auto payload generation.
 // Adjust ABI parameter lists and command byte to match your deployed V4 periphery.
@@ -582,13 +583,13 @@ export const permit2Abi = [
 
 // HydeTokenFactory — REAL deployed interface (contracts/src/HydeTokenFactory.sol). The launch entrypoint
 // is `launch(LaunchParams{name,symbol,presetId})` with `creator := msg.sender` (NOT a passed arg); it
-// charges a $1 USDG fee (prior approval required) and emits `LaunchCreated`. Immutable getters (WETH /
+// charges a flat 0.0004 ETH fee via `msg.value` (payable — no approval) and emits `LaunchCreated`. Immutable getters (WETH /
 // tickSpacing / HOOK) are exposed for own-stack pool-key derivation in the swap path.
 export const hydeTokenFactoryAbi = [
   {
     type: "function",
     name: "launch",
-    stateMutability: "nonpayable",
+    stateMutability: "payable",
     inputs: [
       {
         name: "lp",
@@ -617,7 +618,6 @@ export const hydeTokenFactoryAbi = [
   },
   { type: "function", name: "launchFeeAmount",   stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "launchFeeTreasury", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
-  { type: "function", name: "USDG",              stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "WETH",              stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "tickSpacing",       stateMutability: "view", inputs: [], outputs: [{ name: "", type: "int24" }] },
   { type: "function", name: "HOOK",              stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
@@ -633,25 +633,6 @@ export const hydeTokenFactoryAbi = [
       { name: "tokenId",  type: "uint256", indexed: false },
       { name: "presetId", type: "uint256", indexed: false },
     ],
-  },
-] as const;
-
-/** Mock USDG (solmate MockERC20, 6-dec) launch-fee token on Robinhood Testnet. Its `mint` is a
- *  permissionless faucet on testnet — the launch UI tops the creator up to the $1 fee. */
-export const ROBINHOOD_TESTNET_USDG = "0xCA5C4C7cc97C9aA3ea56B5F3a5c50Eb1c086615b" as Address;
-
-/** Faucet + fee-token surface for the testnet mock USDG (mint is public on the MockERC20 sandbox token).
- *  Balance/allowance/approve come from the shared erc20Abi. */
-export const mockUsdgAbi = [
-  {
-    type: "function",
-    name: "mint",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "to",    type: "address" },
-      { name: "value", type: "uint256" },
-    ],
-    outputs: [],
   },
 ] as const;
 
