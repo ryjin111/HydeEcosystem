@@ -3,6 +3,7 @@ import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { PoolCard } from "./Launchpad";
 
 const ROBINHOOD_CHAIN_ID = 4663;
+const RH_TESTNET_ID = 46630;
 const TRENDING_COUNT = 4;
 
 /** Landing (`/`) — hero + trending strip (a subset), NOT a 4th copy of the board (UI_CONSOLIDATION §4).
@@ -14,7 +15,10 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   const trending = pools.slice(0, TRENDING_COUNT);
 
   const handleTrade = (tokenAddress: string, chainId: number) => {
-    if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress) || chainId !== ROBINHOOD_CHAIN_ID) return;
+    // Landing is the browse-all home for BOTH supported rails now — allow Robinhood mainnet (4663) and
+    // the testnet own-stack (46630), matching Launchpad, so testnet cards' Trade button actually works.
+    if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
+    if (chainId !== ROBINHOOD_CHAIN_ID && chainId !== RH_TESTNET_ID) return;
     navigate(`/swap?out=${tokenAddress}`);
   };
 

@@ -305,8 +305,23 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       </div>
 
       {/* My Launches tab — the connected wallet's own launches (browsing everyone's lives on the
-          Landing now, clint ①). Empty on the Doppler mainnet rail (no creator attribution). */}
-      {tab === "mine" && (
+          Landing now, clint ①). Only meaningful on the testnet own-stack rail: mainnet Doppler tokens
+          carry no creator attribution, so we can't compute "yours" there — gate it honestly rather than
+          claim a personal zero or run a meaningless sort. */}
+      {tab === "mine" && !isTestnet && (
+        <div className="rounded-2xl p-10 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
+          <p className="text-pcs-text text-sm font-medium">My Launches is available on Robinhood Testnet.</p>
+          <p className="text-pcs-textDim text-xs mt-1.5 max-w-sm mx-auto leading-relaxed">
+            Tokens on the Robinhood&nbsp;Chain rail aren't attributed to a creator, so your launches can't
+            be filtered here. Switch to Robinhood&nbsp;Testnet to see and sort your own launches.
+          </p>
+          <button onClick={() => navigate("/")} className="btn-primary mt-4 px-5 py-2 text-sm">
+            Browse all launches
+          </button>
+        </div>
+      )}
+
+      {tab === "mine" && isTestnet && (
         <div>
           {/* Sort + refresh */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -335,7 +350,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             {loading ? "Loading…" : `${shown.length} of your launch${shown.length !== 1 ? "es" : ""}`}
           </p>
           <p className="text-[11px] text-pcs-textDim/70 mt-0.5 mb-4">
-            {isTestnet ? "Live on-chain reads · your own launches" : "Own-stack launches show here (Robinhood Chain rail isn't attributed)"}
+            Live on-chain reads · your own launches
           </p>
 
           {/* Empty states — connect prompt (disconnected) / you-haven't-launched (connected, none) */}
