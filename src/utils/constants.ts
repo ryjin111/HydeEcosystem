@@ -1,5 +1,5 @@
 import type { Address, Hex } from "viem";
-import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, ROBINHOOD_MAINNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS, OPTIMISM_TOKENS } from "../tokens";
+import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, ROBINHOOD_MAINNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS, OPTIMISM_TOKENS, ETHEREUM_TOKENS, UNICHAIN_TOKENS, BNB_TOKENS, XLAYER_TOKENS } from "../tokens";
 
 export type TokenInfo = {
   symbol: string;
@@ -45,6 +45,8 @@ export type V4Contracts = {
   gateway: Address;
   /** HydeTokenFactory address — present only on chains where it's deployed */
   hydeTokenFactory?: Address;
+  /** Canonical StateView (read-only V4 pool state) — the chain's read source. */
+  stateView?: Address;
 };
 
 export type V4EncodingTemplates = {
@@ -136,7 +138,51 @@ export const UNICHAIN_MAINNET: NetworkConfig = {
   factory: PLACEHOLDER_FACTORY,   // no V2 factory needed — Doppler tokens use V4
   router: PLACEHOLDER_ROUTER,
   weth: "0x4200000000000000000000000000000000000006" as Address,
-  tokens: [],
+  tokens: UNICHAIN_TOKENS,
+};
+
+// ─── Multichain trade-venue candidates (clint 23047 → kami 23065: curated
+// chain-scoped markets + native V4 trade). NOT in the NETWORKS array — a chain
+// reaches the switcher only through the capability registry (chainRegistry.ts),
+// which derives selectability fail-closed from complete config + retained smoke
+// evidence. Every address below was verified on-chain by scripts/chainverify.mjs
+// (2026-07-20): eth_getCode ≠ 0x, poolManager() cross-checked from
+// StateView+Quoter+PositionManager, router bytecode embeds PoolManager+Permit2.
+
+export const ETHEREUM_MAINNET: NetworkConfig = {
+  id: 1,
+  name: "Ethereum",
+  rpcUrl: "https://ethereum-rpc.publicnode.com",
+  explorerUrl: "https://etherscan.io",
+  currencySymbol: "ETH",
+  factory: PLACEHOLDER_FACTORY,   // no V2 factory — trade venue is V4-only
+  router: PLACEHOLDER_ROUTER,
+  weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" as Address,
+  tokens: ETHEREUM_TOKENS,
+};
+
+export const BNB_MAINNET: NetworkConfig = {
+  id: 56,
+  name: "BNB Smart Chain",
+  rpcUrl: "https://bsc-rpc.publicnode.com",
+  explorerUrl: "https://bscscan.com",
+  currencySymbol: "BNB",
+  factory: PLACEHOLDER_FACTORY,
+  router: PLACEHOLDER_ROUTER,
+  weth: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" as Address, // WBNB — the chain's wrapped native
+  tokens: BNB_TOKENS,
+};
+
+export const XLAYER_MAINNET: NetworkConfig = {
+  id: 196,
+  name: "X Layer",
+  rpcUrl: "https://rpc.xlayer.tech",
+  explorerUrl: "https://www.oklink.com/x-layer",
+  currencySymbol: "OKB",
+  factory: PLACEHOLDER_FACTORY,
+  router: PLACEHOLDER_ROUTER,
+  weth: "0xe538905cf8410324e03A5A23C1c177a474D59b2b" as Address, // WOKB — the chain's wrapped native
+  tokens: XLAYER_TOKENS,
 };
 
 export const OPTIMISM_MAINNET: NetworkConfig = {
@@ -198,14 +244,16 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     permit2: PLACEHOLDER_V4_PERMIT2,
     gateway: PLACEHOLDER_V4_GATEWAY
   },
-  // Ink Mainnet — real Uniswap V4 deployments
+  // Ink Mainnet — real Uniswap V4 deployments (re-verified by chainverify.mjs 2026-07-20:
+  // getCode + poolManager() cross-checks + router-bytecode immutables, official-page match)
   [INK_MAINNET.id]: {
     poolManager: "0x360e68faccca8ca495c1b759fd9eee466db9fb32" as Address,
     universalRouter: "0x112908dac86e20e7241b0927479ea3bf935d1fa0" as Address,
     quoter: "0x3972c00f7ed4885e145823eb7c655375d275a1c5" as Address,
     positionManager: "0x1b35d13a2e2528f192637f14b05f0dc0e7deb566" as Address,
     permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
-    gateway: "0x21d6Ce25aa1AB3F59eE51b7693A596C6d39A03C9" as Address
+    gateway: "0x21d6Ce25aa1AB3F59eE51b7693A596C6d39A03C9" as Address,
+    stateView: "0x76fd297e2d437cd7f76d50f01afe6160f86e9990" as Address,
   },
   // Robinhood Chain Mainnet (4663) — canonical Uniswap V4, every address verified on-chain 2026-07-03:
   //   eth_getCode ≠ 0x on all, and poolManager() cross-checked identical from SIX contracts
@@ -219,8 +267,9 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     positionManager: "0x58daec3116aae6D93017bAAea7749052E8a04fA7" as Address,
     permit2:         "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway:         PLACEHOLDER_V4_GATEWAY, // HydeV4Gateway not yet deployed on 4663 — Foundry deploy needs clint's key
+    stateView:       "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b" as Address, // == ROBINHOOD_STATE_VIEW
   },
-  // Optimism Mainnet — Uniswap V4
+  // Optimism Mainnet — Uniswap V4 (re-verified by chainverify.mjs 2026-07-20)
   [10]: {
     poolManager:      "0x9a13F98Cb987694C9F086b1F5eB990EeA8264Ec3" as Address,
     universalRouter:  "0x851116D9223fabED8E56C0E6b8Ad0c31d98B3507" as Address,
@@ -229,6 +278,48 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     permit2:          "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway:          "0x21d6Ce25aa1AB3F59eE51b7693A596C6d39A03C9" as Address,
     hydeTokenFactory: "0x9532Dc6534122443a0C14F0Ec6407447f262fF42" as Address,
+    stateView:        "0xc18a3169788f4f75a170290584eca6395c75ecdb" as Address,
+  },
+  // ── The 4 net-new trade-venue chains (kami 23065). Every address verified
+  // on-chain by scripts/chainverify.mjs 2026-07-20 (49/49 after correcting
+  // Unichain Tether's label to its on-chain symbol USD₮0). Gateways are
+  // placeholders: no execution path here yet — the registry keeps these chains
+  // un-selectable until kami's gateway-vs-direct-router decision lands. ──
+  [ETHEREUM_MAINNET.id]: {
+    poolManager:     "0x000000000004444c5dc75cB358380D2e3dE08A90" as Address,
+    universalRouter: "0x66a9893cc07d91d95644aedd05d03f95e1dba8af" as Address,
+    quoter:          "0x52f0e24d1c21c8a0cb1e5a5dd6198556bd9e1203" as Address,
+    positionManager: "0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e" as Address,
+    permit2:         "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
+    gateway:         PLACEHOLDER_V4_GATEWAY,
+    stateView:       "0x7ffe42c4a5deea5b0fec41c94c136cf115597227" as Address,
+  },
+  [UNICHAIN_MAINNET.id]: {
+    poolManager:     "0x1f98400000000000000000000000000000000004" as Address,
+    universalRouter: "0xef740bf23acae26f6492b10de645d6b98dc8eaf3" as Address,
+    quoter:          "0x333e3c607b141b18ff6de9f258db6e77fe7491e0" as Address,
+    positionManager: "0x4529a01c7a0410167c5740c487a8de60232617bf" as Address,
+    permit2:         "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
+    gateway:         PLACEHOLDER_V4_GATEWAY,
+    stateView:       "0x86e8631a016f9068c3f085faf484ee3f5fdee8f2" as Address,
+  },
+  [BNB_MAINNET.id]: {
+    poolManager:     "0x28e2ea090877bf75740558f6bfb36a5ffee9e9df" as Address,
+    universalRouter: "0x1906c1d672b88cd1b9ac7593301ca990f94eae07" as Address,
+    quoter:          "0x9f75dd27d6664c475b90e105573e550ff69437b0" as Address,
+    positionManager: "0x7a4a5c919ae2541aed11041a1aeee68f1287f95b" as Address,
+    permit2:         "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
+    gateway:         PLACEHOLDER_V4_GATEWAY,
+    stateView:       "0xd13dd3d6e93f276fafc9db9e6bb47c1180aee0c4" as Address,
+  },
+  [XLAYER_MAINNET.id]: {
+    poolManager:     "0x360e68faccca8ca495c1b759fd9eee466db9fb32" as Address,
+    universalRouter: "0xda00ae15d3a71466517129255255db7c0c0956d3" as Address,
+    quoter:          "0x8928074ca1b241d8ec02815881c1af11e8bc5219" as Address,
+    positionManager: "0xcf1eafc6928dc385a342e7c6491d371d2871458b" as Address,
+    permit2:         "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
+    gateway:         PLACEHOLDER_V4_GATEWAY,
+    stateView:       "0x76fd297e2d437cd7f76d50f01afe6160f86e9990" as Address,
   },
 };
 

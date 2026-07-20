@@ -5,7 +5,7 @@ import { useAccount, useBalance, usePublicClient, useWalletClient } from "wagmi"
 import { useSearchParams } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { V4_CONTRACTS_BY_CHAIN, hydeGatewayAbi, v4QuoterAbi, routerAbi } from "../utils/constants";
-import { buildSwapTemplatePayload, feeToTickSpacing } from "../utils/v4Encoding";
+import { buildSwapTemplatePayload, feeToTickSpacing, NATIVE_CURRENCY } from "../utils/v4Encoding";
 import { useApproval } from "../hooks/useApproval";
 import { TokenSelector } from "./TokenSelector";
 
@@ -336,8 +336,12 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
     }
     try {
       const built = buildSwapTemplatePayload({
-        tokenIn: tokenIn.isNative ? network.weth : tokenIn.address,
-        tokenOut: tokenOut.isNative ? network.weth : tokenOut.address,
+        // V4 pools pair against NATIVE (address 0) — the evidence-proven
+        // PoolKeys are native-paired, so native passes through unchanged.
+        // WETH substitution is a V2-path concern only (kami A-blocker 23091:
+        // rewriting to WETH encodes a DIFFERENT pool than the one proven).
+        tokenIn: tokenIn.isNative ? NATIVE_CURRENCY : tokenIn.address,
+        tokenOut: tokenOut.isNative ? NATIVE_CURRENCY : tokenOut.address,
         fee: Number(feeTier),
         recipient: address,
         amountIn,
@@ -346,14 +350,22 @@ export function V4SwapCard({ network, tokens, onAddCustomToken, forceTokenOut, o
         decimalsIn: tokenIn.decimals,
         decimalsOut: tokenOut.decimals,
         hooks: hookAddress,
+        chainId: network.id, // arms the encode-vs-evidence PoolKey assertion
+        // UI-level native truth — the builder throws if an intended-native
+        // side is ever encoded as anything but address(0) (kami 23093).
+        nativeIn: tokenIn.isNative,
+        nativeOut: tokenOut.isNative,
       });
       setCommandsHex(built.commands);
       setInputsJson(JSON.stringify(built.inputs, null, 2));
-    } catch {
+    } catch (err) {
+      // A PoolKey-drift assertion landing here is a refused swap, not a quiet
+      // blank — surface it so drift can never pass as "payload pending".
+      console.error("[v4swap] payload build refused:", err);
       setCommandsHex("");
       setInputsJson("[]");
     }
-  }, [address, tokenIn, tokenOut, amountIn, quotedOut, feeTier, slippage, network.weth, routingMode, hookAddress]);
+  }, [address, tokenIn, tokenOut, amountIn, quotedOut, feeTier, slippage, network.id, routingMode, hookAddress]);
 
   const swapTokenDirection = () => {
     setTokenIn(tokenOut);
