@@ -100,3 +100,33 @@ body {
   background: rgba(46, 159, 230, 0.30);
   color: #EDEFF3;
 }
+
+/* Global trending ticker — DexScreener-style auto-scroll marquee (TrendingTicker). The track is
+   rendered twice, so translateX(-50%) advances exactly one copy width for a seamless loop; hover
+   pauses it so an item can be read/clicked. */
+@keyframes hyde-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.hyde-marquee {
+  animation: hyde-marquee 40s linear infinite;
+  will-change: transform;
+}
+.hyde-marquee:hover {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hyde-marquee { animation: none; }
+}
+
+/* Hide scrollbar on the ticker's static (few-item) scroll row while staying scrollable */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Token-page "chart warming up" empty state — gentle pulse on the LIVE dot + a neutral shimmer on the
+   skeleton bars. Decorative loading only; never implies real price data (candle feed is a later task). */
+@keyframes hyde-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.hyde-pulse { animation: hyde-pulse 1.6s ease-in-out infinite; }
+@keyframes hyde-shimmer { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+.hyde-shimmer { animation: hyde-shimmer 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .hyde-pulse, .hyde-shimmer { animation: none; } }

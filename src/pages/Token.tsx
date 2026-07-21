@@ -9,11 +9,10 @@ import { useParams, Link } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive } from "../utils/constants";
 import { useHydeLaunches, useHydeToken } from "../hooks/useDopplerTokens";
-import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta, type LaunchMeta } from "../utils/launchMeta";
-import { Card, Button, Stat, Progress, Badge, VerifiedBadge, SectionLabel } from "../components/ui/kit";
+import { Card, Button, Stat, SectionLabel } from "../components/ui/kit";
 
 type Props = { network: NetworkConfig; tokens: TokenInfo[]; onAddCustomToken: (t: { address: `0x${string}`; symbol: string; name: string; decimals: number }) => void };
 
@@ -44,32 +43,6 @@ function useDexPair(address?: string, chainId?: number): { pair: string | null; 
     return () => { cancelled = true; };
   }, [address, chainId]);
   return { pair, checked };
-}
-
-// Resolve this token's canonical GeckoTerminal pool (deepest reserve) for the chart embed.
-// GeckoTerminal indexes the 4663 Uniswap-V4 curve pools by poolId, so a chart exists ON the
-// auction curve — earlier than the DEXScreener graduation-only pair. Fail-neutral → null.
-function useGeckoPool(address?: string, chainId?: number): { gtPool: string | null; gtChecked: boolean } {
-  const [gtPool, setGtPool] = useState<string | null>(null);
-  const [gtChecked, setGtChecked] = useState(false);
-  useEffect(() => {
-    setGtChecked(false); setGtPool(null);
-    if (!address || chainId !== ROBINHOOD_MAINNET_ID) { setGtChecked(true); return; } // mainnet-only source
-    let cancelled = false;
-    fetch(`https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/${address}/pools`, { headers: { accept: "application/json" } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        const pools: { attributes?: { address?: string; reserve_in_usd?: string } }[] = d?.data ?? [];
-        // deepest-reserve pool = the canonical one to chart (deterministic, never constructed)
-        const top = pools
-          .slice()
-          .sort((a, b) => Number(b.attributes?.reserve_in_usd ?? 0) - Number(a.attributes?.reserve_in_usd ?? 0))[0];
-        if (!cancelled) { setGtPool(top?.attributes?.address ?? null); setGtChecked(true); }
-      })
-      .catch(() => { if (!cancelled) setGtChecked(true); });
-    return () => { cancelled = true; };
-  }, [address, chainId]);
-  return { gtPool, gtChecked };
 }
 
 /** Compact USD for MCAP/volume/liquidity — only called with a real number ≥ ~1. */
@@ -128,12 +101,9 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   // Chain-scoped to the active network (clint #4): testnet and mainnet each read only their configured
   // own-stack launch sources — never cross-chain data.
   const { pools } = useHydeLaunches(network.id);
-  const verify = useVerifiedStatus(address, network.id);
   const { pair } = useDexPair(address, network.id);
-  const { gtPool, gtChecked } = useGeckoPool(address, network.id);
   const { holders } = useTopHolders(address, network.id);
   const [copied, setCopied] = useState(false);
-  const [chartLoad, setChartLoad] = useState(false); // don't auto-embed DEXScreener's raw UI
   // Off-chain metadata (own-stack tokens store no tokenURI) — fetched by (chain, address); fail-neutral.
   const [meta, setMeta] = useState<LaunchMeta | null>(null);
   useEffect(() => {
@@ -160,8 +130,6 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   }
 
   const sym = pool.baseToken.symbol || "?";
-  // graduated if the board says so, or if it has an indexed Uniswap pair (a live pool)
-  const graduated = pool.type === "v2" || !!pair;
 
   return (
     <div className="mx-auto grid w-full max-w-[1200px] gap-5 lg:grid-cols-[1fr,380px]">
@@ -177,8 +145,9 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             <div className="min-w-0 flex-1">
               <h1 className="truncate font-display text-2xl font-bold text-pcs-text">{pool.baseToken.name} <span className="font-mono text-sm text-pcs-textSub">${sym}</span></h1>
               <div className="mt-1 flex items-center gap-2">
-                <VerifiedBadge status={verify} />
-                <Badge tone={graduated ? "success" : "accent"}>{graduated ? "Graduated" : "Auction"}</Badge>
+                {/* Own-stack Hyde/HOODIE launch — trades live in a locked-liquidity pool; no auction
+                    curve, no graduation, no "Verified" badge (removed: clint/kami/shiro 23798-23804). */}
+                <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>LIVE</span>
               </div>
               {meta?.description?.trim() && (
                 <p className="mt-2 text-xs text-pcs-textSub leading-relaxed">{meta.description}</p>
@@ -200,52 +169,50 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             <Stat label="Liquidity" value={pool.dollarLiquidity != null && parseFloat(pool.dollarLiquidity) > 0 ? fmtUsd(parseFloat(pool.dollarLiquidity)) : "—"} />
           </div>
 
-          {graduated ? (
-            <div className="mt-4">
-              <Progress pct={100} showLabel />
-              <p className="mt-1 font-mono text-[11px] text-pcs-textDim">Graduated — liquidity migrated to a Uniswap pool.</p>
-            </div>
-          ) : pool.progress != null ? (
-            <div className="mt-4">
-              <Progress pct={pool.progress} showLabel />
-              <p className="mt-1 font-mono text-[11px] text-pcs-textDim">On the launch curve · {pool.progress.toFixed(1)}% to graduation.</p>
-            </div>
-          ) : (
-            <p className="mt-4 font-mono text-[11px] text-pcs-textDim">On the launch curve.</p>
-          )}
+          {/* Truthful live state (no graduation bar/percentage — these tokens launch straight into a
+              locked-liquidity pool, they don't graduate off an auction curve; clint/kami 23798-23802). */}
+          <div className="mt-4 flex items-center gap-2">
+            <span className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: "#34C77B" }} />
+            <p className="font-mono text-[11px] text-pcs-textDim">Liquidity locked · single-sided seed, auto-compounding as it earns fees.</p>
+          </div>
           {new Date(pool.createdAt).getUTCFullYear() > 2020 && (
             <p className="mt-3 font-mono text-[11px] text-pcs-textDim">Launched {new Date(pool.createdAt).toLocaleString()}</p>
           )}
         </Card>
 
-        {/* Chart zone — the default is ALWAYS our kit-styled panel; the raw
-           DEXScreener embed (which can flash its own connecting/error UI on this
-           L2) is NEVER first-class — it loads only on an explicit click (kami's
-           chart gate). Indexed tokens get load-inline + open-external; others get
-           the designed fallback. */}
+        {/* Chart — self-hosted price history (candles from on-chain PoolManager Swap events) is a
+            separate post-swap task (gojo/kami 23826-23829); no GeckoTerminal dependency/ETA on 4663.
+            Until that feed ships, an honest "warming up" state: LIVE on-chain, a NEUTRAL decorative
+            shimmer skeleton (never fabricated candles/axes/numbers), no external-indexer claim, and no
+            CTA to a not-yet-enabled swap. */}
         <Card className="p-0 overflow-hidden">
-          {chartLoad && gtPool ? (
-            <iframe title="chart" src={`https://www.geckoterminal.com/robinhood/pools/${gtPool}?embed=1&info=0&swaps=0`} className="h-[460px] w-full border-0" allow="clipboard-write" />
-          ) : (
-            <div className="flex h-[460px] flex-col items-center justify-center gap-3 bg-pcs-input/40 px-6 text-center">
-              <SectionLabel>Live chart</SectionLabel>
-              {gtPool ? (
-                <>
-                  <p className="max-w-sm text-pcs-textSub">Live price chart for this pool on GeckoTerminal.</p>
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <Button variant="secondary" size="sm" onClick={() => setChartLoad(true)}>▶ Load live chart</Button>
-                    <a href={`https://www.geckoterminal.com/robinhood/pools/${gtPool}`} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm">Open on GeckoTerminal ↗</Button></a>
-                  </div>
-                </>
-              ) : (
-                <p className="max-w-sm text-pcs-textSub">{!gtChecked
-                  ? "Checking for a live chart…"
-                  : network.id === ROBINHOOD_MAINNET_ID
-                    ? "The live chart appears once this pool is indexed on GeckoTerminal (usually within a few minutes of launch). Until then it trades on its Hyde auction curve."
-                    : "No external price chart on testnet — GeckoTerminal indexes Robinhood mainnet only. This token trades live on its Hyde auction curve, on-chain."}</p>
-              )}
+          <div
+            className="relative flex h-[340px] flex-col items-center justify-center gap-4 px-6 text-center"
+            style={{ background: "radial-gradient(120% 90% at 50% 0%, rgba(46,159,230,0.05), transparent 60%), #0E1013" }}
+          >
+            {/* subtle chart grid — decorative only */}
+            <div
+              className="pointer-events-none absolute inset-0 opacity-[0.05]"
+              style={{ backgroundImage: "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)", backgroundSize: "34px 34px" }}
+            />
+            <span
+              className="relative z-10 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide"
+              style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}
+            >
+              <span className="hyde-pulse inline-block h-1.5 w-1.5 rounded-full" style={{ background: "#34C77B" }} />
+              LIVE · LOCKED LIQUIDITY
+            </span>
+            {/* neutral shimmer skeleton — loading bars only, NEVER fabricated candles/prices (honesty rule) */}
+            <div className="relative z-10 flex h-16 items-end gap-1.5" aria-hidden="true">
+              {[9, 5, 12, 7, 14, 6, 11, 8, 13, 5, 10, 7].map((h, i) => (
+                <span key={i} className="hyde-shimmer w-2 rounded-sm" style={{ height: `${h * 4}px`, background: "rgba(255,255,255,0.06)", animationDelay: `${i * 90}ms` }} />
+              ))}
             </div>
-          )}
+            <div className="relative z-10">
+              <p className="font-display text-sm font-semibold text-pcs-text">Chart warming up</p>
+              <p className="mt-1 max-w-sm text-xs text-pcs-textSub">Trading is live on-chain. Price history begins with on-chain swaps.</p>
+            </div>
+          </div>
         </Card>
       </div>
 
@@ -274,26 +241,25 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <p className="mt-2 text-xs text-pcs-textSub">Trading is live on this token’s pair.</p>
               </>
             ) : (
-              <p className="mt-2 text-sm text-pcs-textSub">Native Hyde swap is not available for this rail yet. This token trades on its Hyde auction curve.</p>
+              <p className="mt-2 text-sm text-pcs-textSub">In-app swap for this token is coming shortly. It trades live now on its locked-liquidity pool, on-chain.</p>
             )}
             {/* Disabled Buy/Sell preview removed (kami 23517) — it read as a working swap; the live-pair
                 link above is the single trade action until the native swap actually executes. */}
           </Card>
         )}
 
-        {/* Trust card — LIVE vs Hyde-stack strictly bucketed (§3.3, §3.9). */}
+        {/* Trust card — the Hyde stack is LIVE now (no Doppler rail, no COMING/future-tense; kami 23836). */}
         <Card variant="panel">
           <SectionLabel>Trust</SectionLabel>
           <div className="mt-2 space-y-2 text-xs">
             <div className="flex items-center gap-2">
-              <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>LIVE</span>
-              <VerifiedBadge status={verify} />
+              <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>HYDE STACK · LIVE</span>
             </div>
-            <p className="text-pcs-textSub">Current rail: <b className="text-pcs-text font-mono">95% creator / 5% Doppler</b> · anti-snipe swap fee <b className="text-pcs-text">3%→1%</b> (first hour) · no max-wallet, no blacklist.</p>
-            <div className="my-2 h-px" style={{ background: "#22252D" }} />
-            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>COMING · HYDE STACK</p>
-            <p style={{ color: "#5B6472" }} className="font-mono text-[11px]">0.0004 ETH flat launch · 90% creator · 5% Hyde · 5% auto-locked liquidity · anti-snipe max-wallet</p>
-            <p style={{ color: "#5B6472" }} className="text-[11px] leading-relaxed">Live rail, that 5% is a Doppler skim. With Hyde launches it becomes your token&rsquo;s permanently-locked liquidity that grows as it earns fees, working for your token instead of a platform.</p>
+            <p className="font-mono text-[11px] text-pcs-text">90% creator · 5% Hyde · 5% locked liquidity</p>
+            <p className="text-[11px] leading-relaxed text-pcs-textSub">Liquidity is custody-locked and auto-compounds as fees accrue.</p>
+            <p className="text-[11px] leading-relaxed text-pcs-textDim">
+              <span className="font-semibold text-pcs-textSub">Launch protection:</span> swap fee decays 3%→1% over 5 minutes; 1% max-wallet for 5 minutes. Selling remains unrestricted.
+            </p>
           </div>
         </Card>
 

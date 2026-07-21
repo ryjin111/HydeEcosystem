@@ -2,8 +2,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive } from "../utils/constants";
 import { V4SwapCard } from "../components/V4SwapCard";
-import { TrendingCarousel } from "../components/TrendingCarousel";
-import type { DopplerPool } from "../components/TrendingCarousel";
+import type { DopplerPool } from "../utils/dopplerConfig";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { TokenDetail } from "./Token";
 
@@ -118,12 +117,7 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
 
   return (
     <div className="w-full max-w-6xl mx-auto">
-      {/* Trending — always on top, doubles as the token switcher */}
-      <TrendingCarousel
-        selected={showDetail ? out : undefined}
-        onSelect={(pool) => selectToken(pool.baseToken.address)}
-      />
-
+      {/* Trending moved to the global top ticker (App shell) — no per-page strip here (clint 23798). */}
       {showDetail ? (
         /* Canonical token page — the full detail layout for the selected token */
         <TokenDetail address={out} network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} />
@@ -140,9 +134,8 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
               >
                 <h2 className="font-display text-lg font-semibold text-pcs-text">Exchange</h2>
                 <p className="text-sm text-pcs-textDim">
-                  Trading opens as tokens graduate from the launch curve. The Hyde swap
-                  router isn't deployed on Robinhood Chain yet — launched tokens trade
-                  on their launch curve, and graduated pools will be tradeable here.
+                  In-app swap is coming to Robinhood Chain shortly. Every launch trades
+                  live now in its locked-liquidity pool — pick one below to open its page.
                 </p>
                 <p className="text-xs text-pcs-textDim">
                   Pick a token from Trending or Recently Launched to open its full page —

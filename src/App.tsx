@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { Header } from "./components/Header";
+import { TrendingTicker } from "./components/TrendingTicker";
 import { AddLiquidityPage } from "./pages/AddLiquidity";
 import { SwapPage } from "./pages/Swap";
 import { LaunchpadPage } from "./pages/Launchpad";
@@ -148,6 +149,10 @@ function App() {
           onToggleSidebar={() => setSidebarOpen((s) => !s)}
           sidebarOpen={sidebarOpen}
         />
+
+        {/* Global DexScreener-style trending ticker — pinned under the header on every page (clint
+            23798/23812). Renders nothing until there's real launch data. */}
+        <TrendingTicker chainId={selectedNetwork.id} />
 
         <main className="flex-1 flex flex-col items-center px-4 pt-8 pb-16">
           {/* Card area */}
