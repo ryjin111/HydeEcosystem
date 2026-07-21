@@ -51,11 +51,10 @@ const HYDE_STEP_LABEL: Record<HydeLaunchStep, string> = {
   confirm: "Launching through your factory…",
 };
 
-/** Toast copy for the HOODIE launcher-launcher — the first launch also deploys the creator's launcher. */
+/** Toast copy for the HOODIE shared-launcher — a single payable launch tx (no per-user launcher deploy). */
 const HOODIE_STEP_LABEL: Record<HoodieLaunchStep, string> = {
-  createLauncher: "Deploy your launcher (one-time)…",
   launch: "Confirm launch in wallet…",
-  confirm: "Launching through your launcher…",
+  confirm: "Launching HOODIE-paired…",
 };
 
 export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
@@ -69,8 +68,8 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   const { switchChain } = useSwitchChain();
 
   // Base pair the launch pairs against (clint 23448). WETH uses the live own-stack HydeTokenFactory.
-  // HOODIE uses the live launcher-launcher contracts, but its in-app two-step transaction flow lands in
-  // the next update, so that action remains honestly gated while describing the stack as live on-chain.
+  // HOODIE routes through the ONE shared launcher (clint 23752) — a single-tx launch, same flow shape as
+  // WETH, just $HOODIE-based; the engine attributes the actual caller as the creator.
   const [pair, setPair] = useState<"weth" | "hoodie">("weth");
   const isHoodie = pair === "hoodie";
 
@@ -289,7 +288,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         <h2 className="font-display text-lg font-semibold text-pcs-text">Launch a Token</h2>
         <p className="text-xs text-pcs-textSub mt-1">
           {isHoodie
-            ? "Launch through your own HoodieLauncher — permanently paired to $HOODIE."
+            ? "Launch permanently paired to $HOODIE — one transaction."
             : usesOwnStack
               ? `Launch on ${targetName} — custody-locked liquidity from block 1.`
               : "Price-discovery launch on Robinhood Chain — tradeable from the first block."}
@@ -320,20 +319,15 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
               <span>Trading fees</span>
               <span className="text-pcs-text font-medium">90% creator · 5% Hyde · 5% locked LP</span>
             </div>
-            <div className="flex justify-between text-pcs-textDim">
-              <span>Your launcher</span>
-              <span className="text-pcs-text font-medium">You deploy your own — 1-tx launches after</span>
-            </div>
           </div>
 
-          {/* HOODIE stack — LIVE on 4663 mainnet (deployed 2026-07-21). The launcher-launcher contracts are
-              live and the in-app two-step flow (createLauncher → launch) is wired through the buttons below. */}
-          <div className="rounded-xl px-4 py-3" style={{ background: "rgba(224,163,46,0.06)", border: "1px solid rgba(224,163,46,0.25)" }}>
-            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>● LIVE · HOODIE LAUNCHER</p>
+          {/* HOODIE PAIR — LIVE on 4663 mainnet. ONE shared launcher (clint 23752); every creator launches
+              through it in a single tx (nothing to deploy). Copy per shiro 23763. */}
+          <div className="rounded-xl px-4 py-3" style={{ background: "rgba(52,199,123,0.06)", border: "1px solid rgba(52,199,123,0.25)" }}>
+            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#34C77B" }}>● LIVE · HOODIE PAIR</p>
             <p className="mt-1 font-mono text-[11px]" style={{ color: "#8A93A2" }}>
-              You mint your own HoodieLauncher once, then every token you launch through it is permanently
-              paired to $HOODIE — single-sided-seeded, liquidity custody-locked and growing as it earns fees.
-              First launch = 2 txs (deploy your launcher + launch); every launch after is a single tx.
+              Every token launches permanently paired to $HOODIE — single-sided-seeded, liquidity
+              custody-locked and growing as it earns fees. One transaction, nothing to deploy.
             </p>
           </div>
         </>
@@ -564,7 +558,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
               <span className="text-pcs-text font-medium">{usesOwnStack ? "0.0004 ETH flat" : "3% → 1% over the first hour"}</span>
             </div>
             <p className="text-[11px] text-pcs-textDim">{isHoodie
-              ? "The 0.0004 ETH fee rides in your launch tx (no approval). Your first HOODIE launch also deploys your own launcher — one extra tx."
+              ? "The 0.0004 ETH fee rides in your launch tx (no approval) — one tx, permanently $HOODIE-paired."
               : usesOwnStack
               ? "The 0.0004 ETH fee is paid directly in your launch transaction — one tx, no approval."
               : "High early fee = sniping is unprofitable by design."}</p>
@@ -597,8 +591,8 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         </div>
       )}
 
-      {/* Action buttons — both pairs run the full preview → confirm → launch flow. HOODIE is a two-step
-          launcher-launcher: the first launch also deploys the creator's own launcher (narrated in the toast). */}
+      {/* Action buttons — both pairs run the full preview → confirm → launch flow, a single launch tx each
+          (HOODIE routes through the shared launcher; WETH through the factory). */}
       {!isConnected ? (
         <p className="text-center text-sm text-pcs-textDim">Connect wallet to launch</p>
       ) : chainMismatch ? (
@@ -631,7 +625,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           onClick={handleLaunch}
           disabled={!recipientConfirmed}
         >
-          {recipientConfirmed ? "Launch Token" : "Confirm recipient to launch"}
+          {recipientConfirmed ? (isHoodie ? "Launch HOODIE-paired" : "Launch Token") : "Confirm recipient to launch"}
         </button>
       )}
 

@@ -45,9 +45,11 @@ export type V4Contracts = {
   gateway: Address;
   /** HydeTokenFactory address — present only on chains where it's deployed */
   hydeTokenFactory?: Address;
-  /** HOODIE launcher-launcher: the meta-factory (users `createLauncher` here) + the shared engine (reads/events). */
+  /** HOODIE launcher-launcher: the meta-factory (mints launchers) + the shared engine (reads/events). */
   hoodieMetaFactory?: Address;
   hoodieEngine?: Address;
+  /** The ONE shared HoodieLauncher every creator launches through (clint 23752 — single-tx, no per-user deploy). */
+  hoodieSharedLauncher?: Address;
   /** Canonical StateView (read-only V4 pool state) — the chain's read source. */
   stateView?: Address;
 };
@@ -276,6 +278,11 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     // LIVE HOODIE launcher-launcher on 4663 mainnet (deployed 2026-07-21, kami 23624).
     hoodieMetaFactory: "0x101Fe0c0328De00F6F6f928B79d512E899fE2fC0" as Address,
     hoodieEngine:      "0x8062951c99CfFA5365f979D5139Cf96b5c77CFCc" as Address,
+    // The single shared HoodieLauncher (clint 23752/23771; kami 23767/23769) — the EXISTING registered
+    // launcher clint used to launch LILHOODIE, owned by the Hydeout deployer + allowlisted in the engine.
+    // Reused as-is (no second mint). `launch` is permissionless → every creator launches through it in ONE
+    // tx, and the engine attributes the ACTUAL caller as the creator.
+    hoodieSharedLauncher: "0x004E6Fa435757B80adB17ADd67524CcAF4c4305B" as Address,
     stateView:       "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b" as Address, // == ROBINHOOD_STATE_VIEW
   },
   // Optimism Mainnet — Uniswap V4 (re-verified by chainverify.mjs 2026-07-20)
@@ -746,8 +753,9 @@ export const hydeTokenFactoryAbi = [
   },
 ] as const;
 
-// HOODIE launcher-launcher (live 4663). Meta-factory mints per-creator launchers; each launcher launches
-// HOODIE-paired tokens through the shared engine (== HydeTokenFactory bound to $HOODIE).
+// HOODIE launcher-launcher (live 4663). The meta-factory mints launchers; Hydeout reuses ONE existing shared
+// launcher (clint 23771 / kami 23767) that every creator launches HOODIE-paired tokens through, via the shared
+// engine (== HydeTokenFactory bound to $HOODIE). The meta-factory ABI is retained for admin/off-chain reads only.
 export const hoodieMetaFactoryAbi = [
   { type: "function", name: "createLauncher", stateMutability: "nonpayable", inputs: [{ name: "userSalt", type: "bytes32" }], outputs: [{ name: "launcher", type: "address" }] },
   { type: "function", name: "predictLauncher", stateMutability: "view", inputs: [{ name: "creator", type: "address" }, { name: "userSalt", type: "bytes32" }], outputs: [{ type: "address" }] },

@@ -1,35 +1,26 @@
-import type { Address, Hex, PublicClient, WalletClient } from "viem";
+import type { Address, PublicClient, WalletClient } from "viem";
 import { parseEventLogs } from "viem";
-import { V4_CONTRACTS_BY_CHAIN, hoodieMetaFactoryAbi, hoodieLauncherAbi, hoodieEngineAbi } from "./constants";
+import { V4_CONTRACTS_BY_CHAIN, hoodieLauncherAbi, hoodieEngineAbi } from "./constants";
 
-/* ─── HOODIE launcher-launcher lane (Robinhood 4663 mainnet) ─────────────────────
+/* ─── HOODIE shared-launcher lane (Robinhood 4663 mainnet) ───────────────────────
  *
- * The "launch a launcher" mechanic: a creator first deploys their OWN `HoodieLauncher` (once, via the
- * meta-factory), then launches HOODIE-paired tokens through it. Every token is immutably $HOODIE-paired.
- *
- * We use ONE deterministic launcher per creator (salt = bytes32(0)) so a creator has a single stable
- * launcher: the first launch deploys it (2 txs: createLauncher + launch), every launch after reuses it
- * (1 tx). The flat 0.0004 ETH fee rides as `msg.value` on `launch` — no approval, no faucet.
+ * clint 23752 "one hoodielauncher is enough": there is ONE HoodieLauncher, minted once by Hydeout via the
+ * meta-factory (fixed domain salt) and registered in the engine's allowlist. EVERY creator launches through
+ * that same launcher in a SINGLE tx — the engine records the ACTUAL caller as the creator (the launcher's
+ * `owner` is branding-only and never gates a launch, HoodieLauncher.sol), and the per-(launcher, creator)
+ * nonce keeps each user's predicted address independent. No per-user launcher deploy. Every token is
+ * immutably $HOODIE-paired; the flat 0.0004 ETH fee rides as `msg.value` on `launch` (no approval, no faucet).
  */
 
-/** One deterministic launcher per creator: salt = bytes32(0). First launch deploys it; later launches reuse it. */
-export const HOODIE_LAUNCHER_SALT = ("0x" + "0".repeat(64)) as Hex;
 export const HOODIE_DEFAULT_PRESET_ID = 0n;
 
-function hoodieAddrs(chainId: number): { meta: Address; engine: Address } {
+/** The shared launcher + engine for a chain (throws if the HOODIE stack isn't configured there). */
+function hoodieAddrs(chainId: number): { engine: Address; launcher: Address } {
   const cfg = V4_CONTRACTS_BY_CHAIN[chainId];
-  if (!cfg?.hoodieMetaFactory || !cfg?.hoodieEngine) {
-    throw new Error(`HOODIE launcher-launcher not configured for chain ${chainId}`);
+  if (!cfg?.hoodieEngine || !cfg?.hoodieSharedLauncher) {
+    throw new Error(`HOODIE launcher not configured for chain ${chainId}`);
   }
-  return { meta: cfg.hoodieMetaFactory, engine: cfg.hoodieEngine };
-}
-
-async function launcherFor(publicClient: PublicClient, meta: Address, creator: Address): Promise<{ launcher: Address; exists: boolean }> {
-  const launcher = (await publicClient.readContract({
-    address: meta, abi: hoodieMetaFactoryAbi, functionName: "predictLauncher", args: [creator, HOODIE_LAUNCHER_SALT],
-  })) as Address;
-  const code = await publicClient.getCode({ address: launcher });
-  return { launcher, exists: !!code && code !== "0x" };
+  return { engine: cfg.hoodieEngine, launcher: cfg.hoodieSharedLauncher };
 }
 
 export type HoodieLaunchInput = {
@@ -40,24 +31,21 @@ export type HoodieLaunchInput = {
 };
 
 export type HoodieLaunchPreview = {
-  /** The creator's deterministic launcher (deployed on demand for the first launch). */
+  /** The shared HoodieLauncher every launch routes through. */
   launcherAddress: Address;
-  /** True if the launcher already exists (so this launch is 1 tx, not 2). */
-  launcherExists: boolean;
-  /** Deterministic clone address for the creator's NEXT launch of this symbol through the launcher. */
+  /** Deterministic clone address for the creator's NEXT launch of this symbol through the shared launcher. */
   tokenAddress: Address;
   /** Flat native-ETH launch fee in wei (from the engine's `launchFeeAmount`). */
   feeAmount: bigint;
 };
 
-/** Read-only pre-flight: predicts the launcher + token addresses and reads the flat fee. */
+/** Read-only pre-flight: predicts the token address for (sharedLauncher, creator, symbol) and reads the fee. */
 export async function simulateHoodieLaunch(
   publicClient: PublicClient,
   chainId: number,
   input: HoodieLaunchInput,
 ): Promise<HoodieLaunchPreview> {
-  const { meta, engine } = hoodieAddrs(chainId);
-  const { launcher, exists } = await launcherFor(publicClient, meta, input.creator);
+  const { engine, launcher } = hoodieAddrs(chainId);
 
   const [paused, feeAmount, tokenAddress] = await Promise.all([
     publicClient.readContract({ address: engine, abi: hoodieEngineAbi, functionName: "paused" }),
@@ -69,10 +57,10 @@ export async function simulateHoodieLaunch(
   ]);
   if (paused) throw new Error("Launches are paused on the HOODIE engine.");
 
-  return { launcherAddress: launcher, launcherExists: exists as boolean, tokenAddress: tokenAddress as Address, feeAmount: feeAmount as bigint };
+  return { launcherAddress: launcher, tokenAddress: tokenAddress as Address, feeAmount: feeAmount as bigint };
 }
 
-export type HoodieLaunchStep = "createLauncher" | "launch" | "confirm";
+export type HoodieLaunchStep = "launch" | "confirm";
 
 export type HoodieLaunchResult = {
   tokenAddress: Address;
@@ -81,9 +69,9 @@ export type HoodieLaunchResult = {
 };
 
 /**
- * Two-step launcher-launcher: deploy the creator's launcher if it doesn't exist yet, then launch through
- * it (the flat native-ETH fee rides as `msg.value`). `onStep` fires before each wallet action so the UI
- * can narrate. Returns the launched token from the emitted `HoodieLaunchCreated` event.
+ * Single-tx launch through the shared launcher (the flat native-ETH fee rides as `msg.value`). `onStep`
+ * fires before the wallet action + after submit so the UI can narrate. Returns the launched token from the
+ * emitted `HoodieLaunchCreated` event.
  */
 export async function executeHoodieLaunch(
   publicClient: PublicClient,
@@ -92,22 +80,11 @@ export async function executeHoodieLaunch(
   input: HoodieLaunchInput,
   onStep?: (step: HoodieLaunchStep) => void,
 ): Promise<HoodieLaunchResult> {
-  const { meta, engine } = hoodieAddrs(chainId);
+  const { engine, launcher } = hoodieAddrs(chainId);
   const account = input.creator;
   const chain = walletClient.chain;
 
-  const { launcher, exists } = await launcherFor(publicClient, meta, account);
-
-  // Step 1 — deploy the creator's launcher (only the first time).
-  if (!exists) {
-    onStep?.("createLauncher");
-    const createHash = await walletClient.writeContract({
-      address: meta, abi: hoodieMetaFactoryAbi, functionName: "createLauncher", args: [HOODIE_LAUNCHER_SALT], account, chain,
-    });
-    await publicClient.waitForTransactionReceipt({ hash: createHash });
-  }
-
-  // Step 2 — launch through the launcher (payable flat fee, all-or-revert).
+  // One payable tx: launch through the shared launcher (all-or-revert in the engine).
   const feeAmount = (await publicClient.readContract({
     address: engine, abi: hoodieEngineAbi, functionName: "launchFeeAmount",
   })) as bigint;
