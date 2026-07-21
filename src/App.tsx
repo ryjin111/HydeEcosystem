@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { Header } from "./components/Header";
 import { AddLiquidityPage } from "./pages/AddLiquidity";
@@ -6,11 +6,16 @@ import { SwapPage } from "./pages/Swap";
 import { LaunchpadPage } from "./pages/Launchpad";
 import { LandingPage } from "./pages/Landing";
 import { StatsPage } from "./pages/Stats";
-import { TokenPage } from "./pages/Token";
 import { ProfilePage } from "./pages/Profile";
 import { NETWORKS } from "./utils/constants";
 import { useTokenList } from "./hooks/useTokenList";
 import { useHydeTokens } from "./hooks/useDopplerTokens";
+
+/** /token/<addr> → the canonical /swap?out=<addr> token page (kami 23477). Preserves shared links. */
+function TokenRedirect() {
+  const { address = "" } = useParams();
+  return <Navigate to={address ? `/swap?out=${address}` : "/swap"} replace />;
+}
 
 function App() {
   const [selectedNetworkId, setSelectedNetworkId] = useState(NETWORKS[0].id);
@@ -169,7 +174,8 @@ function App() {
               {/* The board lives ONLY at /launchpad — collapse the duplicate board routes. */}
               <Route path="/discover" element={<Navigate to="/launchpad" replace />} />
               <Route path="/launches" element={<Navigate to="/launchpad" replace />} />
-              <Route path="/token/:address" element={<TokenPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />} />
+              {/* /token/<addr> is only an alias now — one canonical token page at /swap?out= (kami 23477). */}
+              <Route path="/token/:address" element={<TokenRedirect />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/profile/:address" element={<ProfilePage />} />
               <Route path="/launchpad" element={<LaunchpadPage chainId={selectedNetwork.id} />} />

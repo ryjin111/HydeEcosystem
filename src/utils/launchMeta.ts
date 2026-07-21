@@ -3,8 +3,10 @@ import type { WalletClient } from "viem";
 /* Off-chain metadata (image + description) for own-stack launch tokens whose contract stores only
  * name/symbol. Written creator-signed (see api/launch-meta.js); read publicly. */
 
-/** Chains whose own-stack tokens carry off-chain metadata (mainnet Doppler tokens store it on-chain). */
-export const OWNSTACK_META_CHAINS = new Set<number>([46630]);
+/** Chains whose own-stack tokens carry off-chain metadata (HydeERC20 stores only name/symbol).
+ *  46630 testnet + 4663 mainnet (own-stack WETH factory + HOODIE launcher-launcher, deployed 2026-07-21).
+ *  NOTE: the backend `api/launch-meta.js` / `_ownstack.js` must ALSO allow 4663 (kami's backend flag). */
+export const OWNSTACK_META_CHAINS = new Set<number>([46630, 4663]);
 export function chainSupportsLaunchMeta(chainId: number): boolean {
   return OWNSTACK_META_CHAINS.has(chainId);
 }

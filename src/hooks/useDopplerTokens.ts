@@ -24,6 +24,21 @@ const POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951" as const;
 
 const TRANSFER_EVENT = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 
+// ─── Mainnet own-stack sources (deployed 2026-07-21) ────────────────────────────────────────────
+// The 4663 board now reads OUR factories' launch events ONLY — no Doppler Airlock (clint: "only our
+// stack"). WETH factory emits `LaunchCreated`; the HOODIE launcher-launcher engine emits
+// `HoodieLaunchCreated` (standard shape, human creator indexed). Deploy blocks bound every scan.
+const MAINNET_WETH_FACTORY = "0x710fEa288266518528A4230771E07ee310ce509f" as `0x${string}`;
+const MAINNET_WETH_FACTORY_BLOCK = 15643595n;
+const MAINNET_HOODIE_ENGINE = "0x8062951c99CfFA5365f979D5139Cf96b5c77CFCc" as `0x${string}`;
+const MAINNET_HOODIE_ENGINE_BLOCK = 15652257n;
+const MAINNET_WETH_VAULT = "0x04C204C264626Ad0067ac4317D54598286d2D791" as `0x${string}`;
+const MAINNET_HOODIE_VAULT = "0x1ee72dCb5a18ddcC069e4E604Ba59ac5a0930DB4" as `0x${string}`;
+const MAINNET_HOODIE = "0xC72c01AAB5f5678dc1d6f5C6d2B417d91D402Ba3" as `0x${string}`;
+const HOODIE_LAUNCH_CREATED = parseAbiItem(
+  "event HoodieLaunchCreated(address indexed launcher, address indexed creator, address indexed token, bytes32 poolId, uint256 tokenId)"
+);
+
 // Dedicated client: launches must load even before a wallet connects.
 const robinhoodChain = defineChain({
   id: ROBINHOOD_CHAIN_ID,
@@ -51,9 +66,6 @@ async function getLogsChunked<E>(call: (from: bigint, to: bigint) => Promise<E[]
   }
   return out;
 }
-
-type CreateLog = { args: { asset: `0x${string}` }; blockNumber: bigint | null };
-const blockOf = (l: CreateLog): bigint => l.blockNumber ?? 0n;
 
 // Real market-cap / price / liquidity / 24h-volume from the DEXScreener pair — the
 // same indexer the Token page already uses for the chart. Only graduated tokens that
@@ -93,127 +105,6 @@ async function fetchDexData(addresses: string[]): Promise<Map<string, DexData>> 
   return out;
 }
 
-async function fetchHydePools(): Promise<DopplerPool[]> {
-  const latest = await client.getBlockNumber();
-
-  // walk backwards from `latest` in RANGE chunks until we have MAX_SHOWN creates
-  const collected: CreateLog[] = [];
-  let toB = latest;
-  for (let guard = 0; guard < 80 && collected.length < MAX_SHOWN && toB > 0n; guard++) {
-    const fromB = toB > RANGE ? toB - RANGE + 1n : 0n;
-    const chunk = await client.getLogs({ address: AIRLOCK, event: CREATE_EVENT, fromBlock: fromB, toBlock: toB });
-    collected.unshift(...(chunk as unknown as CreateLog[]));
-    if (fromB === 0n) break;
-    toB = fromB - 1n;
-  }
-
-  // newest first, capped to the page
-  const logs = collected.slice(-MAX_SHOWN).reverse();
-  if (logs.length === 0) return [];
-  const assets = logs.map((l) => l.args.asset as `0x${string}`);
-  const createBlockOf = new Map(logs.map((l) => [l.args.asset.toLowerCase(), blockOf(l)]));
-
-  // enrichment range = only the block span this page covers (bounded)
-  const fromB = logs.map(blockOf).reduce((a, b) => (a < b ? a : b), latest);
-
-  // graduation status for this page (Migrate over the bounded span)
-  const migrateLogs = await getLogsChunked((f, t) => client.getLogs({ address: AIRLOCK, event: MIGRATE_EVENT, fromBlock: f, toBlock: t }), fromB, latest);
-  const graduated = new Set(migrateLogs.map((l) => (l.args.asset as string).toLowerCase()));
-
-  // Curve baseline: tokens transferred INTO the PoolManager in each asset's
-  // create block. Bounded to this page's asset set + block span (not block-0,
-  // not all 2600+ assets), so it stays a small browser-safe query.
-  const seedTransfers = await getLogsChunked((f, t) => client.getLogs({ address: assets, event: TRANSFER_EVENT, args: { to: POOL_MANAGER }, fromBlock: f, toBlock: t }), fromB, latest);
-  const initialCurve = new Map<string, bigint>();
-  for (const t of seedTransfers) {
-    const asset = t.address.toLowerCase();
-    if ((t.blockNumber ?? 0n) !== createBlockOf.get(asset)) continue;
-    initialCurve.set(asset, (initialCurve.get(asset) ?? 0n) + (t.args.value as bigint));
-  }
-
-  // Metadata + live inventory in one multicall batch.
-  const meta = await client.multicall({
-    contracts: assets.flatMap((asset) => [
-      { address: asset, abi: ERC20_META_ABI, functionName: "name" } as const,
-      { address: asset, abi: ERC20_META_ABI, functionName: "symbol" } as const,
-      { address: asset, abi: ERC20_META_ABI, functionName: "balanceOf", args: [POOL_MANAGER] } as const,
-    ]),
-  });
-
-  // Block timestamps, deduped.
-  const uniqueBlocks = [...new Set(logs.map(blockOf))];
-  const blockTimes = new Map(
-    (await Promise.all(uniqueBlocks.map((bn) => client.getBlock({ blockNumber: bn }))))
-      .map((b) => [b.number, Number(b.timestamp)])
-  );
-
-  const pools = logs.map((log, i): DopplerPool | null => {
-    const asset = log.args.asset as `0x${string}`;
-    const key = asset.toLowerCase();
-    const name = meta[i * 3].result as string | undefined;
-    const symbol = meta[i * 3 + 1].result as string | undefined;
-    const pmBalance = meta[i * 3 + 2].result as bigint | undefined;
-    if (!name || !symbol) return null; // unreadable token — skip rather than crash the board
-
-    const isGraduated = graduated.has(key);
-    const initial = initialCurve.get(key);
-    let progress: number | null = null;
-    if (isGraduated) {
-      progress = 100;
-    } else if (initial && initial > 0n && pmBalance !== undefined) {
-      const sold = initial > pmBalance ? initial - pmBalance : 0n;
-      progress = Math.min(100, Number((sold * 10000n) / initial) / 100);
-    }
-
-    const ts = blockTimes.get(blockOf(log));
-    return {
-      address: asset,
-      chainId: ROBINHOOD_CHAIN_ID,
-      baseToken: { address: asset, name, symbol, decimals: 18 },
-      quoteToken: {
-        address: ROBINHOOD_MAINNET.weth,
-        name: "Wrapped Ether",
-        symbol: "WETH",
-        decimals: 18,
-      },
-      // 'v4' = live on the launch curve (Auction badge), 'v2' = graduated
-      type: isGraduated ? "v2" : "v4",
-      dollarLiquidity: null,
-      volumeUsd: null,
-      marketCapUsd: null,
-      priceUsd: null,
-      createdAt: new Date((ts ?? 0) * 1000).toISOString(),
-      progress,
-    };
-  });
-
-  // Dedupe by token address so the same launch never renders twice (clint flagged duplicate cards).
-  // Different tokens sharing a NAME (e.g. two "Joseph") have different addresses → both correctly kept.
-  const nonNull = pools.filter((p): p is DopplerPool => p !== null);
-  const seenAddr = new Set<string>();
-  const deduped = nonNull.filter((p) => {
-    const k = p.address.toLowerCase();
-    if (seenAddr.has(k)) return false;
-    seenAddr.add(k);
-    return true;
-  });
-
-  // Enrich with real MCAP / price / liquidity / volume for any token that has graduated
-  // to a live (DEXScreener-indexed) Uniswap pool. Best-effort: on any failure the pools
-  // pass through unchanged (all null), and the card falls back to the on-chain curve %.
-  const dex = await fetchDexData(deduped.map((p) => p.address));
-  return deduped.map((p) => {
-    const d = dex.get(p.address.toLowerCase());
-    if (!d) return p;
-    return {
-      ...p,
-      marketCapUsd: d.marketCapUsd,
-      priceUsd: d.priceUsd,
-      dollarLiquidity: d.liquidityUsd != null ? String(d.liquidityUsd) : p.dollarLiquidity,
-      volumeUsd: d.volumeUsd != null ? String(d.volumeUsd) : p.volumeUsd,
-    };
-  });
-}
 
 /** Tokens launched via the Hydeout launchpad on Robinhood Chain, as TokenInfo[].
  *  No swap-routing metadata attached here; the Token page gates executable swaps
@@ -233,7 +124,7 @@ export function useHydeTokens(chainId: number): {
     let cancelled = false;
     setLoading(true);
 
-    fetchHydePools()
+    fetchMainnetOwnStackPools()
       .then((pools) => {
         if (cancelled) return;
         setTokens(
@@ -309,9 +200,8 @@ export async function isHydeLaunch(address: `0x${string}`): Promise<boolean> {
   return (await getLaunchImplementation(address)) === `0x${LAUNCH_IMPL}`;
 }
 
-/** Single-token read for /token/:address — works for launches OUTSIDE the board
- *  page. Network-aware: mainnet reads the Doppler rail, testnet reads our own-stack via the testnet
- *  client (fetchTestnetLaunchToken below). Fails to null (honest not-found), never blanks the page. */
+/** Single-token read for launches outside the board page. Network-aware: mainnet reads the two live
+ *  own-stack launch sources; testnet reads its own factory. Fails to null (honest not-found). */
 export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN_ID): { pool: DopplerPool | null; loading: boolean } {
   const [pool, setPool] = useState<DopplerPool | null>(null);
   const [loading, setLoading] = useState(true);
@@ -320,7 +210,7 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
     let cancelled = false;
     setPool(null); // drop the prior token immediately on address/chain change (kami A-blocker #3)
     setLoading(true);
-    const fetcher = chainId === RH_TESTNET_ID ? fetchTestnetLaunchToken : fetchLaunchToken;
+    const fetcher = chainId === RH_TESTNET_ID ? fetchTestnetLaunchToken : fetchMainnetLaunchToken;
     fetcher(address as `0x${string}`)
       .then((p) => { if (!cancelled) setPool(p); })
       .catch(() => { if (!cancelled) setPool(null); })
@@ -486,8 +376,138 @@ export async function fetchTestnetLaunchToken(address: `0x${string}`): Promise<D
   };
 }
 
+type OwnStackLog = { args: { token: `0x${string}`; creator?: `0x${string}` }; blockNumber: bigint | null };
+
+/** Single-token read for /swap?out= on 4663 — authoritative attribution: the address must have a
+ *  `LaunchCreated` (WETH factory) OR `HoodieLaunchCreated` (HOODIE engine) event, bounded from each
+ *  deploy block. Mirrors the testnet reader so a mainnet token page resolves OUR launches (not the
+ *  old Doppler clone-impl check). Fails to null (honest not-found); the page refines graduation/price. */
+async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
+  const [wethCreated, hoodieCreated] = await Promise.all([
+    client.getLogs({ address: MAINNET_WETH_FACTORY, event: LAUNCH_CREATED, args: { token: address }, fromBlock: MAINNET_WETH_FACTORY_BLOCK, toBlock: "latest" }).catch(() => []),
+    client.getLogs({ address: MAINNET_HOODIE_ENGINE, event: HOODIE_LAUNCH_CREATED, args: { token: address }, fromBlock: MAINNET_HOODIE_ENGINE_BLOCK, toBlock: "latest" }).catch(() => []),
+  ]);
+  if (wethCreated.length === 0 && hoodieCreated.length === 0) return null; // not one of our launches
+  const isHoodiePair = hoodieCreated.length > 0;
+
+  const meta = await client
+    .multicall({
+      contracts: [
+        { address, abi: ERC20_META_ABI, functionName: "name" } as const,
+        { address, abi: ERC20_META_ABI, functionName: "symbol" } as const,
+      ],
+    })
+    .catch(() => null);
+  const name = meta?.[0]?.result as string | undefined;
+  const symbol = meta?.[1]?.result as string | undefined;
+  if (!name || !symbol) return null;
+
+  return {
+    address,
+    chainId: ROBINHOOD_CHAIN_ID,
+    baseToken: { address, name, symbol, decimals: 18 },
+    // HOODIE-paired launches quote in $HOODIE; WETH launches quote in WETH.
+    quoteToken: isHoodiePair
+      ? { address: MAINNET_HOODIE, name: "Hoodie", symbol: "HOODIE", decimals: 18 }
+      : { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    type: "v4",
+    dollarLiquidity: null,
+    volumeUsd: null,
+    marketCapUsd: null,
+    priceUsd: null,
+    createdAt: new Date(0).toISOString(),
+    progress: null,
+  };
+}
+
+/** 4663 mainnet own-stack board — unions our WETH factory `LaunchCreated` + the HOODIE engine's
+ *  `HoodieLaunchCreated`; NO Doppler Airlock (clint: "only our stack"). Bounded from each contract's
+ *  deploy block. Same enrichment as the Doppler board (curve % + DEXScreener MCAP/price on graduated
+ *  tokens), so only tokens minted through OUR factories ever surface. */
+async function fetchMainnetOwnStackPools(): Promise<DopplerPool[]> {
+  const latest = await client.getBlockNumber();
+  const [wethLogs, hoodieLogs] = await Promise.all([
+    getLogsChunked((f, t) => client.getLogs({ address: MAINNET_WETH_FACTORY, event: LAUNCH_CREATED, fromBlock: f, toBlock: t }), MAINNET_WETH_FACTORY_BLOCK, latest),
+    getLogsChunked((f, t) => client.getLogs({ address: MAINNET_HOODIE_ENGINE, event: HOODIE_LAUNCH_CREATED, fromBlock: f, toBlock: t }), MAINNET_HOODIE_ENGINE_BLOCK, latest),
+  ]);
+  const rows = [
+    ...(wethLogs as unknown as OwnStackLog[]).map((l) => ({ ...l, isHoodiePair: false })),
+    ...(hoodieLogs as unknown as OwnStackLog[]).map((l) => ({ ...l, isHoodiePair: true })),
+  ]
+    .map((l) => ({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n, isHoodiePair: l.isHoodiePair }))
+    .sort((a, b) => (a.block < b.block ? 1 : a.block > b.block ? -1 : 0)) // newest first
+    .slice(0, MAX_SHOWN);
+  if (rows.length === 0) return [];
+
+  const tokens = rows.map((r) => r.token);
+  const createBlockOf = new Map(rows.map((r) => [r.token.toLowerCase(), r.block]));
+  const fromB = rows.map((r) => r.block).reduce((a, b) => (a < b ? a : b), latest);
+
+  const seedTransfers = await getLogsChunked((f, t) => client.getLogs({ address: tokens, event: TRANSFER_EVENT, args: { to: POOL_MANAGER }, fromBlock: f, toBlock: t }), fromB, latest);
+  const initialCurve = new Map<string, bigint>();
+  for (const t of seedTransfers) {
+    const a = t.address.toLowerCase();
+    if ((t.blockNumber ?? 0n) !== createBlockOf.get(a)) continue;
+    initialCurve.set(a, (initialCurve.get(a) ?? 0n) + (t.args.value as bigint));
+  }
+
+  const meta = await client.multicall({
+    contracts: tokens.flatMap((token) => [
+      { address: token, abi: ERC20_META_ABI, functionName: "name" } as const,
+      { address: token, abi: ERC20_META_ABI, functionName: "symbol" } as const,
+      { address: token, abi: ERC20_META_ABI, functionName: "balanceOf", args: [POOL_MANAGER] } as const,
+    ]),
+  });
+  const claimRes = await client.multicall({
+    contracts: rows.map((r) => ({
+      address: r.isHoodiePair ? MAINNET_HOODIE_VAULT : MAINNET_WETH_VAULT,
+      abi: hydeVaultAbi,
+      functionName: "creatorClaimable",
+      args: [r.token],
+    } as const)),
+  }).catch(() => null);
+  const uniqueBlocks = [...new Set(rows.map((r) => r.block))];
+  const blockTimes = new Map((await Promise.all(uniqueBlocks.map((bn) => client.getBlock({ blockNumber: bn })))).map((b) => [b.number, Number(b.timestamp)]));
+
+  const pools = rows.map((r, i): DopplerPool | null => {
+    const key = r.token.toLowerCase();
+    const name = meta[i * 3].result as string | undefined;
+    const symbol = meta[i * 3 + 1].result as string | undefined;
+    const pmBalance = meta[i * 3 + 2].result as bigint | undefined;
+    if (!name || !symbol) return null;
+    const initial = initialCurve.get(key);
+    let progress: number | null = null;
+    if (initial && initial > 0n && pmBalance !== undefined) {
+      const sold = initial > pmBalance ? initial - pmBalance : 0n;
+      progress = Math.min(100, Number((sold * 10000n) / initial) / 100);
+    }
+    const ts = blockTimes.get(r.block);
+    const claim = claimRes?.[i];
+    return {
+      address: r.token, chainId: ROBINHOOD_CHAIN_ID,
+      baseToken: { address: r.token, name, symbol, decimals: 18 },
+      quoteToken: r.isHoodiePair
+        ? { address: MAINNET_HOODIE, name: "Hoodie", symbol: "HOODIE", decimals: 18 }
+        : { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+      type: "v4", dollarLiquidity: null, volumeUsd: null, marketCapUsd: null, priceUsd: null,
+      createdAt: new Date((ts ?? 0) * 1000).toISOString(), progress,
+      creator: r.creator as string | undefined,
+      creatorClaimable: claim && claim.status === "success" ? (claim.result as bigint).toString() : null,
+    };
+  });
+  const nonNull = pools.filter((p): p is DopplerPool => p !== null);
+  const seen = new Set<string>();
+  const deduped = nonNull.filter((p) => { const k = p.address.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  const dex = await fetchDexData(deduped.map((p) => p.address));
+  return deduped.map((p) => {
+    const d = dex.get(p.address.toLowerCase());
+    if (!d) return p;
+    return { ...p, marketCapUsd: d.marketCapUsd, priceUsd: d.priceUsd, dollarLiquidity: d.liquidityUsd != null ? String(d.liquidityUsd) : p.dollarLiquidity, volumeUsd: d.volumeUsd != null ? String(d.volumeUsd) : p.volumeUsd };
+  });
+}
+
 /** Full pool objects for the Launchpad explore tab and trending carousel. Network-aware: Robinhood
- *  Testnet reads the live own-stack factory; mainnet reads the Doppler rail. */
+ *  Testnet + mainnet both read our own-stack factories (mainnet = WETH factory + HOODIE engine). */
 export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
   pools: DopplerPool[];
   loading: boolean;
@@ -503,7 +523,7 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     setPools([]); // drop prior-chain launches immediately on a chain switch (kami A-blocker #3)
     setLoading(true);
 
-    const fetcher = chainId === RH_TESTNET_ID ? fetchHydeFactoryPools : fetchHydePools;
+    const fetcher = chainId === RH_TESTNET_ID ? fetchHydeFactoryPools : fetchMainnetOwnStackPools;
     fetcher()
       .then((items) => {
         if (!cancelled) setPools(items);

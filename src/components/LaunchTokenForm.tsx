@@ -8,7 +8,7 @@ import {
   executeRobinhoodLaunch,
 } from "../utils/dopplerLaunch";
 import { simulateHydeLaunch, executeHydeLaunch, type HydeLaunchStep } from "../utils/hydeLaunch";
-import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET } from "../utils/constants";
+import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import { preCheckImageFile, AVATAR_SIZE } from "../utils/imageValidation";
 import { saveLaunchMeta } from "../utils/launchMeta";
 import { TokenImage } from "./TokenImage";
@@ -51,20 +51,18 @@ const HYDE_STEP_LABEL: Record<HydeLaunchStep, string> = {
 };
 
 export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
-  // On Robinhood Testnet the form launches through the LIVE Hyde own-stack (HydeTokenFactory);
-  // on mainnet it rides the Doppler rail (own-stack not deployed there yet). Everything below
-  // flips by this one flag — same #6 boundary the board uses.
-  const isTestnet = chainId === RH_TESTNET_ID;
+  // Own-stack launch lane: a chain uses OUR HydeTokenFactory (not Doppler) whenever one is configured.
+  // Both testnet (46630) and mainnet (4663, deployed 2026-07-21) now have one → mainnet WETH launches
+  // route through our factory `0x710f…509f`, same as testnet. Everything below flips by this one flag.
+  const usesOwnStack = !!V4_CONTRACTS_BY_CHAIN[chainId]?.hydeTokenFactory;
   const { address, chainId: walletChainId, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient({ chainId });
   const { switchChain } = useSwitchChain();
 
-  // Base pair the launch pairs against (clint 23448). WETH = the standard rail (Doppler on mainnet,
-  // own-stack HydeTokenFactory on testnet). HOODIE = the HOODIE-native launcher-launcher — the creator
-  // mints their own HoodieLauncher and every token is PERMANENTLY paired to $HOODIE. UI-first: the
-  // mechanic is fork-proven but its stack isn't on a live gateway yet, so the HOODIE action is honestly
-  // gated ("live on deploy") — never a present-tense claim it executes today (same §3.3 discipline).
+  // Base pair the launch pairs against (clint 23448). WETH uses the live own-stack HydeTokenFactory.
+  // HOODIE uses the live launcher-launcher contracts, but its in-app two-step transaction flow lands in
+  // the next update, so that action remains honestly gated while describing the stack as live on-chain.
   const [pair, setPair] = useState<"weth" | "hoodie">("weth");
   const isHoodie = pair === "hoodie";
 
@@ -116,7 +114,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   // (/api/pin-image — 2 MB cap + magic-byte raster sniff, browser MIME never trusted),
   // and we store ONLY the returned ipfs://CID as the token image. No on-chain embed,
   // no pasted URLs/data URIs — one flow, one validator, content-addressed + immutable.
-  // (Doppler rail only — own-stack HydeERC20 stores no tokenURI, so testnet hides this.)
+  // Own-stack HydeERC20 stores no tokenURI, so image/description are persisted through launch metadata.
   const handleImageFile = async (file: File | undefined) => {
     if (!file) return;
     const pre = preCheckImageFile(file); // fast UX pre-check; server is authoritative
@@ -165,8 +163,8 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
     setPreviewError(null);
     const toastId = "hyde-preview";
     try {
-      toast.loading(isTestnet ? "Simulating launch on Robinhood Testnet…" : "Simulating launch on Robinhood Chain…", { id: toastId });
-      if (isTestnet) {
+      toast.loading(`Simulating launch on ${targetName}…`, { id: toastId });
+      if (usesOwnStack) {
         const sim = await simulateHydeLaunch(publicClient as PublicClient, chainId, { name, symbol, creator: address });
         setPreview({ tokenAddress: sim.tokenAddress });
       } else {
@@ -194,7 +192,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
     const toastId = "hyde-launch";
     try {
       let result: { tokenAddress: string; transactionHash: string };
-      if (isTestnet) {
+      if (usesOwnStack) {
         toast.loading(HYDE_STEP_LABEL.launch, { id: toastId });
         result = await executeHydeLaunch(
           publicClient as PublicClient,
@@ -218,7 +216,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
       setName(""); setSymbol(""); setImageUrl(""); setDescription(""); setPreview(null); setRecipientConfirmed(false);
       // Own-stack HydeERC20 stores no tokenURI → persist image/description off-chain (creator-signed).
       // Kicked off AFTER the launch is confirmed; a failure only affects the metadata, never the token.
-      if (isTestnet && (savedImage.startsWith("ipfs://") || savedDesc.trim())) {
+      if (usesOwnStack && (savedImage.startsWith("ipfs://") || savedDesc.trim())) {
         void saveMetaFor(result.tokenAddress, savedImage, savedDesc);
       }
     } catch (err: unknown) {
@@ -234,8 +232,9 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
     }
   };
 
-  const explorer = isTestnet ? ROBINHOOD_TESTNET.explorerUrl : ROBINHOOD_MAINNET.explorerUrl;
-  const targetName = isTestnet ? ROBINHOOD_TESTNET.name : ROBINHOOD_MAINNET.name;
+  const isRhTestnet = chainId === RH_TESTNET_ID;
+  const explorer = isRhTestnet ? ROBINHOOD_TESTNET.explorerUrl : ROBINHOOD_MAINNET.explorerUrl;
+  const targetName = isRhTestnet ? ROBINHOOD_TESTNET.name : ROBINHOOD_MAINNET.name;
 
   return (
     <div
@@ -271,14 +270,14 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         <p className="text-xs text-pcs-textSub mt-1">
           {isHoodie
             ? "Launch through your own HoodieLauncher — permanently paired to $HOODIE."
-            : isTestnet
-              ? "Launch on Robinhood Testnet — custody-locked liquidity from block 1."
+            : usesOwnStack
+              ? `Launch on ${targetName} — custody-locked liquidity from block 1.`
               : "Price-discovery launch on Robinhood Chain — tradeable from the first block."}
         </p>
       </div>
 
-      {/* Terms banner — pair-aware (clint 23448) then network-aware. HOODIE pair shows the launcher-
-          launcher terms + a gated "live on deploy" badge; WETH pair keeps the existing network split. */}
+      {/* Terms banner — pair-aware (clint 23448) then network-aware. HOODIE accurately separates the
+          live on-chain stack from its not-yet-wired in-app action; WETH uses the live own-stack path. */}
       {isHoodie ? (
         <>
           <div
@@ -307,18 +306,18 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             </div>
           </div>
 
-          {/* HOODIE stack — fork-proven on real 4663, not on a live gateway yet → future-tense, gated
-              (§3.3). Never a present-tense claim it executes today. */}
+          {/* HOODIE stack — LIVE on 4663 mainnet (deployed 2026-07-21). The launcher-launcher contracts
+              are live; the IN-APP launch flow is the next update, so the action below stays honestly gated. */}
           <div className="rounded-xl px-4 py-3" style={{ background: "rgba(224,163,46,0.06)", border: "1px solid rgba(224,163,46,0.25)" }}>
-            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>COMING · HOODIE LAUNCHER</p>
+            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>● LIVE ON-CHAIN · HOODIE LAUNCHER</p>
             <p className="mt-1 font-mono text-[11px]" style={{ color: "#8A93A2" }}>
               You mint your own HoodieLauncher once, then every token you launch is permanently paired to
-              $HOODIE — single-sided-seeded, liquidity custody-locked and growing as it earns fees. Goes
-              live when the launcher stack deploys.
+              $HOODIE — single-sided-seeded, liquidity custody-locked and growing as it earns fees. The
+              stack is live on mainnet; in-app launching lands in the next update.
             </p>
           </div>
         </>
-      ) : isTestnet ? (
+      ) : usesOwnStack ? (
         <>
           <div
             className="rounded-xl px-4 py-3 text-xs flex flex-col gap-1.5"
@@ -346,9 +345,10 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             </div>
           </div>
 
-          {/* LIVE · own-stack — present-tense here because on testnet the Hyde stack IS deployed + running. */}
+          {/* LIVE · own-stack — present-tense: the Hyde stack IS deployed + running on this chain
+              (testnet 46630 and mainnet 4663). Network-named so mainnet never says "TESTNET". */}
           <div className="rounded-xl px-4 py-3" style={{ background: "rgba(52,199,123,0.07)", border: "1px solid rgba(52,199,123,0.30)" }}>
-            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#34C77B" }}>● LIVE · ROBINHOOD TESTNET</p>
+            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#34C77B" }}>● LIVE · {targetName.toUpperCase()}</p>
             <p className="mt-1 font-mono text-[11px]" style={{ color: "#8A93A2" }}>
               Launches route through HydeTokenFactory — all 1B single-sided-seeded, the position NFT held in
               the collector's permanent custody (permanently locked, grows as it earns fees) · anti-snipe max-wallet.
@@ -472,7 +472,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
               maxLength={280}
             />
           </div>
-          {isTestnet && (
+          {usesOwnStack && (
             <p className="text-[11px] text-pcs-textDim -mt-1">
               Optional — saved as off-chain metadata: the image is pinned to IPFS and indexed to your
               token. After launch you&rsquo;ll sign a free message (no gas) to attach it.
@@ -528,7 +528,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
               <span className="text-pcs-text font-medium tabular-nums">1,000,000,000 total</span>
             </div>
             <div className="flex justify-between text-[11px] text-pcs-textDim">
-              <span>{isTestnet
+              <span>{usesOwnStack
                 ? "100% single-sided-seeded into the pool — nothing pre-minted or held back"
                 : "100% to the launch curve — nothing pre-minted or held back"}</span>
             </div>
@@ -541,9 +541,9 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           <div className="flex flex-col gap-0.5">
             <div className="flex justify-between text-xs">
               <span className="text-pcs-textDim">Launch fee</span>
-              <span className="text-pcs-text font-medium">{isTestnet ? "0.0004 ETH flat" : "3% → 1% over the first hour"}</span>
+              <span className="text-pcs-text font-medium">{usesOwnStack ? "0.0004 ETH flat" : "3% → 1% over the first hour"}</span>
             </div>
-            <p className="text-[11px] text-pcs-textDim">{isTestnet
+            <p className="text-[11px] text-pcs-textDim">{usesOwnStack
               ? "The 0.0004 ETH fee is paid directly in your launch transaction — one tx, no approval."
               : "High early fee = sniping is unprofitable by design."}</p>
           </div>
@@ -585,11 +585,11 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             className="w-full rounded-xl py-3 text-sm font-semibold cursor-not-allowed"
             style={{ background: "rgba(224,163,46,0.16)", color: "#E0A32E", border: "1px solid rgba(224,163,46,0.35)" }}
           >
-            Launch HOODIE-paired — live on deploy
+            Launch HOODIE-paired — in-app soon
           </button>
           <p className="text-center text-[11px] text-pcs-textDim">
-            The HOODIE launcher is built &amp; proven on a real 4663 fork — HOODIE-pair launches turn on
-            when the launcher stack deploys.
+            The HOODIE launcher-launcher is <b className="text-pcs-textSub">live on Robinhood mainnet</b> —
+            in-app launching lands in the next update.
           </p>
         </div>
       ) : !isConnected ? (
@@ -636,7 +636,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         >
           <p className="text-pcs-text font-semibold">Token launched!</p>
           <p className="text-pcs-textDim">
-            {isTestnet
+            {usesOwnStack
               ? "It's live on the launch pool now — all 1B seeded, liquidity custody-locked and growing as it earns fees."
               : "It's live on the launch curve now — liquidity graduates to a real pool as the curve completes."}
           </p>
@@ -663,7 +663,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           </a>
 
           {/* Off-chain metadata save status — isolated from the launch (which already succeeded). */}
-          {isTestnet && (launched.image || launched.description.trim()) && (
+          {usesOwnStack && (launched.image || launched.description.trim()) && (
             <div className="mt-1 pt-2 text-[11px]" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
               {metaState === "saving" && (
                 <p className="text-pcs-textDim">Saving image &amp; description… confirm the free signature in your wallet.</p>

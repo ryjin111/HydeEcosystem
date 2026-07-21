@@ -267,6 +267,9 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     positionManager: "0x58daec3116aae6D93017bAAea7749052E8a04fA7" as Address,
     permit2:         "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway:         PLACEHOLDER_V4_GATEWAY, // HydeV4Gateway not yet deployed on 4663 — Foundry deploy needs clint's key
+    // LIVE Hyde own-stack WETH factory on 4663 mainnet (deployed 2026-07-21, kami 23610). Same
+    // HydeTokenFactory source/ABI as testnet → the WETH-pair launch + board read our own contracts.
+    hydeTokenFactory: "0x710fEa288266518528A4230771E07ee310ce509f" as Address,
     stateView:       "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b" as Address, // == ROBINHOOD_STATE_VIEW
   },
   // Optimism Mainnet — Uniswap V4 (re-verified by chainverify.mjs 2026-07-20)

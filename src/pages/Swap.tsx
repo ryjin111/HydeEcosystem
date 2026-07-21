@@ -1,39 +1,11 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive } from "../utils/constants";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { TrendingCarousel } from "../components/TrendingCarousel";
 import type { DopplerPool } from "../components/TrendingCarousel";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
-
-/* ─── Token chart panel ──────────────────────────────────────────────────────
-   Chart indexers (DexScreener/GeckoTerminal) don't cover Robinhood Chain yet —
-   an honest explorer link beats an embed that 404s. */
-function TokenChart({ tokenAddress, explorerUrl }: { tokenAddress: string | null; explorerUrl: string }) {
-  return (
-    <div
-      className="w-full h-[500px] rounded-2xl flex flex-col items-center justify-center gap-2"
-      style={{ background: "#121419", border: "1px solid #22252D" }}
-    >
-      {tokenAddress ? (
-        <>
-          <p className="text-xs text-pcs-textDim">Charts come online as indexers add Robinhood Chain.</p>
-          <a
-            href={`${explorerUrl}/token/${tokenAddress}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-pcs-primary hover:underline"
-          >
-            View token on the Robinhood Chain explorer →
-          </a>
-        </>
-      ) : (
-        <p className="text-xs text-pcs-textDim">Select a token to view details</p>
-      )}
-    </div>
-  );
-}
+import { TokenDetail } from "./Token";
 
 /* ─── Recently launched feed ─────────────────────────────────────────────── */
 function timeAgo(iso: string): string {
@@ -66,7 +38,7 @@ function RecentlyLaunched({ onSelect }: { onSelect: (pool: DopplerPool) => void 
         </span>
         <button
           className="text-[10px] text-pcs-primary hover:underline"
-          onClick={() => navigate("/launches")}
+          onClick={() => navigate("/launchpad")}
         >
           View all →
         </button>
@@ -121,7 +93,11 @@ function RecentlyLaunched({ onSelect }: { onSelect: (pool: DopplerPool) => void 
   );
 }
 
-/* ─── Page ────────────────────────────────────────────────────────────────── */
+/* ─── Page ────────────────────────────────────────────────────────────────────
+   /swap?out=<token> is the ONE canonical token page (clint 23476 / kami 23477): when `out` is a
+   real token it renders the full TokenDetail (header · stats · chart · trade · Your Position · Trust ·
+   holders). With no token it's the discovery/exchange view. Selecting anywhere sets ?out= so the page
+   is shareable and /token/<addr> can redirect straight into it. */
 
 type Props = {
   network: NetworkConfig;
@@ -129,70 +105,65 @@ type Props = {
   onAddCustomToken: (token: { address: `0x${string}`; symbol: string; name: string; decimals: number }) => void;
 };
 
+const ZERO = "0x0000000000000000000000000000000000000000";
+
 export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
-  const [selectedPool, setSelectedPool] = useState<DopplerPool | null>(null);
-  const [chartTokenAddress, setChartTokenAddress] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const out = searchParams.get("out") ?? "";
+  const weth = network.weth.toLowerCase();
+  const showDetail = !!out && out.toLowerCase() !== weth && out.toLowerCase() !== ZERO;
 
-  const handleSelect = (pool: DopplerPool) => {
-    setSelectedPool(pool);
-    setChartTokenAddress(pool.baseToken.address);
-  };
-
-  const handleTokenOutChange = (address: string) => {
-    // Don't show chart for ETH/WETH — no meaningful price chart
-    const weth = network.weth.toLowerCase();
-    const addr = address.toLowerCase();
-    if (addr === weth || addr === "0x0000000000000000000000000000000000000000") return;
-    setChartTokenAddress(address);
-  };
-
-  const gatewayLive = isGatewayLive(network.id);
+  // Selecting a token anywhere drives the canonical ?out= (shareable, back-button friendly).
+  const selectToken = (address: string) => setSearchParams({ out: address });
 
   return (
     <div className="w-full max-w-6xl mx-auto">
-      {/* Trending carousel — full width */}
+      {/* Trending — always on top, doubles as the token switcher */}
       <TrendingCarousel
-        selected={selectedPool?.address}
-        onSelect={handleSelect}
+        selected={showDetail ? out : undefined}
+        onSelect={(pool) => selectToken(pool.baseToken.address)}
       />
 
-      {/* Two-column layout */}
-      <div className="flex flex-col lg:flex-row gap-5 items-start">
-        {/* Left: Swap card (or the honest not-yet state) */}
-        <div className="w-full lg:w-[440px] flex-shrink-0">
-          {gatewayLive ? (
-            <V4SwapCard
-              network={network}
-              tokens={tokens}
-              onAddCustomToken={onAddCustomToken}
-              forceTokenOut={selectedPool?.baseToken.address}
-              onTokenOutChange={handleTokenOutChange}
-            />
-          ) : (
+      {showDetail ? (
+        /* Canonical token page — the full detail layout for the selected token */
+        <TokenDetail address={out} network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} />
+      ) : (
+        /* Discovery / exchange view — pick a token to open its page */
+        <div className="flex flex-col lg:flex-row gap-5 items-start">
+          <div className="w-full lg:w-[440px] flex-shrink-0">
+            {isGatewayLive(network.id) ? (
+              <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} />
+            ) : (
+              <div
+                className="w-full rounded-2xl p-6 flex flex-col gap-3 shadow-card"
+                style={{ background: "#121419", border: "1px solid #22252D" }}
+              >
+                <h2 className="font-display text-lg font-semibold text-pcs-text">Exchange</h2>
+                <p className="text-sm text-pcs-textDim">
+                  Trading opens as tokens graduate from the launch curve. The Hyde swap
+                  router isn't deployed on Robinhood Chain yet — launched tokens trade
+                  on their launch curve, and graduated pools will be tradeable here.
+                </p>
+                <p className="text-xs text-pcs-textDim">
+                  Pick a token from Trending or Recently Launched to open its full page —
+                  chart, trade, and your position.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Right: prompt + Recently Launched */}
+          <div className="flex-1 min-w-0 flex flex-col gap-4 w-full">
             <div
-              className="w-full rounded-2xl p-6 flex flex-col gap-3 shadow-card"
+              className="w-full h-[260px] rounded-2xl flex items-center justify-center"
               style={{ background: "#121419", border: "1px solid #22252D" }}
             >
-              <h2 className="font-display text-lg font-semibold text-pcs-text">Exchange</h2>
-              <p className="text-sm text-pcs-textDim">
-                Trading opens as tokens graduate from the launch curve. The Hyde swap
-                router isn't deployed on Robinhood Chain yet — launched tokens trade
-                on their launch curve, and graduated pools will be tradeable here.
-              </p>
-              <p className="text-xs text-pcs-textDim">
-                Want in early? Launch or back a token on the{" "}
-                <a href="/launchpad" className="text-pcs-primary hover:underline">Launchpad</a>.
-              </p>
+              <p className="text-xs text-pcs-textDim">Select a token to view its page</p>
             </div>
-          )}
+            <RecentlyLaunched onSelect={(pool) => selectToken(pool.baseToken.address)} />
+          </div>
         </div>
-
-        {/* Right: Chart + Recently Launched */}
-        <div className="flex-1 min-w-0 flex flex-col gap-4 w-full">
-          <TokenChart tokenAddress={chartTokenAddress} explorerUrl={network.explorerUrl} />
-          <RecentlyLaunched onSelect={handleSelect} />
-        </div>
-      </div>
+      )}
     </div>
   );
 }
