@@ -1,0 +1,5 @@
+root: ./docs/
+
+structure:
+  readme: 01-overview.md
+  summary: SUMMARY.md
