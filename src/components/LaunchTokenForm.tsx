@@ -60,6 +60,14 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   const { data: walletClient } = useWalletClient({ chainId });
   const { switchChain } = useSwitchChain();
 
+  // Base pair the launch pairs against (clint 23448). WETH = the standard rail (Doppler on mainnet,
+  // own-stack HydeTokenFactory on testnet). HOODIE = the HOODIE-native launcher-launcher — the creator
+  // mints their own HoodieLauncher and every token is PERMANENTLY paired to $HOODIE. UI-first: the
+  // mechanic is fork-proven but its stack isn't on a live gateway yet, so the HOODIE action is honestly
+  // gated ("live on deploy") — never a present-tense claim it executes today (same §3.3 discipline).
+  const [pair, setPair] = useState<"weth" | "hoodie">("weth");
+  const isHoodie = pair === "hoodie";
+
   const [name,       setName]       = useState("");
   const [symbol,     setSymbol]     = useState("");
   const [imageUrl,   setImageUrl]   = useState("");
@@ -234,18 +242,83 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
       className="w-full max-w-md mx-auto rounded-2xl p-6 flex flex-col gap-5 shadow-card"
       style={{ background: "#121419", border: "1px solid #22252D" }}
     >
+      {/* Pair selector (clint 23448) — the base a launch pairs against. WETH = the standard rail;
+          HOODIE = the HOODIE-native launcher-launcher. Segmented pill, matching the page's tab style. */}
+      <div className="grid grid-cols-2 gap-1 rounded-xl p-1" style={{ background: "#0E1014", border: "1px solid #22252D" }}>
+        {([
+          { key: "weth",   label: "WETH PAIR",   accent: "#54B4F0", tint: "rgba(46,159,230,0.14)" },
+          { key: "hoodie", label: "HOODIE PAIR", accent: "#E0A32E", tint: "rgba(224,163,46,0.14)" },
+        ] as const).map((opt) => {
+          const on = pair === opt.key;
+          return (
+            <button
+              key={opt.key}
+              onClick={() => setPair(opt.key)}
+              className="rounded-lg py-2 text-xs font-semibold tracking-wide transition"
+              style={on
+                ? { background: opt.tint, color: opt.accent, border: `1px solid ${opt.accent}55` }
+                : { background: "transparent", color: "#5B6472", border: "1px solid transparent" }}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Header */}
       <div>
         <h2 className="font-display text-lg font-semibold text-pcs-text">Launch a Token</h2>
         <p className="text-xs text-pcs-textSub mt-1">
-          {isTestnet
-            ? "Launch on Robinhood Testnet — custody-locked liquidity from block 1."
-            : "Price-discovery launch on Robinhood Chain — tradeable from the first block."}
+          {isHoodie
+            ? "Launch through your own HoodieLauncher — permanently paired to $HOODIE."
+            : isTestnet
+              ? "Launch on Robinhood Testnet — custody-locked liquidity from block 1."
+              : "Price-discovery launch on Robinhood Chain — tradeable from the first block."}
         </p>
       </div>
 
-      {/* Terms banner — flips by network (own-stack LIVE on testnet · Doppler rail on mainnet) */}
-      {isTestnet ? (
+      {/* Terms banner — pair-aware (clint 23448) then network-aware. HOODIE pair shows the launcher-
+          launcher terms + a gated "live on deploy" badge; WETH pair keeps the existing network split. */}
+      {isHoodie ? (
+        <>
+          <div
+            className="rounded-xl px-4 py-3 text-xs flex flex-col gap-1.5"
+            style={{ background: "rgba(255,255,255,0.03)", border: "1px solid #22252D" }}
+          >
+            <div className="flex justify-between text-pcs-textDim">
+              <span>Base pair</span>
+              <span className="font-medium" style={{ color: "#E0A32E" }}>$HOODIE — permanent, immutable</span>
+            </div>
+            <div className="flex justify-between text-pcs-textDim">
+              <span>Total supply</span>
+              <span className="text-pcs-text font-medium">1,000,000,000 (100% single-sided-seeded)</span>
+            </div>
+            <div className="flex justify-between text-pcs-textDim">
+              <span>Launch fee</span>
+              <span className="text-pcs-text font-medium">0.0004 ETH flat</span>
+            </div>
+            <div className="flex justify-between text-pcs-textDim">
+              <span>Trading fees</span>
+              <span className="text-pcs-text font-medium">90% creator · 5% Hyde · 5% locked LP</span>
+            </div>
+            <div className="flex justify-between text-pcs-textDim">
+              <span>Your launcher</span>
+              <span className="text-pcs-text font-medium">You deploy your own — 1-tx launches after</span>
+            </div>
+          </div>
+
+          {/* HOODIE stack — fork-proven on real 4663, not on a live gateway yet → future-tense, gated
+              (§3.3). Never a present-tense claim it executes today. */}
+          <div className="rounded-xl px-4 py-3" style={{ background: "rgba(224,163,46,0.06)", border: "1px solid rgba(224,163,46,0.25)" }}>
+            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>COMING · HOODIE LAUNCHER</p>
+            <p className="mt-1 font-mono text-[11px]" style={{ color: "#8A93A2" }}>
+              You mint your own HoodieLauncher once, then every token you launch is permanently paired to
+              $HOODIE — single-sided-seeded, liquidity custody-locked and growing as it earns fees. Goes
+              live when the launcher stack deploys.
+            </p>
+          </div>
+        </>
+      ) : isTestnet ? (
         <>
           <div
             className="rounded-xl px-4 py-3 text-xs flex flex-col gap-1.5"
@@ -502,8 +575,24 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         </div>
       )}
 
-      {/* Action buttons */}
-      {!isConnected ? (
+      {/* Action buttons — HOODIE pair is honestly gated (built + fork-proven, stack not deployed to a
+          live gateway yet); WETH pair keeps the full preview → confirm → launch flow. */}
+      {isHoodie ? (
+        <div className="flex flex-col gap-2">
+          <button
+            disabled
+            aria-disabled
+            className="w-full rounded-xl py-3 text-sm font-semibold cursor-not-allowed"
+            style={{ background: "rgba(224,163,46,0.16)", color: "#E0A32E", border: "1px solid rgba(224,163,46,0.35)" }}
+          >
+            Launch HOODIE-paired — live on deploy
+          </button>
+          <p className="text-center text-[11px] text-pcs-textDim">
+            The HOODIE launcher is built &amp; proven on a real 4663 fork — HOODIE-pair launches turn on
+            when the launcher stack deploys.
+          </p>
+        </div>
+      ) : !isConnected ? (
         <p className="text-center text-sm text-pcs-textDim">Connect wallet to launch</p>
       ) : chainMismatch ? (
         <button
