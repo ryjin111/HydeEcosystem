@@ -281,10 +281,25 @@ contract HydeTokenFactory is ReentrancyGuard {
     /// @notice Permissionless launch. `creator := msg.sender`; single tx, all-or-revert (§3 steps 1–9).
     ///         Charges a flat native-ETH fee via `msg.value` (exactly `launchFeeAmount`) — no approval and
     ///         no faucet, so the whole launch is ONE wallet transaction.
+    /// @dev    Thin public entrypoint over the shared `_launch` core. The salt is composed HERE, identically
+    ///         to the pre-refactor derivation `(caller, symbol, _nonce[caller])`, so the WETH path's clone
+    ///         addresses, `_nonce` accounting, and emitted events are byte-for-byte unchanged. The bounty
+    ///         `HoodieLaunchEngine` reuses `_launch` with its own (launcher, creator)-domained salt.
     function launch(LaunchParams calldata lp) external payable nonReentrant returns (address token, uint256 tokenId) {
+        bytes32 salt = keccak256(abi.encode(msg.sender, lp.symbol, _nonce[msg.sender]++));
+        return _launch(lp, msg.sender, salt);
+    }
+
+    /// @dev Shared launch core (§3 steps 1–9). `creator` is the human attributed in the vault/collector and
+    ///      the `LaunchCreated`/`LaunchFeePaid` events; `salt` is the caller-composed clone salt. Reentrancy
+    ///      is guarded at EACH public entrypoint (`launch` / engine `launchFor`), so the core itself is
+    ///      unguarded internal. Pause + preset bounds are enforced here so BOTH entrypoints honor them.
+    function _launch(LaunchParams calldata lp, address creator, bytes32 salt)
+        internal
+        returns (address token, uint256 tokenId)
+    {
         require(!paused, "PAUSED");
         require(lp.presetId < _presets.length, "BAD_PRESET");
-        address creator = msg.sender;
 
         // 1. flat native-ETH fee → the launch-fee treasury. EXACT amount: no refund path, no excess stuck
         //    in the factory, a single external call (guarded by nonReentrant). INVARIANT: launchFeeTreasury
@@ -292,10 +307,12 @@ contract HydeTokenFactory is ReentrancyGuard {
         require(msg.value == launchFeeAmount, "BAD_FEE");
         (bool feeOk,) = launchFeeTreasury.call{value: launchFeeAmount}("");
         require(feeOk, "FEE_XFER_FAIL");
+        // `payer` = the address ACTUALLY forwarding msg.value: the caller (WETH path = the human;
+        // engine path = the launcher clone). The human `creator` is carried in the engine's own
+        // `HoodieLaunchCreated`, so this event stays semantically true AND byte-identical on the WETH path.
         emit LaunchFeePaid(msg.sender, launchFeeTreasury, launchFeeAmount);
 
-        // 2. deterministic EIP-1167 clone.
-        bytes32 salt = keccak256(abi.encode(msg.sender, lp.symbol, _nonce[msg.sender]++));
+        // 2. deterministic EIP-1167 clone (salt composed by the caller entrypoint).
         token = Clones.cloneDeterministic(IMPL, salt);
 
         // 3. open the vault namespace BEFORE the init mint (the mint's `sync` requires registration; INV-30).
