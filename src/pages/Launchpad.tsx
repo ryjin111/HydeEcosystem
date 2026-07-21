@@ -94,10 +94,18 @@ export function PoolCard({ pool, onTrade, showClaimable = false }: { pool: Doppl
     setTimeout(() => setCopyState("idle"), 1400);
   };
 
+  // Whole card is the trade target (clint 23774: "this entire one is clickable, less hassle").
+  // A11y (kami 23788): the card wrapper is NON-interactive; a single absolute full-card native
+  // <button> overlay (rendered last, below) is the one focus stop — Enter/Space activate it natively,
+  // no nested interactive content. The address-copy control is a SIBLING of that overlay (not nested)
+  // raised above it by z-index, so it stays reliably exposed and copying never navigates. Focus ring
+  // and hover-lift render on the VISIBLE wrapper (focus-within / hover), not the transparent overlay
+  // (shiro 23791). Inline border-color is dropped so the hover:border-* class actually renders.
+  const trade = () => onTrade(bt.address, pool.chainId);
   return (
     <div
-      className="rounded-2xl overflow-hidden flex flex-col border transition hover:border-pcs-primary/40"
-      style={{ background: "#121419", borderColor: "#22252D" }}
+      className="group relative rounded-2xl overflow-hidden flex flex-col border border-[#22252D] transition duration-[120ms] cursor-pointer hover:-translate-y-0.5 hover:border-pcs-primary/40 focus-within:border-pcs-primary/40 focus-within:ring-2 focus-within:ring-pcs-primary/70"
+      style={{ background: "#121419" }}
     >
       {/* Image-forward header — the token image leads the card (pump-style). TokenImage falls back to a
           colored monogram when there's no image or it fails to load; the status pill overlays it. */}
@@ -118,12 +126,14 @@ export function PoolCard({ pool, onTrade, showClaimable = false }: { pool: Doppl
           <p className="text-xs text-pcs-textDim mt-0.5">${bt.symbol}</p>
         </div>
 
-        {/* Contract address — truncated + one-tap copy (clint). Real keyboard-focusable button. */}
+        {/* Contract address — truncated + one-tap copy (clint). Real keyboard-focusable button, a
+            SIBLING of the full-card overlay raised above it (z-20) so clicks/Enter here copy and
+            never reach the overlay — no stopPropagation needed since it's not nested (kami 23788). */}
         <button
           onClick={copyAddr}
           title="Copy contract address"
           aria-label={`Copy contract address ${bt.address}`}
-          className="flex items-center gap-1.5 w-fit rounded-md -mx-1 px-1 text-[11px] font-mono text-pcs-textDim hover:text-pcs-textSub transition focus:outline-none focus-visible:ring-2 focus-visible:ring-pcs-primary/70"
+          className="relative z-20 flex items-center gap-1.5 w-fit rounded-md -mx-1 px-1 text-[11px] font-mono text-pcs-textDim hover:text-pcs-textSub transition focus:outline-none focus-visible:ring-2 focus-visible:ring-pcs-primary/70"
         >
           <span>{bt.address.slice(0, 6)}&hellip;{bt.address.slice(-4)}</span>
           <span
@@ -197,17 +207,27 @@ export function PoolCard({ pool, onTrade, showClaimable = false }: { pool: Doppl
         {/* Footer — chain + age + Trade */}
         <div className="flex items-center justify-between mt-1">
           <span className="text-xs text-pcs-textDim truncate">{chainLabel} · {timeAgo(pool.createdAt)}</span>
-          <button
-            onClick={() => onTrade(bt.address, pool.chainId)}
-            className="text-xs font-semibold px-4 py-2 rounded-lg transition flex-shrink-0"
+          {/* Visual "Trade →" affordance only — the real control is the full-card overlay below;
+              pointer-events-none lets clicks here fall through to it, brightens with the card on hover. */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none text-xs font-semibold px-4 py-2 rounded-lg flex-shrink-0 transition group-hover:brightness-125"
             style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.20)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.12)")}
           >
             Trade →
-          </button>
+          </span>
         </div>
       </div>
+
+      {/* Full-card click target — a single native <button> covering the card, sibling to the copy
+          control (which sits above it via z-index). Native button = Enter/Space + focus for free;
+          the visible focus ring / hover-lift live on the wrapper above (kami 23788, shiro 23791). */}
+      <button
+        type="button"
+        aria-label={`Trade ${bt.name} ($${bt.symbol})`}
+        onClick={trade}
+        className="absolute inset-0 z-10 rounded-2xl outline-none"
+      />
     </div>
   );
 }
