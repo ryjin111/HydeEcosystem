@@ -5,11 +5,14 @@
 //
 // Config (Vercel env):
 //   KV_REST_API_URL + KV_REST_API_TOKEN   → enables the server-side limiter (Upstash-compatible)
+//     (Upstash's own integration names them UPSTASH_REDIS_REST_URL/TOKEN — accepted as aliases, KV_* wins)
 //   PIN_RATE_LIMIT (default 20) · PIN_RATE_WINDOW_SEC (default 3600)
 // The limiter is the ONLY accepted abuse control — there is no env bypass (a flag without a real
-// gate is zero control and would expose the paid Filebase credentials publicly, kami 22283).
+// gate is zero control and would expose the paid pin credentials publicly, kami 22283).
 
-const kvConfigured = () => Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+const kvUrl = () => process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || "";
+const kvToken = () => process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || "";
+const kvConfigured = () => Boolean(kvUrl() && kvToken());
 
 /** True only when the shared KV limiter is configured. The pin endpoint fails CLOSED otherwise. */
 export function abuseControlConfigured() {
@@ -43,12 +46,12 @@ export async function checkRateLimit(ip) {
   const { limit, windowSec } = rateLimitConfig();
   const bucket = Math.floor(Date.now() / 1000 / windowSec);
   const key = `pinrl:${bucket}:${ip || "unknown"}`;
-  const base = process.env.KV_REST_API_URL.replace(/\/+$/, "");
+  const base = kvUrl().replace(/\/+$/, "");
 
   try {
     const res = await fetch(`${base}/pipeline`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${kvToken()}`, "Content-Type": "application/json" },
       body: JSON.stringify([["INCR", key], ["EXPIRE", key, windowSec]]),
     });
     if (!res.ok) return { allowed: false, enforced: true }; // fail closed on store error

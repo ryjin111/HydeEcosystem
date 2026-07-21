@@ -8,6 +8,7 @@ import {
   executeRobinhoodLaunch,
 } from "../utils/dopplerLaunch";
 import { simulateHydeLaunch, executeHydeLaunch, type HydeLaunchStep } from "../utils/hydeLaunch";
+import { simulateHoodieLaunch, executeHoodieLaunch, type HoodieLaunchStep } from "../utils/hoodieLaunch";
 import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import { preCheckImageFile, AVATAR_SIZE } from "../utils/imageValidation";
 import { saveLaunchMeta } from "../utils/launchMeta";
@@ -48,6 +49,13 @@ async function toAvatarBlob(file: File): Promise<Blob> {
 const HYDE_STEP_LABEL: Record<HydeLaunchStep, string> = {
   launch: "Confirm launch in wallet…",
   confirm: "Launching through your factory…",
+};
+
+/** Toast copy for the HOODIE launcher-launcher — the first launch also deploys the creator's launcher. */
+const HOODIE_STEP_LABEL: Record<HoodieLaunchStep, string> = {
+  createLauncher: "Deploy your launcher (one-time)…",
+  launch: "Confirm launch in wallet…",
+  confirm: "Launching through your launcher…",
 };
 
 export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
@@ -108,7 +116,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   // must not survive a wallet switch
   useEffect(() => { setRecipientConfirmed(false); setPreview(null); setPreviewError(null); }, [address]);
   // A preview belongs to exactly one input set — any edit (or network flip) invalidates it
-  useEffect(() => { setPreview(null); setRecipientConfirmed(false); setPreviewError(null); }, [name, symbol, imageUrl, description, chainId]);
+  useEffect(() => { setPreview(null); setRecipientConfirmed(false); setPreviewError(null); }, [name, symbol, imageUrl, description, chainId, pair]);
 
   // Upload-only (v1): the chosen file is pinned to IPFS by our own server gate
   // (/api/pin-image — 2 MB cap + magic-byte raster sniff, browser MIME never trusted),
@@ -164,7 +172,10 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
     const toastId = "hyde-preview";
     try {
       toast.loading(`Simulating launch on ${targetName}…`, { id: toastId });
-      if (usesOwnStack) {
+      if (isHoodie) {
+        const sim = await simulateHoodieLaunch(publicClient as PublicClient, chainId, { name, symbol, creator: address });
+        setPreview({ tokenAddress: sim.tokenAddress });
+      } else if (usesOwnStack) {
         const sim = await simulateHydeLaunch(publicClient as PublicClient, chainId, { name, symbol, creator: address });
         setPreview({ tokenAddress: sim.tokenAddress });
       } else {
@@ -192,7 +203,16 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
     const toastId = "hyde-launch";
     try {
       let result: { tokenAddress: string; transactionHash: string };
-      if (usesOwnStack) {
+      if (isHoodie) {
+        toast.loading(HOODIE_STEP_LABEL.launch, { id: toastId });
+        result = await executeHoodieLaunch(
+          publicClient as PublicClient,
+          walletClient as WalletClient,
+          chainId,
+          { name, symbol, creator: address },
+          (step) => toast.loading(HOODIE_STEP_LABEL[step], { id: toastId }),
+        );
+      } else if (usesOwnStack) {
         toast.loading(HYDE_STEP_LABEL.launch, { id: toastId });
         result = await executeHydeLaunch(
           publicClient as PublicClient,
@@ -306,14 +326,14 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             </div>
           </div>
 
-          {/* HOODIE stack — LIVE on 4663 mainnet (deployed 2026-07-21). The launcher-launcher contracts
-              are live; the IN-APP launch flow is the next update, so the action below stays honestly gated. */}
+          {/* HOODIE stack — LIVE on 4663 mainnet (deployed 2026-07-21). The launcher-launcher contracts are
+              live and the in-app two-step flow (createLauncher → launch) is wired through the buttons below. */}
           <div className="rounded-xl px-4 py-3" style={{ background: "rgba(224,163,46,0.06)", border: "1px solid rgba(224,163,46,0.25)" }}>
-            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>● LIVE ON-CHAIN · HOODIE LAUNCHER</p>
+            <p className="text-[10px] font-semibold tracking-wide" style={{ color: "#E0A32E" }}>● LIVE · HOODIE LAUNCHER</p>
             <p className="mt-1 font-mono text-[11px]" style={{ color: "#8A93A2" }}>
-              You mint your own HoodieLauncher once, then every token you launch is permanently paired to
-              $HOODIE — single-sided-seeded, liquidity custody-locked and growing as it earns fees. The
-              stack is live on mainnet; in-app launching lands in the next update.
+              You mint your own HoodieLauncher once, then every token you launch through it is permanently
+              paired to $HOODIE — single-sided-seeded, liquidity custody-locked and growing as it earns fees.
+              First launch = 2 txs (deploy your launcher + launch); every launch after is a single tx.
             </p>
           </div>
         </>
@@ -543,7 +563,9 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
               <span className="text-pcs-textDim">Launch fee</span>
               <span className="text-pcs-text font-medium">{usesOwnStack ? "0.0004 ETH flat" : "3% → 1% over the first hour"}</span>
             </div>
-            <p className="text-[11px] text-pcs-textDim">{usesOwnStack
+            <p className="text-[11px] text-pcs-textDim">{isHoodie
+              ? "The 0.0004 ETH fee rides in your launch tx (no approval). Your first HOODIE launch also deploys your own launcher — one extra tx."
+              : usesOwnStack
               ? "The 0.0004 ETH fee is paid directly in your launch transaction — one tx, no approval."
               : "High early fee = sniping is unprofitable by design."}</p>
           </div>
@@ -575,24 +597,9 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         </div>
       )}
 
-      {/* Action buttons — HOODIE pair is honestly gated (built + fork-proven, stack not deployed to a
-          live gateway yet); WETH pair keeps the full preview → confirm → launch flow. */}
-      {isHoodie ? (
-        <div className="flex flex-col gap-2">
-          <button
-            disabled
-            aria-disabled
-            className="w-full rounded-xl py-3 text-sm font-semibold cursor-not-allowed"
-            style={{ background: "rgba(224,163,46,0.16)", color: "#E0A32E", border: "1px solid rgba(224,163,46,0.35)" }}
-          >
-            Launch HOODIE-paired — in-app soon
-          </button>
-          <p className="text-center text-[11px] text-pcs-textDim">
-            The HOODIE launcher-launcher is <b className="text-pcs-textSub">live on Robinhood mainnet</b> —
-            in-app launching lands in the next update.
-          </p>
-        </div>
-      ) : !isConnected ? (
+      {/* Action buttons — both pairs run the full preview → confirm → launch flow. HOODIE is a two-step
+          launcher-launcher: the first launch also deploys the creator's own launcher (narrated in the toast). */}
+      {!isConnected ? (
         <p className="text-center text-sm text-pcs-textDim">Connect wallet to launch</p>
       ) : chainMismatch ? (
         <button

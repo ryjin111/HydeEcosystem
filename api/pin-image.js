@@ -1,10 +1,10 @@
 // POST /api/pin-image — the single server-side gate for launch images (kami 22245/22249/22263).
 // Fail-closed abuse control (rate-limit) → raw bytes → 2 MB cap → magic-byte + dimension raster
-// validation (browser MIME never trusted) → pin to Filebase IPFS → { cid, uri: "ipfs://<cid>" }.
-// Fails CLOSED (503) when Filebase creds OR an abuse control are unconfigured. Upstream failure
-// detail is logged server-side only — callers get a generic 502 (no bucket/internal leakage).
+// validation (browser MIME never trusted) → pin to Pinata IPFS → { cid, uri: "ipfs://<cid>" }.
+// Fails CLOSED (503) when the Pinata credential OR an abuse control are unconfigured. Upstream failure
+// detail is logged server-side only — callers get a generic 502 (no key/internal leakage).
 import { validateRaster, contentTypeFor, MAX_IMAGE_BYTES } from "./_imageBytes.js";
-import { isConfigured, pinToFilebase } from "./_filebase.js";
+import { isConfigured, pinToPinata } from "./_pinata.js";
 import { abuseControlConfigured, checkRateLimit, clientIp } from "./_ratelimit.js";
 
 const json = (res, status, body) => {
@@ -63,13 +63,13 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { cid } = await pinToFilebase(body, contentTypeFor(check.kind), check.kind === "jpeg" ? "jpg" : check.kind);
+    const { cid } = await pinToPinata(body, contentTypeFor(check.kind), check.kind === "jpeg" ? "jpg" : check.kind);
     return json(res, 200, { cid, uri: `ipfs://${cid}` });
   } catch (err) {
     if (err?.code === "UNCONFIGURED") {
       return json(res, 503, { error: "Image uploads aren't configured yet.", code: "UNCONFIGURED" });
     }
-    // Diagnostics stay server-side; callers get a generic message (no upstream/bucket leakage).
+    // Diagnostics stay server-side; callers get a generic message (no upstream/key leakage).
     console.error("[pin-image] pin failed:", String(err?.message || err));
     return json(res, 502, { error: "Pinning failed — please try again." });
   }

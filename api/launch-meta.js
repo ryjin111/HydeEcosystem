@@ -29,6 +29,11 @@ const json = (res, status, body) => {
 const LAUNCH_CREATED = parseAbiItem(
   "event LaunchCreated(address indexed token, address indexed creator, bytes32 indexed poolId, uint256 tokenId, uint256 presetId)"
 );
+// HOODIE launcher-launcher tokens emit this from the engine (carrying the HUMAN creator) instead of the
+// WETH factory's LaunchCreated. `token` is indexed, so `args:{token}` filters exactly like the WETH path.
+const HOODIE_LAUNCH_CREATED = parseAbiItem(
+  "event HoodieLaunchCreated(address indexed launcher, address indexed creator, address indexed token, bytes32 poolId, uint256 tokenId)"
+);
 
 const MAX_DESC = 280;
 const MAX_BODY = 16 * 1024;
@@ -69,17 +74,23 @@ function canonicalMessage({ chainId, token, image, description, issuedAt }) {
 
 /** Authoritative creator for a token, read from LaunchCreated on the RPC for THIS chainId, bounded
  *  from the factory deploy block (never fromBlock:0 — kami B-blocker #2 / gojo LOW-1). */
-async function onchainCreator(cfg, token) {
-  const client = createPublicClient({ transport: http(cfg.rpc) });
-  const logs = await client.getLogs({
-    address: cfg.factory,
-    event: LAUNCH_CREATED,
-    args: { token },
-    fromBlock: cfg.deploymentBlock,
-    toBlock: "latest",
+export async function onchainCreator(cfg, token, client = createPublicClient({ transport: http(cfg.rpc) })) {
+  // Primary source: the WETH HydeTokenFactory's LaunchCreated.
+  const wethLogs = await client.getLogs({
+    address: cfg.factory, event: LAUNCH_CREATED, args: { token },
+    fromBlock: cfg.deploymentBlock, toBlock: "latest",
   });
-  if (!logs.length) return null;
-  return getAddress(logs[0].args.creator);
+  if (wethLogs.length) return getAddress(wethLogs[0].args.creator);
+  // Second source (if configured): the HOODIE engine's HoodieLaunchCreated — the human creator, bounded
+  // from the engine's OWN deploy block. The signer==creator check downstream is unchanged (no weakening).
+  if (cfg.hoodieEngine) {
+    const hoodieLogs = await client.getLogs({
+      address: cfg.hoodieEngine, event: HOODIE_LAUNCH_CREATED, args: { token },
+      fromBlock: cfg.hoodieDeploymentBlock, toBlock: "latest",
+    });
+    if (hoodieLogs.length) return getAddress(hoodieLogs[0].args.creator);
+  }
+  return null;
 }
 
 async function readJson(req) {

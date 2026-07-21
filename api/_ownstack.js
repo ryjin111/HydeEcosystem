@@ -10,11 +10,15 @@ export const OWNSTACK = {
     deploymentBlock: 91418522n, // NEW 0.0004-ETH factory creation block (deploy tx 0x0e58fc6f…)
   },
   4663: {
-    rpc: "https://rpc.mainnet.chain.robinhood.com",
+    // Prefer Clint's paid Alchemy endpoint server-side when configured. Never expose this value through
+    // a VITE_ variable; the public Robinhood RPC remains the safe fallback for local/dev deployments.
+    rpc: process.env.ROBINHOOD_RPC_URL || "https://rpc.mainnet.chain.robinhood.com",
     factory: "0x710fEa288266518528A4230771E07ee310ce509f", // mainnet WETH HydeTokenFactory (deployed 2026-07-21)
     deploymentBlock: 15643595n, // WETH factory creation block on 4663
-    // NOTE: HOODIE-paired launches emit `HoodieLaunchCreated` from the engine 0x8062951c…CFCc — if
-    // off-chain metadata is wanted for HOODIE tokens too, add that source to launch-meta.js creator check.
+    // HOODIE launcher-launcher: tokens launched here emit `HoodieLaunchCreated` from the engine (carrying the
+    // HUMAN creator). launch-meta.js checks this as a SECOND creator source, bounded from its deploy block.
+    hoodieEngine: "0x8062951c99CfFA5365f979D5139Cf96b5c77CFCc",
+    hoodieDeploymentBlock: 15652257n, // HOODIE engine creation block on 4663 (kami 23644)
   },
 };
 

@@ -45,6 +45,9 @@ export type V4Contracts = {
   gateway: Address;
   /** HydeTokenFactory address — present only on chains where it's deployed */
   hydeTokenFactory?: Address;
+  /** HOODIE launcher-launcher: the meta-factory (users `createLauncher` here) + the shared engine (reads/events). */
+  hoodieMetaFactory?: Address;
+  hoodieEngine?: Address;
   /** Canonical StateView (read-only V4 pool state) — the chain's read source. */
   stateView?: Address;
 };
@@ -270,6 +273,9 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     // LIVE Hyde own-stack WETH factory on 4663 mainnet (deployed 2026-07-21, kami 23610). Same
     // HydeTokenFactory source/ABI as testnet → the WETH-pair launch + board read our own contracts.
     hydeTokenFactory: "0x710fEa288266518528A4230771E07ee310ce509f" as Address,
+    // LIVE HOODIE launcher-launcher on 4663 mainnet (deployed 2026-07-21, kami 23624).
+    hoodieMetaFactory: "0x101Fe0c0328De00F6F6f928B79d512E899fE2fC0" as Address,
+    hoodieEngine:      "0x8062951c99CfFA5365f979D5139Cf96b5c77CFCc" as Address,
     stateView:       "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b" as Address, // == ROBINHOOD_STATE_VIEW
   },
   // Optimism Mainnet — Uniswap V4 (re-verified by chainverify.mjs 2026-07-20)
@@ -736,6 +742,41 @@ export const hydeTokenFactoryAbi = [
       { name: "poolId",   type: "bytes32", indexed: true },
       { name: "tokenId",  type: "uint256", indexed: false },
       { name: "presetId", type: "uint256", indexed: false },
+    ],
+  },
+] as const;
+
+// HOODIE launcher-launcher (live 4663). Meta-factory mints per-creator launchers; each launcher launches
+// HOODIE-paired tokens through the shared engine (== HydeTokenFactory bound to $HOODIE).
+export const hoodieMetaFactoryAbi = [
+  { type: "function", name: "createLauncher", stateMutability: "nonpayable", inputs: [{ name: "userSalt", type: "bytes32" }], outputs: [{ name: "launcher", type: "address" }] },
+  { type: "function", name: "predictLauncher", stateMutability: "view", inputs: [{ name: "creator", type: "address" }, { name: "userSalt", type: "bytes32" }], outputs: [{ type: "address" }] },
+] as const;
+
+export const hoodieLauncherAbi = [
+  {
+    type: "function", name: "launch", stateMutability: "payable",
+    inputs: [{ name: "name", type: "string" }, { name: "symbol", type: "string" }, { name: "presetId", type: "uint256" }],
+    outputs: [{ name: "token", type: "address" }, { name: "tokenId", type: "uint256" }],
+  },
+] as const;
+
+export const hoodieEngineAbi = [
+  { type: "function", name: "launchFeeAmount", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "paused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+  {
+    type: "function", name: "predictNextFor", stateMutability: "view",
+    inputs: [{ name: "launcher", type: "address" }, { name: "creator", type: "address" }, { name: "symbol", type: "string" }],
+    outputs: [{ type: "address" }],
+  },
+  {
+    type: "event", name: "HoodieLaunchCreated",
+    inputs: [
+      { name: "launcher", type: "address", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "token", type: "address", indexed: true },
+      { name: "poolId", type: "bytes32", indexed: false },
+      { name: "tokenId", type: "uint256", indexed: false },
     ],
   },
 ] as const;

@@ -9,6 +9,7 @@ import {
   validateRaster, imageDimensions, REQUIRED_WIDTH, REQUIRED_HEIGHT,
 } from "../api/_imageBytes.js";
 import { abuseControlConfigured, rateLimitConfig } from "../api/_ratelimit.js";
+import { kvConfigured } from "../api/_kv.js";
 import { preCheckImageFile, ALLOWED_IMAGE_MIME } from "../src/utils/imageValidation.ts";
 
 let pass = 0, fail = 0;
@@ -54,14 +55,22 @@ check("validateRaster: gif rejected (NOT_RASTER)", (r => !r.ok && r.code === "NO
 check("validateRaster: svg rejected (NOT_RASTER)", (r => !r.ok && r.code === "NOT_RASTER")(validateRaster(Buffer.from("<svg/>"))));
 
 // ─── Abuse control: KV limiter ONLY, no env bypass ───────────────────────────
-delete process.env.KV_REST_API_URL; delete process.env.KV_REST_API_TOKEN; delete process.env.PIN_ABUSE_CONTROL;
+const clearKv = () => {
+  delete process.env.KV_REST_API_URL; delete process.env.KV_REST_API_TOKEN;
+  delete process.env.UPSTASH_REDIS_REST_URL; delete process.env.UPSTASH_REDIS_REST_TOKEN;
+};
+clearKv(); delete process.env.PIN_ABUSE_CONTROL;
 check("abuse: unconfigured → false (endpoint fails closed)", abuseControlConfigured() === false);
 process.env.PIN_ABUSE_CONTROL = "external";
 check("abuse: env flag does NOT satisfy (bypass removed)", abuseControlConfigured() === false);
 delete process.env.PIN_ABUSE_CONTROL;
 process.env.KV_REST_API_URL = "https://example.upstash.io"; process.env.KV_REST_API_TOKEN = "tok";
-check("abuse: only KV limiter satisfies the guard", abuseControlConfigured() === true);
-delete process.env.KV_REST_API_URL; delete process.env.KV_REST_API_TOKEN;
+check("abuse: KV_REST_API_* satisfies the guard", abuseControlConfigured() === true && kvConfigured() === true);
+clearKv();
+// alias: Upstash's own UPSTASH_REDIS_REST_* names satisfy the guard too (kami 23715)
+process.env.UPSTASH_REDIS_REST_URL = "https://alias.upstash.io"; process.env.UPSTASH_REDIS_REST_TOKEN = "atok";
+check("abuse: UPSTASH_REDIS_REST_* alias satisfies the guard (limiter + store)", abuseControlConfigured() === true && kvConfigured() === true);
+clearKv();
 
 // ─── Rate config: positive + bounded (window=0/NaN can't defeat it) ──────────
 delete process.env.PIN_RATE_LIMIT; delete process.env.PIN_RATE_WINDOW_SEC;
@@ -96,7 +105,7 @@ check("drift: accept is PNG/JPEG only (no gif/webp/svg)", formSrc.includes('acce
 // ─── Drift guard: server gate matches locked spec ────────────────────────────
 const handlerSrc = readFileSync(new URL("../api/pin-image.js", import.meta.url), "utf8");
 check("drift: handler validateRaster (exact 500×500) before pinning", handlerSrc.includes("validateRaster"));
-check("drift: handler fails closed 503 (Filebase + abuse control)", handlerSrc.includes("isConfigured") && handlerSrc.includes("abuseControlConfigured") && handlerSrc.includes("NO_ABUSE_CONTROL"));
+check("drift: handler fails closed 503 (provider cred + abuse control)", handlerSrc.includes("isConfigured") && handlerSrc.includes("abuseControlConfigured") && handlerSrc.includes("NO_ABUSE_CONTROL"));
 check("drift: handler rate-limits with 429", handlerSrc.includes("checkRateLimit") && handlerSrc.includes("429"));
 check("drift: 502 leaks NO upstream detail (server console only)", !/502,\s*\{[^}]*detail/.test(handlerSrc) && handlerSrc.includes("console.error"));
 
@@ -104,8 +113,9 @@ const rlSrc = readFileSync(new URL("../api/_ratelimit.js", import.meta.url), "ut
 check("drift: rate-limit bypass flag REMOVED", !rlSrc.includes("PIN_ABUSE_CONTROL"));
 check("drift: rate config bounded", rlSrc.includes("boundedInt"));
 
-const fbSrc = readFileSync(new URL("../api/_filebase.js", import.meta.url), "utf8");
-check("drift: filebase never reads/returns upstream body", !fbSrc.includes("res.text()"));
+const pnSrc = readFileSync(new URL("../api/_pinata.js", import.meta.url), "utf8");
+check("drift: pinata adapter never reads/returns upstream body on error", !pnSrc.includes("res.text()"));
+check("drift: pinata pins to a Pinata endpoint + validates the returned CID", pnSrc.includes("pinata.cloud") && pnSrc.includes("CID_RE"));
 
 console.log(`\n${pass}/${pass + fail} checks passed`);
 process.exitCode = fail ? 1 : 0; // natural exit — process.exit() trips a libuv teardown assert on Windows

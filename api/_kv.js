@@ -1,8 +1,10 @@
 // Minimal Vercel KV / Upstash Redis (REST) helpers. Reuses the SAME env the pin-image rate-limiter
 // uses (KV_REST_API_URL + KV_REST_API_TOKEN) — no new provisioning. Underscore-prefixed: not routed.
+// Compat: Upstash's own Vercel integration names the pair UPSTASH_REDIS_REST_URL/TOKEN — accepted as
+// aliases (KV_* takes precedence) so either integration works without remapping (kami 23715).
 
-const base = () => (process.env.KV_REST_API_URL || "").replace(/\/+$/, "");
-const token = () => process.env.KV_REST_API_TOKEN || "";
+const base = () => (process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || "").replace(/\/+$/, "");
+const token = () => process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || "";
 
 /** True only when the shared KV store is configured. Callers fail CLOSED otherwise. */
 export function kvConfigured() {
