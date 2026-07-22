@@ -17,6 +17,7 @@ import {HydeTokenFactory} from "../src/HydeTokenFactory.sol";
 import {IHydeHook} from "../src/interfaces/IHydeHook.sol";
 import {IHydeVault} from "../src/interfaces/IHydeVault.sol";
 import {HydeDeployConfig} from "./DeployHydeStack.s.sol";
+import {WethRedeployPreset} from "./WethRedeployPreset.sol";
 
 /// @notice EIP-3860-safe, OWNER-restricted deploy coordinator (kami 23543 §B). Its OWN creation bytecode is
 ///         tiny — it embeds NO child bytecode; the child initcodes arrive via `deploy()` CALLDATA and are
@@ -126,6 +127,12 @@ contract DeployWethStack4663 is Script, HydeDeployConfig {
     address internal constant OWNER = 0x800557e7882b42ee49594fa2790300A9697a0e4D;
     address internal constant HYDE_TREASURY = 0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3;
     address internal constant LAUNCH_TREASURY = 0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3;
+
+    // WETH-SPECIFIC preset lives in the SINGLE SOURCE OF TRUTH `WethRedeployPreset` (kami 24054): this deploy
+    // and test/WethPresetRegression.t.sol both consume it, so the regression can never validate ticks that
+    // drift from what deploys. It OVERRIDES the shared HydeDeployConfig C0_*/C1_* for the WETH deploy ONLY
+    // (kami 24030 #2) — the shared constants still seed the HOODIE engine (untouched, fine at ~$4k). Full
+    // economics + incident RCA are documented on the library. Deterministic regression: WethPresetRegression.t.sol.
 
     function run() external {
         // ── chain + core-codehash + role/treasury guards (fail loud, pre-broadcast) ──
@@ -247,6 +254,22 @@ contract DeployWethStack4663 is Script, HydeDeployConfig {
         require(f.owner() == OWNER, "F_OWNER");
         require(!f.paused(), "F_PAUSED");
         require(f.presetCount() == 1, "F_PRESETS");
+        // FULL preset manifest (kami 24031 #3): assert the deployed factory holds EXACTLY the WETH economics —
+        // both sort branches' raw ticks match the WETH-specific preset, and each leg's derived liquidity is
+        // non-zero (single-sided seed built). Guards against a silent economics drift in the redeploy.
+        HydeTokenFactory.Preset memory p0 = f.getPreset(0);
+        require(
+            p0.c0.initialTick == WethRedeployPreset.C0_INIT && p0.c0.tickLower == WethRedeployPreset.C0_LOWER
+                && p0.c0.tickUpper == WethRedeployPreset.C0_UPPER,
+            "F_PRESET_C0"
+        );
+        require(
+            p0.c1.initialTick == WethRedeployPreset.C1_INIT && p0.c1.tickLower == WethRedeployPreset.C1_LOWER
+                && p0.c1.tickUpper == WethRedeployPreset.C1_UPPER,
+            "F_PRESET_C1"
+        );
+        require(p0.c0.liquidity == p0.c1.liquidity, "F_PRESET_LIQ_MIRROR");
+        require(p0.c0.liquidity == WethRedeployPreset.EXPECTED_LIQUIDITY, "F_PRESET_LIQ_EXACT"); // exact ⇒ also > 0
 
         HydeFeeVault v = HydeFeeVault(vaultA);
         require(address(v.SETTLEMENT_TOKEN()) == WETH, "V_TOKEN");
@@ -316,12 +339,11 @@ contract DeployWethStack4663 is Script, HydeDeployConfig {
         });
     }
 
+    // WETH deploy consumes the shared-source WETH preset (kami 24030 #2 / 24054) — NOT the HydeDeployConfig
+    // C0_*/C1_*, which remain the HOODIE economics.
     function _presets() internal pure returns (HydeTokenFactory.PresetInput[] memory presets) {
         presets = new HydeTokenFactory.PresetInput[](1);
-        presets[0] = HydeTokenFactory.PresetInput({
-            initialTick0: C0_INIT, tickLower0: C0_LOWER, tickUpper0: C0_UPPER,
-            initialTick1: C1_INIT, tickLower1: C1_LOWER, tickUpper1: C1_UPPER
-        });
+        presets[0] = WethRedeployPreset.preset();
     }
 
     function _child(address coord, uint8 n) internal pure returns (address) {
