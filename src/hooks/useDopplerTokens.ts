@@ -200,6 +200,22 @@ export async function isHydeLaunch(address: `0x${string}`): Promise<boolean> {
   return (await getLaunchImplementation(address)) === `0x${LAUNCH_IMPL}`;
 }
 
+/** AUTHORITATIVE 4663 own-stack membership (kami 23886): the token was minted through OUR WETH factory
+ *  (`LaunchCreated`) or the HOODIE engine (`HoodieLaunchCreated`) — event attribution, NOT a clone-bytecode
+ *  guess. The old `isHydeLaunch` clone check both admitted the $HOODIE base asset and MISSED HOODIE-engine
+ *  launches (e.g. LILHOODIE), showing wrong Profile holdings. This admits engine launches and explicitly
+ *  excludes the $HOODIE / WETH base numeraires. Bounded from each contract's deploy block. */
+export async function isMainnetOwnStackLaunch(address: `0x${string}`): Promise<boolean> {
+  const a = address.toLowerCase();
+  // Base numeraire assets are never a "launch you hold" — exclude fast, before any log query.
+  if (a === MAINNET_HOODIE.toLowerCase() || a === ROBINHOOD_MAINNET.weth.toLowerCase()) return false;
+  const [weth, hoodie] = await Promise.all([
+    client.getLogs({ address: MAINNET_WETH_FACTORY, event: LAUNCH_CREATED, args: { token: address }, fromBlock: MAINNET_WETH_FACTORY_BLOCK, toBlock: "latest" }).catch(() => []),
+    client.getLogs({ address: MAINNET_HOODIE_ENGINE, event: HOODIE_LAUNCH_CREATED, args: { token: address }, fromBlock: MAINNET_HOODIE_ENGINE_BLOCK, toBlock: "latest" }).catch(() => []),
+  ]);
+  return weth.length > 0 || hoodie.length > 0;
+}
+
 /** Single-token read for launches outside the board page. Network-aware: mainnet reads the two live
  *  own-stack launch sources; testnet reads its own factory. Fails to null (honest not-found). */
 export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN_ID): { pool: DopplerPool | null; loading: boolean } {

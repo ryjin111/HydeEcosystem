@@ -6,9 +6,18 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAccount } from "wagmi";
-import { isHydeLaunch } from "../hooks/useDopplerTokens";
+import { isMainnetOwnStackLaunch } from "../hooks/useDopplerTokens";
 import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
+import { ROBINHOOD_MAINNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import { Card, Button, Stat, VerifiedBadge, SectionLabel } from "../components/ui/kit";
+
+// Base numeraire assets are pool pairs, never "a launch you hold" — excluded from Hyde holdings so
+// launching LILHOODIE never surfaces $HOODIE as a holding (kami 23886).
+const BASE_ASSETS = new Set(
+  [ROBINHOOD_MAINNET.weth, V4_CONTRACTS_BY_CHAIN[ROBINHOOD_MAINNET.id]?.hoodieNumeraire]
+    .filter(Boolean)
+    .map((a) => (a as string).toLowerCase()),
+);
 
 const EXPLORER = "https://robinhoodchain.blockscout.com";
 const short = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
@@ -40,8 +49,10 @@ function useHydeHoldings(address?: string): { holdings: Holding[]; loading: bool
             name: i.token?.name ?? "Token", symbol: i.token?.symbol ?? "?",
             value: i.value ?? "0", decimals: Number(i.token?.decimals ?? 18),
           }))
-          .filter((h: Holding) => /^0x[0-9a-fA-F]{40}$/.test(h.address));
-        const isHyde = await Promise.all(items.map((h) => isHydeLaunch(h.address as `0x${string}`).catch(() => false)));
+          .filter((h: Holding) => /^0x[0-9a-fA-F]{40}$/.test(h.address) && !BASE_ASSETS.has(h.address));
+        // Authoritative own-stack attribution (LaunchCreated / HoodieLaunchCreated) — admits HOODIE-engine
+        // launches (LILHOODIE) the old clone-bytecode check missed, never the base assets (kami 23886).
+        const isHyde = await Promise.all(items.map((h) => isMainnetOwnStackLaunch(h.address as `0x${string}`).catch(() => false)));
         const hyde = items.filter((_, i) => isHyde[i]);
         if (!cancelled) setHoldings(hyde);
       })
