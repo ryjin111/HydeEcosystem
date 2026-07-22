@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { formatEther } from "viem";
@@ -10,7 +10,7 @@ import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import { hydeVaultAbi, MAINNET_HOODIE_FEE_VAULT, MAINNET_WETH_FEE_VAULT, ROBINHOOD_TESTNET_VAULT } from "../utils/constants";
 import { isClaimConfirmed, type ReplacedReason } from "../utils/txStatus";
-import { readFeeState, runHarvest, feeDisplayState, type FeeState, type HarvestStep, type StepStatus } from "../utils/hoodieFees";
+import { readFeeState, runHarvest, feeDisplayState, nextHarvestStep, type FeeState, type HarvestStep, type StepStatus } from "../utils/hoodieFees";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 const RH_TESTNET_CHAIN_ID = 46630;
@@ -173,17 +173,16 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
   // never fires it (kami 23913). LT-leg swap-settle is a follow-up (rawLT ~0 today).
   const isHoodieFeePair = showClaimable && pool.chainId === ROBINHOOD_CHAIN_ID && pool.quoteToken?.symbol === "HOODIE";
   const [feeState, setFeeState] = useState<FeeState | null>(null);
+  const [feeError, setFeeError] = useState(false); // read failed → "Unavailable", NEVER fail-open to 0 (kami #3)
   const [harvesting, setHarvesting] = useState(false);
   const [harvestFailed, setHarvestFailed] = useState(false);
   const [steps, setSteps] = useState<Record<HarvestStep, StepStatus | "idle">>({ collect: "idle", settle: "idle", claim: "idle" });
-  useEffect(() => {
-    if (!isHoodieFeePair || !publicClient) { setFeeState(null); return; }
-    let off = false;
-    readFeeState({ client: publicClient, token: bt.address as `0x${string}`, chainId: pool.chainId })
-      .then((s) => { if (!off) setFeeState(s); })
-      .catch(() => { if (!off) setFeeState(null); });
-    return () => { off = true; };
-  }, [isHoodieFeePair, publicClient, bt.address, pool.chainId, claimed]);
+  const refreshFees = useCallback(async () => {
+    if (!isHoodieFeePair || !publicClient) { setFeeState(null); setFeeError(false); return; }
+    try { setFeeState(await readFeeState({ client: publicClient, token: bt.address as `0x${string}`, chainId: pool.chainId })); setFeeError(false); }
+    catch { setFeeState(null); setFeeError(true); } // any failed sub-call → Unavailable
+  }, [isHoodieFeePair, publicClient, bt.address, pool.chainId]);
+  useEffect(() => { let off = false; if (!off) void refreshFees(); return () => { off = true; }; }, [refreshFees, claimed]);
 
   const startHarvest = async () => {
     if (!walletClient || !publicClient || !wallet) return;
@@ -191,27 +190,41 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
     setSteps({ collect: "idle", settle: "idle", claim: "idle" });
     try {
       toast.loading("Harvesting fees…", { id: "harvest" });
-      const delivered = await runHarvest({
+      const { claimed: didClaim, ltPending } = await runHarvest({
         publicClient, walletClient, token: bt.address as `0x${string}`, wallet, chainId: pool.chainId,
         onStep: (step, status) => setSteps((s) => ({ ...s, [step]: status })),
       });
-      toast.success(delivered ? "Fees claimed" : "Already harvested", { id: "harvest" });
+      if (didClaim && ltPending) toast.success("Numeraire fees claimed · token-side fees still settling", { id: "harvest" });
+      else if (didClaim) toast.success("Fees claimed", { id: "harvest" });
+      else if (ltPending) toast("Token-side fees still settling", { id: "harvest" });
+      else toast.success("Already harvested", { id: "harvest" });
       onClaimed?.();
-      const s = await readFeeState({ client: publicClient, token: bt.address as `0x${string}`, chainId: pool.chainId }).catch(() => null);
-      setFeeState(s);
+      await refreshFees();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
-      if (/reject|denied|cancelled/i.test(msg)) toast.error("Harvest cancelled", { id: "harvest" });
-      else if (/settle_dev|price/i.test(msg)) toast.error("Settlement temporarily unavailable · price unstable", { id: "harvest" });
-      else toast.error("Harvest didn't complete — you can Resume", { id: "harvest" });
-      setHarvestFailed(true); // steps already landed persist on-chain; Resume continues from the first not-done
+      if (/reject|denied|cancelled/i.test(msg)) toast.error("Harvest cancelled — you can Resume", { id: "harvest" });
+      else if (/price unstable|slippage|settle_dev|floor/i.test(msg)) toast.error("Settlement temporarily unavailable · price unstable", { id: "harvest" });
+      else toast.error(msg && msg.length > 0 && msg.length < 56 ? msg : "Harvest didn't complete — you can Resume", { id: "harvest" });
+      setHarvestFailed(true);
+      onClaimed?.();
+      await refreshFees(); // truth-driven refetch (kami #2): collapses to Claim X / lt-pending / none per fresh state
     } finally { setHarvesting(false); }
   };
 
   // Fee affordance — fresh feeState preferred over the (possibly stale) feed; optimistic `claimed` zeroes it.
-  const effClaimable: bigint | null = claimed ? 0n : feeState ? feeState.claimable : pool.creatorClaimable == null ? null : claimable;
-  const pendingHoodie = isHoodieFeePair ? feeState?.pendingHoodie ?? 0n : 0n;
-  const feeDisp = feeDisplayState(effClaimable, pendingHoodie);
+  // For HOODIE pairs a failed read is `null` → "Unavailable" (never fail-open to the feed's 0 — kami #3).
+  const feeLoading = isHoodieFeePair && !feeState && !feeError && !claimed;
+  const effClaimable: bigint | null = claimed
+    ? 0n
+    : isHoodieFeePair
+      ? feeError ? null : feeState?.claimable ?? 0n
+      : pool.creatorClaimable == null ? null : claimable;
+  const pendingHoodie = isHoodieFeePair && feeState ? feeState.pendingHoodie : 0n;
+  const rawLTPending = isHoodieFeePair && feeState ? feeState.rawLT : 0n;
+  const feeDisp = feeDisplayState(effClaimable, pendingHoodie, rawLTPending);
+  // Resume label follows the actual first not-done step, not a hardcoded string (kami #2).
+  const firstUndone = nextHarvestStep(steps);
+  const resumeLabel = firstUndone === "collect" ? "Resume — Collect" : firstUndone === "claim" ? "Resume — Claim" : "Resume — Settle & Claim";
 
   // Whole card is the trade target (clint 23774: "this entire one is clickable, less hassle").
   // A11y (kami 23788): the card wrapper is NON-interactive; a single absolute full-card native
@@ -299,25 +312,30 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
           >
             <div className="flex items-center justify-between">
               <span className="text-[10px] uppercase tracking-wide text-pcs-textDim">
-                {feeDisp === "awaiting" ? "Fees awaiting settlement" : "Claimable fees"}
+                {feeDisp === "awaiting" ? "Fees awaiting settlement" : feeDisp === "lt-pending" ? "Token-side fees" : "Claimable fees"}
               </span>
               <span
                 className="text-sm font-semibold tabular-nums"
                 style={{ color: feeDisp === "claim" || feeDisp === "awaiting" ? "#34C77B" : "#7A828E" }}
               >
                 {/* claim = settled amount · awaiting = real collect-sim pending (~X, never "you earned
-                    nothing" for real fees — shiro 23890/gojo 23899) · none = settled-zero · unavailable = null read. */}
-                {feeDisp === "unavailable"
-                  ? "Unavailable"
-                  : feeDisp === "claim"
-                    ? fmtClaimable((effClaimable ?? 0n).toString(), claimUnit)
-                    : feeDisp === "awaiting"
-                      ? `~${fmtHoodieAmt(pendingHoodie)} HOODIE`
-                      : "No settled fees yet"}
+                    nothing" — shiro 23890/gojo 23899) · lt-pending = token-side fees exist, LT settle is a
+                    follow-up (not "none") · none = settled-zero · unavailable = a failed read (never 0). */}
+                {feeLoading
+                  ? "Checking…"
+                  : feeDisp === "unavailable"
+                    ? "Unavailable"
+                    : feeDisp === "claim"
+                      ? fmtClaimable((effClaimable ?? 0n).toString(), claimUnit)
+                      : feeDisp === "awaiting"
+                        ? `~${fmtHoodieAmt(pendingHoodie)} HOODIE`
+                        : feeDisp === "lt-pending"
+                          ? "Settling"
+                          : "No settled fees yet"}
               </span>
             </div>
 
-            {feeDisp === "claim" && (
+            {!feeLoading && feeDisp === "claim" && (
               <button
                 type="button"
                 data-testid="claim-fees"
@@ -330,7 +348,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
               </button>
             )}
 
-            {feeDisp === "awaiting" && (
+            {!feeLoading && feeDisp === "awaiting" && (
               <div className="space-y-1.5">
                 {(harvesting || harvestFailed) && (
                   <div className="flex items-center justify-center gap-1.5 text-[10px] font-medium" data-testid="harvest-steps">
@@ -351,13 +369,20 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
                     className="relative z-20 w-full rounded-lg py-1.5 text-xs font-bold text-pcs-bg transition disabled:opacity-50"
                     style={{ background: "#34C77B" }}
                   >
-                    {harvestFailed ? "Resume — Settle & Claim" : "Collect & Claim"}
+                    {harvestFailed ? resumeLabel : "Collect & Claim"}
                   </button>
                 )}
                 {harvesting && (
                   <p className="text-center text-[10px] text-pcs-textDim">Confirm each step in your wallet…</p>
                 )}
               </div>
+            )}
+
+            {/* Token-side (LT) fees exist but the oracle-gated LT settle is a follow-up — honest, not "none". */}
+            {!feeLoading && feeDisp === "lt-pending" && (
+              <p className="text-[10px] leading-relaxed text-pcs-textDim">
+                Token-side trading fees are accruing and will be claimable once LT settlement ships.
+              </p>
             )}
           </div>
         )}

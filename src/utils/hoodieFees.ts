@@ -28,15 +28,18 @@ export function hoodieFeeContracts(chainId: number): { vault: Address; collector
 export const creatorShare = (raw: bigint): bigint => (raw * HYDE_CREATOR_BPS) / HYDE_NET_BPS;
 
 /** Which fee affordance a card shows — a pure, deterministic decision (kami's state test):
- *  - `claim`     : creatorClaimable > 0 → settled, ready → "Claim X" (safe, drain-guarded).
- *  - `awaiting`  : nothing settled but pending > 0 → "Fees awaiting settlement · ~X" + Collect & Claim.
- *  - `none`      : nothing settled and nothing pending → "No settled fees yet".
+ *  - `claim`      : creatorClaimable > 0 → settled, ready → "Claim X" (safe, drain-guarded).
+ *  - `awaiting`   : nothing settled but numeraire pending > 0 → "Fees awaiting settlement · ~X" + harvest.
+ *  - `lt-pending` : only token-side (LT) fees remain → "Token-side fees pending" (LT settle is a follow-up;
+ *                   NOT harvestable in v1, and NOT "nothing" — kami 23916 #4).
+ *  - `none`       : nothing settled and nothing pending → "No settled fees yet".
  *  - `unavailable`: the fee read failed (null) → honest "Unavailable", never "you earned nothing". */
-export type FeeDisplay = "claim" | "awaiting" | "none" | "unavailable";
-export function feeDisplayState(claimable: bigint | null, pendingHoodie: bigint | null): FeeDisplay {
+export type FeeDisplay = "claim" | "awaiting" | "lt-pending" | "none" | "unavailable";
+export function feeDisplayState(claimable: bigint | null, pendingHoodie: bigint | null, rawLT: bigint | null = 0n): FeeDisplay {
   if (claimable == null) return "unavailable";
   if (claimable > 0n) return "claim";
   if ((pendingHoodie ?? 0n) > 0n) return "awaiting";
+  if ((rawLT ?? 0n) > 0n) return "lt-pending";
   return "none";
 }
 
@@ -48,6 +51,42 @@ export type FeeState = {
 };
 
 const readCall = (to: Address, data: Hex, from: Address) => ({ from, to, data });
+
+// Step calldata (shared by the sim gate, the per-step preflight, and the broadcast — one source, no drift).
+const collectData = (token: Address): Hex => encodeFunctionData({ abi: hydeCollectorAbi, functionName: "collect", args: [token] });
+const settleData = (token: Address, asset: Address, amountIn: bigint, minOut: bigint, deadline: bigint): Hex =>
+  encodeFunctionData({ abi: hydeVaultAbi, functionName: "settle", args: [token, asset, amountIn, minOut, deadline] });
+const claimData = (token: Address): Hex => encodeFunctionData({ abi: hydeVaultAbi, functionName: "claimCreator", args: [token] });
+
+/** Classify a settle/collect/claim revert into an honest user reason (gojo 23904/23907). */
+function revertReason(raw: string): string {
+  if (/settle_dev|deviation/i.test(raw)) return "price unstable — try again shortly";
+  if (/slippage_floor/i.test(raw)) return "price moved — try again";
+  if (/over_raw/i.test(raw)) return "fees changed — refresh and retry";
+  if (/nothing/i.test(raw)) return "nothing to harvest";
+  if (/oracle_not_ready/i.test(raw)) return "settlement warming up — try shortly";
+  return "harvest simulation failed";
+}
+
+/** INITIAL full-flow gate (kami 23916 #1): one eth_simulateV1 bundle of the planned collect→settle→claim
+ *  on the CONFIGURED public RPC — fail fast BEFORE any wallet tx, with an honest reason. `readFeeState`
+ *  throws (→ Unavailable) if the fee reads fail; a red step here returns ok:false + reason (no broadcast). */
+export async function simulateHarvestFlow(args: { client: PublicClient; token: Address; wallet: Address; chainId: number }): Promise<{ ok: boolean; reason?: string }> {
+  const { vault, collector, numeraire } = hoodieFeeContracts(args.chainId);
+  const fs = await readFeeState({ client: args.client, token: args.token, chainId: args.chainId, from: args.wallet });
+  const dl = BigInt(Math.floor(Date.now() / 1000) + 600);
+  const calls = [readCall(collector, collectData(args.token), args.wallet)];
+  if (fs.rawNumeraire > 0n) calls.push(readCall(vault, settleData(args.token, numeraire, fs.rawNumeraire, 0n, dl), args.wallet));
+  calls.push(readCall(vault, claimData(args.token), args.wallet));
+  const res = await args.client.request({
+    method: "eth_simulateV1" as never,
+    params: [{ blockStateCalls: [{ calls }], validation: false }, "latest"] as never,
+  }) as never as { calls: { status: string; returnData: Hex; error?: { message?: string } }[] }[];
+  const cc = res?.[0]?.calls ?? [];
+  const bad = cc.findIndex((x) => x.status !== "0x1");
+  if (bad === -1) return { ok: true };
+  return { ok: false, reason: revertReason((cc[bad].error?.message ?? cc[bad].returnData ?? "").toString()) };
+}
 
 /** One eth_simulateV1 bundle on the CONFIGURED public RPC: [collect] then read rawFees(num/LT) +
  *  creatorClaimable — so the pending figure reflects everything a collect would surface, without a tx
@@ -71,9 +110,13 @@ export async function readFeeState(args: { client: PublicClient; token: Address;
   }) as never as { calls: { status: string; returnData: Hex }[] }[];
   const c = res?.[0]?.calls;
   if (!c || c.length < 4) throw new Error("fee sim unavailable");
-  const rawNumeraire = c[1].status === "0x1" ? BigInt(c[1].returnData || "0x0") : 0n;
-  const rawLT = c[2].status === "0x1" ? BigInt(c[2].returnData || "0x0") : 0n;
-  const claimable = c[3].status === "0x1" ? BigInt(c[3].returnData || "0x0") : 0n;
+  // ANY failed sub-call — collect (calls[0]) included — makes the whole state UNAVAILABLE. Never coerce a
+  // failed read to 0 (kami/gojo 23916/23928 #3): a false 0 recreates the "No settled fees yet"
+  // false-negative on real fees. The caller shows "Unavailable", never "you earned nothing".
+  if (c.some((x) => x.status !== "0x1")) throw new Error("fee read reverted");
+  const rawNumeraire = BigInt(c[1].returnData || "0x0");
+  const rawLT = BigInt(c[2].returnData || "0x0");
+  const claimable = BigInt(c[3].returnData || "0x0");
   return { claimable, rawNumeraire, rawLT, pendingHoodie: creatorShare(rawNumeraire) };
 }
 
@@ -93,6 +136,12 @@ export type HarvestStep = "collect" | "settle" | "claim";
 export type StepStatus = "confirming" | "done" | "skipped" | "failed";
 type StepCb = (step: HarvestStep, status: StepStatus, detail?: string) => void;
 
+/** The step a Resume should continue at = the first not-done/not-skipped step (null when all done). Drives a
+ *  truthful "Resume — <step>" label instead of a hardcoded one (kami 23916 #2). Pure, deterministically tested. */
+export function nextHarvestStep(steps: Record<HarvestStep, StepStatus | "idle">): HarvestStep | null {
+  return (["collect", "settle", "claim"] as HarvestStep[]).find((s) => steps[s] !== "done" && steps[s] !== "skipped") ?? null;
+}
+
 async function send(walletClient: WalletClient, publicClient: PublicClient, to: Address, data: Hex, account: Address): Promise<void> {
   const hash = await walletClient.sendTransaction({ to, data, account, chain: walletClient.chain, value: 0n });
   // Same receipt trap as the claim (kami 23902/23908): viem resolves reverted AND replacement receipts —
@@ -102,49 +151,58 @@ async function send(walletClient: WalletClient, publicClient: PublicClient, to: 
   if (!isClaimConfirmed(receipt.status, replaced)) throw new Error(replaced === "cancelled" ? "CANCELLED" : "REVERTED");
 }
 
+export type HarvestResult = { claimed: boolean; ltPending: boolean };
+
 /**
- * Run the harvest. Each step RE-READS fresh chain state first and SKIPS if already advanced (permissionless
- * collapse), so a re-click cleanly resumes from the first not-done step — never re-collects, never sends a
- * reverting tx. v1: numeraire leg only (ungated); the LT leg is reported via `onStep('settle','skipped',
- * 'lt-pending')` when rawLT>0 so the UI can flag it. Returns true if anything was delivered/claimed.
+ * Run the harvest. An INITIAL full-flow sim gates the whole thing (fail fast, honest reason, no tx). Each
+ * step then RE-READS fresh state, SIMULATES the exact call right before broadcasting (kami 23916 #1 — a red
+ * sim aborts with no tx), and SKIPS if already advanced (permissionless collapse → clean resume). A step's
+ * failure marks THAT step `failed` and rethrows, so the UI resumes at the right place (kami #2). Returns
+ * whether a claim landed and whether token-side (LT) fees remain (kami #4).
  */
 export async function runHarvest(args: {
   publicClient: PublicClient; walletClient: WalletClient; token: Address; wallet: Address; chainId: number; onStep: StepCb;
-}): Promise<boolean> {
+}): Promise<HarvestResult> {
   const { vault, collector, numeraire } = hoodieFeeContracts(args.chainId);
   const { publicClient: pc, walletClient: wc, token, wallet, onStep } = args;
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
 
-  // 1. Collect — only if a sim shows in-position fees beyond what's already collected.
+  // Initial full-flow gate — fail fast before any wallet tx (kami #1).
+  const pre = await simulateHarvestFlow({ client: pc, token, wallet, chainId: args.chainId });
+  if (!pre.ok) throw new Error(pre.reason ?? "harvest simulation failed");
+
+  // Preflight the EXACT call (eth_call, no state change) then broadcast; a red sim aborts with no tx, and
+  // any error marks THIS step `failed` before rethrowing so the stepper shows the truth (kami #1/#2).
+  const doStep = async (name: HarvestStep, to: Address, data: Hex) => {
+    onStep(name, "confirming");
+    try {
+      await pc.call({ account: wallet, to, data }); // reverts throw → no broadcast
+      await send(wc, pc, to, data, wallet);
+      onStep(name, "done");
+    } catch (e) {
+      onStep(name, "failed");
+      throw e;
+    }
+  };
+
+  // 1. Collect — only if there are uncollected in-position fees (else skip; never a redundant tx).
   const rawNumBefore = await readRaw(pc, token, numeraire, args.chainId);
-  const projected = await readFeeState({ client: pc, token, chainId: args.chainId, from: wallet }).then((s) => s.rawNumeraire).catch(() => rawNumBefore);
-  if (projected > rawNumBefore) {
-    onStep("collect", "confirming");
-    await send(wc, pc, collector, encodeFunctionData({ abi: hydeCollectorAbi, functionName: "collect", args: [token] }), wallet);
-    onStep("collect", "done");
-  } else {
-    onStep("collect", "skipped");
-  }
+  const projected = (await readFeeState({ client: pc, token, chainId: args.chainId, from: wallet })).rawNumeraire; // throws → Unavailable
+  if (projected > rawNumBefore) await doStep("collect", collector, collectData(token));
+  else onStep("collect", "skipped");
 
-  // 2. Settle the numeraire leg with a FRESH amountIn (gojo 23907 — avoids OVER_RAW). LT leg flagged only.
+  // 2. Settle the numeraire leg with a FRESH amountIn (gojo 23907 — avoids OVER_RAW).
   const freshRawNum = await readRaw(pc, token, numeraire, args.chainId);
-  if (freshRawNum > 0n) {
-    onStep("settle", "confirming");
-    await send(wc, pc, vault, encodeFunctionData({ abi: hydeVaultAbi, functionName: "settle", args: [token, numeraire, freshRawNum, 0n, deadline] }), wallet);
-    onStep("settle", "done");
-  } else {
-    const rawLt = await readRaw(pc, token, token, args.chainId).catch(() => 0n);
-    onStep("settle", "skipped", rawLt > 0n ? "lt-pending" : undefined);
-  }
+  if (freshRawNum > 0n) await doStep("settle", vault, settleData(token, numeraire, freshRawNum, 0n, deadline));
+  else onStep("settle", "skipped");
 
-  // 3. Claim — fresh read; skip if nothing settled (someone may have claimed in a race).
+  // 3. Claim — fresh read; skip if nothing settled (a race may have claimed already).
   const claimable = await readClaimable(pc, token, args.chainId);
-  if (claimable > 0n) {
-    onStep("claim", "confirming");
-    await send(wc, pc, vault, encodeFunctionData({ abi: hydeVaultAbi, functionName: "claimCreator", args: [token] }), wallet);
-    onStep("claim", "done");
-    return true;
-  }
-  onStep("claim", "skipped");
-  return false;
+  let claimed = false;
+  if (claimable > 0n) { await doStep("claim", vault, claimData(token)); claimed = true; }
+  else onStep("claim", "skipped");
+
+  // Token-side (LT) fees left over → not fully harvested; the UI surfaces an LT-pending state (kami #4).
+  const ltPending = (await readRaw(pc, token, token, args.chainId).catch(() => 0n)) > 0n;
+  return { claimed, ltPending };
 }
