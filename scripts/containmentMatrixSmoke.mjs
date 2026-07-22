@@ -48,8 +48,21 @@ try {
   await page.waitForTimeout(800);
   const lbody = await page.locator("body").innerText();
   /new launches are paused/i.test(lbody) ? ok("Launch form shows paused copy") : bad("launch paused copy", "missing");
-  const launchBtn = await enabledText('button');
-  (!launchBtn || !/preview launch|launch token|launch hoodie/i.test(launchBtn)) ? ok("no enabled Preview/Launch button") : bad("no launch button", `enabled: "${launchBtn}"`);
+  // Iterate EVERY enabled button — fail if ANY launch/preview action is enabled (kami 24000: first-only was unsafe).
+  let enabledLaunch = null;
+  for (const b of await page.$$("button")) {
+    if (await b.isDisabled().catch(() => false)) continue;
+    const t = (await b.innerText().catch(() => "")).trim();
+    if (/preview launch|launch token|launch hoodie/i.test(t)) { enabledLaunch = t; break; }
+  }
+  !enabledLaunch ? ok("no enabled Preview/Launch button (ALL enabled buttons checked)") : bad("no launch button", `enabled: "${enabledLaunch}"`);
+
+  // ── Bare /swap discovery view: pause notice, NO "trades live / trade" encouragement (kami 24000) ──
+  await page.goto(`${BASE}/swap`, { waitUntil: "networkidle", timeout: 45000 });
+  await page.waitForTimeout(600);
+  const sbody = await page.locator("body").innerText();
+  sbody.includes(NO_SELL) ? ok("bare /swap shows the pause notice") : bad("bare /swap pause notice", "missing");
+  !/every launch trades\s+live|chart, trade/i.test(sbody) ? ok("bare /swap has no stale 'trades live/trade' copy") : bad("stale trade copy gone", "present");
 } finally { await browser.close(); }
 console.log(`\ncontainmentMatrix: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -166,6 +166,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   const formValid = !!name.trim() && !!symbol.trim();
 
   const handlePreview = async () => {
+    if (CONTAINMENT.active) return; // fail-closed: never launch onto the mispriced preset (kami 24000)
     if (!address || !publicClient || !formValid) return;
     setPreviewing(true);
     setPreviewError(null);
@@ -196,6 +197,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   };
 
   const handleLaunch = async () => {
+    if (CONTAINMENT.active) return; // fail-closed: no launch tx while paused (kami 24000)
     if (!address || !publicClient || !walletClient || !preview) return;
     setSubmitting(true);
     setMetaState("idle");
@@ -595,7 +597,8 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
       {/* Action buttons — both pairs run the full preview → confirm → launch flow, a single launch tx each
           (HOODIE routes through the shared launcher; WETH through the factory). */}
       {CONTAINMENT.active ? (
-        // Launches paused — every new pool inherits the mispriced 1:1 seed until the factory is redeployed (kami 23986).
+        // Launches paused — every new pool inherits the mispriced numeraire-agnostic preset (fixed seed tick
+        // + misaligned wide range that early buys walk to ~1:1) until the factory is redeployed (kami 23986 / gojo 23992).
         <div className="rounded-xl px-3 py-3 text-center text-sm leading-relaxed" style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.28)", color: "#E0A32E" }}>
           {CONTAINMENT.launch}
         </div>

@@ -168,6 +168,7 @@ export function HoodieSwapCard({ network, token }: Props) {
   );
 
   const doApprove = async () => {
+    if (buyPaused) return; // fail-closed: no buy-side approval while paused (kami 24000); sell approval allowed
     if (!walletClient || !address) return;
     try {
       setApproving(true);
@@ -186,6 +187,7 @@ export function HoodieSwapCard({ network, token }: Props) {
   };
 
   const doSwap = useCallback(async () => {
+    if (CONTAINMENT.active && isBuy) return; // fail-closed: no BUY execute while paused (kami 24000); SELL allowed
     if (!walletClient || !publicClient || !address || simOut === null) return;
     const toastId = "hoodie-swap";
     try {

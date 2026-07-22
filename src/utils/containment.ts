@@ -1,8 +1,11 @@
-// EMERGENCY CONTAINMENT (clint 23979-23980 / kami 23986). The deployed HydeTokenFactory + HOODIE engine
-// seed EVERY pool at a 1:1 numeraire:token starting price — an IMMUTABLE constructor preset with
-// initialTick ≈ 0 (HydeTokenFactory.sol: launch → POOL_MANAGER.initialize(getSqrtPriceAtTick(initialTick));
-// `_presets` is constructor-only). Confirmed on-chain: WETH pool tick −1, HOODIE pool tick 2. Result: fresh
-// 1B-supply tokens start at ~1× the numeraire price (e.g. HYDE = 1 WETH ≈ $1,918 → $1.9T "FDV").
+// EMERGENCY CONTAINMENT (clint 23979-23980 / kami 23986; RCA per gojo 23992). The deployed
+// HydeTokenFactory + HOODIE engine seed every pool from an IMMUTABLE, NUMERAIRE-AGNOSTIC preset (fixed
+// constructor `_presets[]`, `HydeTokenFactory.sol:341`): the SAME fixed seed tick (~±60000 ≈ 0.00248
+// quote/token) + a misaligned WIDE liquidity range, applied regardless of numeraire. A fixed
+// quote-denominated seed = a fixed numeraire price, and the range is so wide a few buys walked it up to the
+// ~1:1 wall (observed pool ticks WETH −1 / HOODIE 2 → HYDE = 1 WETH ≈ $1,918 → $1.9T FDV). Structurally
+// identical for HOODIE, just cheap. Not repairable in place — needs a factory redeploy with numeraire-aware
+// presets + a tighter range (separate, Clint-owned).
 //
 // Until the factory/engine are REDEPLOYED with corrected preset ticks and pools re-seeded, production must:
 //  • NOT create new pools (launch) — every new launch inherits the 1:1 seed.
