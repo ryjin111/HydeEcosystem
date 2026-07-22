@@ -9,6 +9,7 @@ import { LaunchTokenForm } from "../components/LaunchTokenForm";
 import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import { hydeVaultAbi, MAINNET_HOODIE_FEE_VAULT, MAINNET_WETH_FEE_VAULT, ROBINHOOD_TESTNET_VAULT } from "../utils/constants";
+import { isClaimConfirmed, type ReplacedReason } from "../utils/txStatus";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 const RH_TESTNET_CHAIN_ID = 46630;
@@ -137,20 +138,23 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
         address: vault, abi: hydeVaultAbi, functionName: "claimCreator",
         args: [bt.address as `0x${string}`], account: wallet, chain: walletClient.chain,
       });
-      // viem RESOLVES a reverted receipt (doesn't throw), so a mined-but-reverted claim — e.g. the
-      // post-preflight race where another caller claims first — must be checked explicitly, or we'd
-      // false-toast success + lock the button (kami 23902). Only success settles.
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("REVERTED");
+      // viem resolves a reverted receipt AND every replacement receipt — including a successful
+      // CANCELLATION self-tx — so we must classify before trusting success (kami 23902/23908). A claim
+      // counts only for the original tx or a repriced speed-up; a cancel/replace/revert is NOT a claim.
+      let replacedReason: ReplacedReason | null = null;
+      const receipt = await publicClient.waitForTransactionReceipt({ hash, onReplaced: (r) => { replacedReason = r.reason as ReplacedReason; } });
+      if (!isClaimConfirmed(receipt.status, replacedReason)) {
+        if (replacedReason === "cancelled") toast("Claim cancelled", { id: "claim" });
+        else toast.error("Claim didn't go through — refreshing", { id: "claim" });
+        onClaimed?.(); // refetch to the truth; never false-success/lock
+        return;
+      }
       toast.success(`Claimed ${claimUnit} fees`, { id: "claim" });
       settle();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
       if (/reject|denied/i.test(msg)) toast.error("Claim rejected", { id: "claim" });
       else if (/nothing/i.test(msg)) { toast.success("Already claimed", { id: "claim" }); settle(); }
-      // Mined-but-reverted: never false-success/lock — refetch so the button reflects the real (now likely 0)
-      // claimable instead of a stale live one.
-      else if (msg === "REVERTED") { toast.error("Claim didn't go through — refreshing", { id: "claim" }); onClaimed?.(); }
       else toast.error("Claim failed", { id: "claim" });
     } finally { setClaiming(false); }
   };
