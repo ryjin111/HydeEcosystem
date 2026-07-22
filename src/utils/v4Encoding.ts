@@ -40,6 +40,10 @@ type SwapTemplateParams = {
    *  left to trigger on). */
   nativeIn?: boolean;
   nativeOut?: boolean;
+  /** Append a trailing SWEEP(native→recipient) that refunds leftover ETH — correct for native-in pairs.
+   *  ERC20-numeraire pairs (e.g. the $HOODIE pair) have no native leg, so pass `false` → `commands=0x10`
+   *  with a single V4_SWAP input, matching the proven-green 4663 path (gojo 23811/23851). Defaults true. */
+  sweep?: boolean;
 };
 
 type AddLiquidityTemplateParams = {
@@ -183,14 +187,22 @@ export function buildSwapTemplatePayload(params: SwapTemplateParams): { commands
 
   const actions = packActions([V4_ACTIONS.SWAP_EXACT_IN_SINGLE, V4_ACTIONS.SETTLE_ALL, V4_ACTIONS.TAKE_ALL]);
 
+  // The 4663 UniversalRouter decoder expects ONE outer tuple — its first calldata word must be the
+  // 0x20 offset the decoder dereferences (`swapParams := params.offset + calldataload(params.offset)`).
+  // It's the 6-field ExactInputSingleParams incl. `minHopPriceX36`. Comma-separated 5 fields produced no
+  // leading offset → the decoder read amountIn=0 (OPEN_DELTA) and reverted (gojo 23811, verified against
+  // the router's own Blockscout-verified CalldataDecoder.sol).
   const swapParam = encodeAbiParameters(
-    parseAbiParameters("(address,address,uint24,int24,address),bool,uint128,uint128,bytes"),
+    parseAbiParameters("((address,address,uint24,int24,address),bool,uint128,uint128,uint256,bytes)"),
     [
-      [currency0, currency1, params.fee, tickSpacing, hooks],
-      zeroForOne,
-      amountInParsed,
-      minOut,
-      "0x"
+      [
+        [currency0, currency1, params.fee, tickSpacing, hooks],
+        zeroForOne,
+        amountInParsed,
+        minOut,
+        0n, // minHopPriceX36 — 6th field; 0 = no per-hop price bound
+        "0x",
+      ],
     ]
   );
 
@@ -208,6 +220,13 @@ export function buildSwapTemplatePayload(params: SwapTemplateParams): { commands
     parseAbiParameters("bytes,bytes[]"),
     [actions, [swapParam, settleParam, takeParam]]
   );
+
+  // ERC20-numeraire pairs (HOODIE) have no native leg to refund → single V4_SWAP command, no SWEEP,
+  // matching the proven-green 4663 calldata (gojo 23811/23851: commands=0x10). Native-in pairs keep the
+  // trailing SWEEP to return leftover ETH to the recipient.
+  if (params.sweep === false) {
+    return { commands: V4_ENCODING_TEMPLATES.swapCommand, inputs: [v4SwapInput] };
+  }
 
   const sweepInput = encodeAbiParameters(
     parseAbiParameters("address,address,uint256"),

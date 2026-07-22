@@ -52,7 +52,16 @@ export type V4Contracts = {
   hoodieSharedLauncher?: Address;
   /** Canonical StateView (read-only V4 pool state) — the chain's read source. */
   stateView?: Address;
+  /** The shared HydeHook every HOODIE-numeraire pool is keyed on (anti-snipe fee decay + launch reads). */
+  hoodieHook?: Address;
+  /** The $HOODIE numeraire token every HOODIE launch pairs against (pool currency1). */
+  hoodieNumeraire?: Address;
 };
+
+/** The two fixed PoolKey fields shared by every HOODIE-numeraire launch pool (verified on-chain via
+ *  hook.active(poolId) — a wrong fee/tick would not resolve the live pool). Dynamic-fee flag + tick 60. */
+export const HYDE_DYNAMIC_FEE = 0x800000;
+export const HYDE_TICK_SPACING = 60;
 
 export type V4EncodingTemplates = {
   swapCommand: Hex;
@@ -284,6 +293,10 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     // tx, and the engine attributes the ACTUAL caller as the creator.
     hoodieSharedLauncher: "0x004E6Fa435757B80adB17ADd67524CcAF4c4305B" as Address,
     stateView:       "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b" as Address, // == ROBINHOOD_STATE_VIEW
+    // Shared HydeHook + $HOODIE numeraire for every HOODIE-paired launch (gojo 23855; verified live —
+    // hook.active(poolId) resolves LILHOODIE against exactly these). The swap card keys HOODIE pools off these.
+    hoodieHook:      "0x41078B0012751e7E646DF9B6607e6C4fF8B570C0" as Address,
+    hoodieNumeraire: "0xC72c01AAB5f5678dc1d6f5C6d2B417d91D402Ba3" as Address,
   },
   // Optimism Mainnet — Uniswap V4 (re-verified by chainverify.mjs 2026-07-20)
   [10]: {
@@ -698,6 +711,50 @@ export const permit2Abi = [
   }
 ] as const;
 
+// The 2-arg execute(bytes,bytes[]) overload (selector 0x24856bc3) — the EXACT entrypoint gojo proved
+// green on the live 4663 router (HoodieLiveSwapProof, 23811/23851). Separate from universalRouterAbi's
+// 3-arg (deadline) overload so viem resolves the function unambiguously. HOODIE swaps carry msg.value=0.
+export const universalRouterExecuteAbi = [
+  {
+    type: "function",
+    name: "execute",
+    stateMutability: "payable",
+    inputs: [
+      { name: "commands", type: "bytes" },
+      { name: "inputs", type: "bytes[]" }
+    ],
+    outputs: []
+  }
+] as const;
+
+// HydeHook — the shared anti-snipe hook keying every HOODIE-numeraire pool. `active(poolId)` proves the
+// pool exists AND returns its launchTime (gojo 23855); the fee-decay constants drive the honest live-fee
+// note (startFee/baseFee are pips ÷1e6). Verified live: window 300, startFee 30000 (3%), baseFee 10000 (1%).
+export const hydeHookAbi = [
+  {
+    type: "function",
+    name: "active",
+    stateMutability: "view",
+    inputs: [{ name: "poolId", type: "bytes32" }],
+    outputs: [
+      { name: "exists", type: "bool" },
+      { name: "token", type: "address" },
+      { name: "launchTime", type: "uint64" }
+    ]
+  },
+  { type: "function", name: "antiSnipeWindow", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "startFee", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "baseFee", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] }
+] as const;
+
+// HydeERC20 launch-token protection getters (the token itself, gojo 23855). `maxWallet` = max balance a
+// wallet may RECEIVE (1% of supply); enforced on `to` only while `now < maxWalletExpiry` → buys can be
+// capped during the window, sells are NEVER gated. balanceOf/decimals reuse erc20Abi.
+export const hydeLaunchTokenAbi = [
+  { type: "function", name: "maxWallet", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "maxWalletExpiry", stateMutability: "view", inputs: [], outputs: [{ type: "uint64" }] }
+] as const;
+
 // HydeTokenFactory — REAL deployed interface (contracts/src/HydeTokenFactory.sol). The launch entrypoint
 // is `launch(LaunchParams{name,symbol,presetId})` with `creator := msg.sender` (NOT a passed arg); it
 // charges a flat 0.0004 ETH fee via `msg.value` (payable — no approval) and emits `LaunchCreated`. Immutable getters (WETH /
@@ -816,7 +873,9 @@ export const hydeGatewayAbi = [
 export const V4_ACTIONS = {
   SWAP_EXACT_IN_SINGLE: 0x06,
   SETTLE_ALL: 0x0c,
-  TAKE_ALL: 0x09,
+  // 0x0f = TAKE_ALL. (0x09 is SWAP_EXACT_OUT — the bug that broke every swap: the router misread
+  // amountIn as OPEN_DELTA and reverted; gojo proved 0x0f green buy+sell on the live 4663 router, 23811.)
+  TAKE_ALL: 0x0f,
 } as const;
 
 export const SWEEP_ETH_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;

@@ -7,9 +7,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
-import { isGatewayLive } from "../utils/constants";
+import { isGatewayLive, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import { useHydeLaunches, useHydeToken } from "../hooks/useDopplerTokens";
 import { V4SwapCard } from "../components/V4SwapCard";
+import { HoodieSwapCard } from "../components/HoodieSwapCard";
 import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta, type LaunchMeta } from "../utils/launchMeta";
 import { Card, Button, Stat, SectionLabel } from "../components/ui/kit";
@@ -131,6 +132,13 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
 
   const sym = pool.baseToken.symbol || "?";
 
+  // HOODIE-numeraire own-stack pool → live in-app Buy/Sell via the canonical UniversalRouter (the Hyde
+  // gateway isn't deployed on 4663). Detected by the pool's quote token matching the configured $HOODIE
+  // numeraire — inherently mainnet-only (only 4663 has `hoodieNumeraire` set). WETH pairs keep the
+  // gateway-gated / reference-only rail below, untouched.
+  const hoodieNumeraire = V4_CONTRACTS_BY_CHAIN[network.id]?.hoodieNumeraire;
+  const isHoodiePair = !!hoodieNumeraire && pool.quoteToken?.address?.toLowerCase() === hoodieNumeraire.toLowerCase();
+
   return (
     <div className="mx-auto grid w-full max-w-[1200px] gap-5 lg:grid-cols-[1fr,380px]">
       {/* ---------- main ---------- */}
@@ -222,7 +230,12 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
            V4SwapCard executes; otherwise the primary action routes to the live pair and the
            in-app Buy/Sell is shown REFERENCE-ONLY (dimmed, non-interactive) — never implying
            Hyde submits/pre-fills an order it can't carry. Graduation is NEVER cited as a reason. */}
-        {isGatewayLive(network.id) ? (
+        {isHoodiePair ? (
+          <HoodieSwapCard
+            network={network}
+            token={{ address: pool.address as `0x${string}`, symbol: sym, name: pool.baseToken.name, decimals: pool.baseToken.decimals }}
+          />
+        ) : isGatewayLive(network.id) ? (
           <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} forceTokenOut={pool.address.toLowerCase()} />
         ) : (
           <Card variant="panel">
