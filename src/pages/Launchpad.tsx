@@ -137,13 +137,21 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
         address: vault, abi: hydeVaultAbi, functionName: "claimCreator",
         args: [bt.address as `0x${string}`], account: wallet, chain: walletClient.chain,
       });
-      await publicClient.waitForTransactionReceipt({ hash });
+      // viem RESOLVES a reverted receipt (doesn't throw), so a mined-but-reverted claim — e.g. the
+      // post-preflight race where another caller claims first — must be checked explicitly, or we'd
+      // false-toast success + lock the button (kami 23902). Only success settles.
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") throw new Error("REVERTED");
       toast.success(`Claimed ${claimUnit} fees`, { id: "claim" });
       settle();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
-      if (/nothing/i.test(msg)) { toast.success("Already claimed", { id: "claim" }); settle(); }
-      else toast.error(/reject|denied/i.test(msg) ? "Claim rejected" : "Claim failed", { id: "claim" });
+      if (/reject|denied/i.test(msg)) toast.error("Claim rejected", { id: "claim" });
+      else if (/nothing/i.test(msg)) { toast.success("Already claimed", { id: "claim" }); settle(); }
+      // Mined-but-reverted: never false-success/lock — refetch so the button reflects the real (now likely 0)
+      // claimable instead of a stale live one.
+      else if (msg === "REVERTED") { toast.error("Claim didn't go through — refreshing", { id: "claim" }); onClaimed?.(); }
+      else toast.error("Claim failed", { id: "claim" });
     } finally { setClaiming(false); }
   };
 
