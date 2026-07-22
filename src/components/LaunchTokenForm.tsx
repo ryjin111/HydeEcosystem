@@ -291,6 +291,15 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         })}
       </div>
 
+      {/* WETH-only containment (kami 24019): when the WETH own-stack launch is paused, do NOT present a
+          live-looking / editable WETH form — surface the warning immediately below the pair selector and hide
+          the rest of the form. Switching to HOODIE PAIR above clears this and restores the full live form. */}
+      {wethLaunchPaused ? (
+        <div className="rounded-xl px-4 py-4 text-center text-sm leading-relaxed" style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.28)", color: "#E0A32E" }}>
+          {WETH_CONTAINMENT.launch}
+        </div>
+      ) : (
+      <>
       {/* Header */}
       <div>
         <h2 className="font-display text-lg font-semibold text-pcs-text">Launch a Token</h2>
@@ -599,16 +608,9 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         </div>
       )}
 
-      {/* Action buttons — both pairs run the full preview → confirm → launch flow, a single launch tx each
-          (HOODIE routes through the shared launcher; WETH through the factory). */}
-      {wethLaunchPaused ? (
-        // WETH own-stack launches paused — a new WETH pool inherits the mispriced numeraire-agnostic preset
-        // (fixed quote-denominated seed tick + misaligned wide range early buys walk to ~1:1) until the WETH
-        // factory is redeployed (kami 24008 / gojo 23992). Switch the pair to HOODIE above to launch now.
-        <div className="rounded-xl px-3 py-3 text-center text-sm leading-relaxed" style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.28)", color: "#E0A32E" }}>
-          {WETH_CONTAINMENT.launch}
-        </div>
-      ) : !isConnected ? (
+      {/* Action buttons — HOODIE routes through the shared launcher. The WETH form only renders when it is
+          NOT paused; the paused state is handled above (the warning immediately below the pair selector). */}
+      {!isConnected ? (
         <p className="text-center text-sm text-pcs-textDim">Connect wallet to launch</p>
       ) : chainMismatch ? (
         <button
@@ -703,6 +705,8 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             </div>
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   );

@@ -44,6 +44,8 @@ try {
   (!/buying paused/i.test(sellAction)) ? ok(`HOODIE Sell is live: "${sellAction}"`) : bad("HOODIE sell live", `"${sellAction}"`);
   // Price/FDV stays truthful (no clamp).
   /\$[0-9]/.test(hbody) ? ok("on-chain price/FDV still shown (no cosmetic clamp)") : bad("price shown", "no $ value");
+  // HOODIE keeps its live chart/Trades copy UNCHANGED (kami 24019 — I must not neutralize HOODIE copy).
+  /trading is live on-chain/i.test(hbody) ? ok("HOODIE keeps live chart/Trades copy (unchanged)") : bad("HOODIE live copy", "live-trading copy missing on HOODIE");
 
   // ══ (A2) HOODIE launch reachable — switch to HOODIE PAIR → normal flow (no paused banner) ══
   await page.goto(`${BASE}/launchpad?tab=launch`, { waitUntil: "networkidle", timeout: 45000 });
@@ -59,11 +61,16 @@ try {
     if (/preview launch|launch token|launch hoodie/i.test(t)) { wethEnabled = t; break; }
   }
   !wethEnabled ? ok("WETH launch: no enabled Preview/Launch button (ALL enabled buttons checked)") : bad("WETH no launch button", `enabled: "${wethEnabled}"`);
-  // Flip to HOODIE PAIR — paused banner must clear and the normal disconnected launch flow must render.
+  // Editable, live-looking WETH form must be HIDDEN while paused (kami 24019): no token-name input, no green
+  // "LIVE ·" panel — only the pair selector + the warning.
+  ((await page.$('input[placeholder="e.g. HydeToken"]')) === null) ? ok("WETH paused launch: editable form hidden (no token-name input)") : bad("WETH form hidden", "name input still present");
+  !/live ·/i.test(defBody) ? ok("WETH paused launch: no green 'LIVE ·' panel") : bad("WETH no live panel", "'LIVE ·' still shown");
+  // Flip to HOODIE PAIR — paused banner must clear and the FULL editable launch form must render.
   await page.getByRole("button", { name: /hoodie pair/i }).click(); await page.waitForTimeout(300);
   const hLaunchBody = await page.locator("body").innerText();
   !WETH_LAUNCH_PAUSED.test(hLaunchBody) ? ok("HOODIE-pair launch has NO paused banner (HOODIE launch live)") : bad("HOODIE launch live", "paused banner still shown for HOODIE pair");
   /connect wallet to launch|preview launch/i.test(hLaunchBody) ? ok("HOODIE-pair launch shows the normal flow (Connect/Preview)") : bad("HOODIE launch flow", "normal launch flow missing");
+  ((await page.$('input[placeholder="e.g. HydeToken"]')) !== null) ? ok("HOODIE-pair launch: editable form present (token-name input)") : bad("HOODIE form present", "name input missing for HOODIE");
 
   // ══ (B) WETH token page — CONTAINED (trading unavailable, external link removed) ══
   await page.goto(`${BASE}/swap?out=${WETH}`, { waitUntil: "networkidle", timeout: 45000 });
@@ -71,6 +78,9 @@ try {
   const wbody = await page.locator("body").innerText();
   wbody.includes(NO_SELL) ? ok("WETH pair shows 'Trading temporarily unavailable'") : bad("WETH no-sell copy", "missing");
   !/trade on live pair/i.test(wbody) ? ok("WETH external 'Trade on live pair ↗' link removed") : bad("WETH external link removed", "still present");
+  // Chart + Trades empty-states must NOT contradict the pause card (kami 24019).
+  !/trading is live on-chain/i.test(wbody) ? ok("WETH token page: no 'trading is live on-chain' contradiction") : bad("WETH live copy gone", "still claims trading is live");
+  /price under review/i.test(wbody) ? ok("WETH token page shows paused chart/Trades copy") : bad("WETH paused copy", "missing");
 
   // ══ (C) bare /swap discovery — NOT globally gated (shows normal exchange copy, not the WETH pause) ══
   await page.goto(`${BASE}/swap`, { waitUntil: "networkidle", timeout: 45000 });

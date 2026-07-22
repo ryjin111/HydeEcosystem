@@ -159,6 +159,10 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   }
 
   const sym = pool.baseToken.symbol || "?";
+  // WETH-only containment (kami 24019): a non-HOODIE (WETH-paired) token while WETH_CONTAINMENT is active.
+  // Its chart/Trades empty-states must NOT claim "trading is live on-chain" (contradicts the amber pause card),
+  // and the green LIVE badge is swapped for a paused one. HOODIE pages keep the live copy unchanged.
+  const wethContained = !isHoodiePair && WETH_CONTAINMENT.active;
   const creatorAddr = (pool as { creator?: string }).creator;
   const launchedAgo = timeAgo(pool.createdAt);
 
@@ -228,10 +232,12 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             />
             <span
               className="relative z-10 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide"
-              style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}
+              style={wethContained
+                ? { background: "rgba(232,163,61,0.10)", color: "#E0A32E", border: "1px solid rgba(232,163,61,0.28)" }
+                : { background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}
             >
-              <span className="hyde-pulse inline-block h-1.5 w-1.5 rounded-full" style={{ background: "#34C77B" }} />
-              LIVE · LOCKED LIQUIDITY
+              {!wethContained && <span className="hyde-pulse inline-block h-1.5 w-1.5 rounded-full" style={{ background: "#34C77B" }} />}
+              {wethContained ? "PAUSED · PRICE UNDER REVIEW" : "LIVE · LOCKED LIQUIDITY"}
             </span>
             <div className="relative z-10 flex h-16 items-end gap-1.5" aria-hidden="true">
               {[9, 5, 12, 7, 14, 6, 11, 8, 13, 5, 10, 7].map((h, i) => (
@@ -239,8 +245,8 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
               ))}
             </div>
             <div className="relative z-10">
-              <p className="font-display text-sm font-semibold text-pcs-text">Chart warming up</p>
-              <p className="mt-1 max-w-sm text-xs text-pcs-textSub">Trading is live on-chain. Price history begins with on-chain swaps.</p>
+              <p className="font-display text-sm font-semibold text-pcs-text">{wethContained ? "Chart paused" : "Chart warming up"}</p>
+              <p className="mt-1 max-w-sm text-xs text-pcs-textSub">{wethContained ? "Trading is paused while this pool’s launch price is under review." : "Trading is live on-chain. Price history begins with on-chain swaps."}</p>
             </div>
           </div>
           {/* Curve/liquidity label — own-stack launches straight into a locked-liquidity pool (no graduation). */}
@@ -262,7 +268,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
           </div>
           <div className="p-4">
             {feedTab === "trades" ? (
-              <p className="py-6 text-center text-sm text-pcs-textDim">No trades indexed yet — trading is live on-chain; the tape begins with on-chain swaps.</p>
+              <p className="py-6 text-center text-sm text-pcs-textDim">{wethContained ? "Trading is paused — launch price under review." : "No trades indexed yet — trading is live on-chain; the tape begins with on-chain swaps."}</p>
             ) : holders.length === 0 ? (
               <p className="py-6 text-center text-sm text-pcs-textDim">Holder data unavailable right now.</p>
             ) : (
