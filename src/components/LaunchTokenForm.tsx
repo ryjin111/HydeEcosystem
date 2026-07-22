@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { PublicClient, WalletClient } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
 import toast from "react-hot-toast";
+import { CONTAINMENT } from "../utils/containment";
 import {
   ROBINHOOD_CHAIN_ID,
   simulateRobinhoodLaunch,
@@ -593,7 +594,12 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
 
       {/* Action buttons — both pairs run the full preview → confirm → launch flow, a single launch tx each
           (HOODIE routes through the shared launcher; WETH through the factory). */}
-      {!isConnected ? (
+      {CONTAINMENT.active ? (
+        // Launches paused — every new pool inherits the mispriced 1:1 seed until the factory is redeployed (kami 23986).
+        <div className="rounded-xl px-3 py-3 text-center text-sm leading-relaxed" style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.28)", color: "#E0A32E" }}>
+          {CONTAINMENT.launch}
+        </div>
+      ) : !isConnected ? (
         <p className="text-center text-sm text-pcs-textDim">Connect wallet to launch</p>
       ) : chainMismatch ? (
         <button

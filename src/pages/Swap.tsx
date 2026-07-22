@@ -1,6 +1,7 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive } from "../utils/constants";
+import { CONTAINMENT } from "../utils/containment";
 import { V4SwapCard } from "../components/V4SwapCard";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
@@ -125,7 +126,7 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
         /* Discovery / exchange view — pick a token to open its page */
         <div className="flex flex-col lg:flex-row gap-5 items-start">
           <div className="w-full lg:w-[440px] flex-shrink-0">
-            {isGatewayLive(network.id) ? (
+            {isGatewayLive(network.id) && !CONTAINMENT.active ? (
               <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} />
             ) : (
               <div

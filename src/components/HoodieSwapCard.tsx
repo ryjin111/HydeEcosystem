@@ -11,6 +11,7 @@ import { formatUnits, maxUint160, maxUint256, maxUint48, type Address } from "vi
 import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import type { NetworkConfig } from "../utils/constants";
 import { erc20Abi, permit2Abi, hydeHookAbi, hydeLaunchTokenAbi, universalRouterExecuteAbi } from "../utils/constants";
+import { CONTAINMENT } from "../utils/containment";
 import {
   buildHoodieSwap, simulateHoodieSwap, hoodiePoolId, hoodieSwapContracts, launchFeePips, toUnits,
 } from "../utils/hoodieSwap";
@@ -158,9 +159,12 @@ export function HoodieSwapCard({ network, token }: Props) {
   const capExceeded = protActive && isBuy && tokenBalance !== null && simOut !== null && protection !== null
     && tokenBalance + simOut > protection.maxWallet;
 
+  // CONTAINMENT (kami 23986): while the pool starting-price is mispriced, block BUYS (routing users into a
+  // bad pool) but keep SELLS open so holders can exit. No cosmetic price clamp.
+  const buyPaused = CONTAINMENT.active && isBuy;
   const canSwap = Boolean(
     isConnected && !chainMismatch && !needsApprove && amountUnits > 0n && simOut !== null && !quoteErr && !capExceeded
-    && inBalance !== null && amountUnits <= inBalance
+    && inBalance !== null && amountUnits <= inBalance && !buyPaused
   );
 
   const doApprove = async () => {
@@ -311,7 +315,12 @@ export function HoodieSwapCard({ network, token }: Props) {
 
       {/* Action */}
       <div className="mt-4">
-        {needsApprove && !chainMismatch && isConnected ? (
+        {buyPaused ? (
+          <>
+            <button data-testid="hoodie-action" disabled className="w-full rounded-xl py-3 text-sm font-bold transition disabled:opacity-60" style={{ background: "#22252D", color: "#6b7280" }}>Buying paused</button>
+            <p className="mt-2 rounded-lg px-2.5 py-2 text-center text-[11px] leading-relaxed" style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.25)", color: "#E0A32E" }}>{CONTAINMENT.sellOpen}</p>
+          </>
+        ) : needsApprove && !chainMismatch && isConnected ? (
           <button data-testid="hoodie-action" onClick={doApprove} disabled={approving || amountUnits === 0n}
             className="w-full rounded-xl py-3 text-sm font-bold text-pcs-bg transition disabled:opacity-50"
             style={{ background: GREEN }}>
