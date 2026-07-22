@@ -1,24 +1,18 @@
-// EMERGENCY CONTAINMENT (clint 23979-23980 / kami 23986; RCA per gojo 23992). The deployed
-// HydeTokenFactory + HOODIE engine seed every pool from an IMMUTABLE, NUMERAIRE-AGNOSTIC preset (fixed
-// constructor `_presets[]`, `HydeTokenFactory.sol:341`): the SAME fixed seed tick (~±60000 ≈ 0.00248
-// quote/token) + a misaligned WIDE liquidity range, applied regardless of numeraire. A fixed
-// quote-denominated seed = a fixed numeraire price, and the range is so wide a few buys walked it up to the
-// ~1:1 wall (observed pool ticks WETH −1 / HOODIE 2 → HYDE = 1 WETH ≈ $1,918 → $1.9T FDV). Structurally
-// identical for HOODIE, just cheap. Not repairable in place — needs a factory redeploy with numeraire-aware
-// presets + a tighter range (separate, Clint-owned).
+// WETH-ONLY EMERGENCY CONTAINMENT (clint 24004 / kami 24005+24008; RCA gojo 23992). The factory/engine
+// seed pools from an IMMUTABLE, NUMERAIRE-AGNOSTIC preset (`HydeTokenFactory.sol:341`): the same fixed seed
+// tick (~±60000 ≈ 0.00248 quote/token) + a misaligned WIDE range, applied regardless of numeraire. A fixed
+// quote-denominated seed = a fixed numeraire price; the wide range let a few buys walk it to the ~1:1 wall.
+// It was NOT a 1:1 seed. Because the preset is quote-denominated, the SAME bug is catastrophic only for an
+// EXPENSIVE numeraire: WETH token → 1 WETH ≈ $1,918 → $1.9T FDV (broken); HOODIE token → ~$4,086 FDV (sane,
+// accepted by clint — HOODIE stays fully live). So containment is WETH-STACK ONLY.
 //
-// Until the factory/engine are REDEPLOYED with corrected preset ticks and pools re-seeded, production must:
-//  • NOT create new pools (launch) — every new launch inherits the 1:1 seed.
-//  • NOT route users to BUY into the mispriced pools.
-//  • Keep SELLING open — never trap a holder's funds.
-// NO cosmetic price clamp — the honest-ugly $/FDV stays visible (kami/shiro: hiding it would read as "fixed").
-export const CONTAINMENT = {
+// While active, WETH-paired launches + trade routes are paused; HOODIE launches/buys/sells are untouched.
+// No cosmetic price/FDV clamp — the honest number stays; the banner explains it. Permanent fix = redeploy the
+// WETH factory with a numeraire-aware preset + migrate existing WETH pools (Clint-owned FDV/depth call).
+export const WETH_CONTAINMENT = {
   active: true,
-  // Copy matched to capability (kami 23991):
-  //  • sellOpen — a surface with an AUDITED in-app sell (HOODIE swap): buy off, sell stays.
-  //  • noSell   — a surface with no audited sell path (WETH pairs, external links, cards).
-  //  • launch   — the launch form.
-  sellOpen: "Buying & new launches paused — pool pricing correction in progress. Selling remains available.",
+  // Copy matched to capability. WETH pairs have no audited in-app sell → trading unavailable; launch copy is
+  // WETH-scoped (HOODIE launches are NOT paused).
   noSell: "Trading temporarily unavailable — launch price under review.",
-  launch: "New launches are paused — a pool pricing correction is in progress.",
+  launch: "WETH-paired launches are paused — a pool pricing correction is in progress. HOODIE launches are unaffected.",
 } as const;

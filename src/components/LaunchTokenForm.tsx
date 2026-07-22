@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { PublicClient, WalletClient } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
 import toast from "react-hot-toast";
-import { CONTAINMENT } from "../utils/containment";
+import { WETH_CONTAINMENT } from "../utils/containment";
 import {
   ROBINHOOD_CHAIN_ID,
   simulateRobinhoodLaunch,
@@ -73,6 +73,11 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   // WETH, just $HOODIE-based; the engine attributes the actual caller as the creator.
   const [pair, setPair] = useState<"weth" | "hoodie">("weth");
   const isHoodie = pair === "hoodie";
+
+  // WETH-ONLY CONTAINMENT (clint 24004 / kami 24005+24008). Pause ONLY the own-stack WETH factory launch —
+  // its numeraire-agnostic preset seeds the ~$1.9T pool (RCA: containment.ts). HOODIE launches (isHoodie) are
+  // fully live; the legacy Robinhood launcher (`!usesOwnStack`, testnet-only, different launcher) is untouched.
+  const wethLaunchPaused = WETH_CONTAINMENT.active && !isHoodie && usesOwnStack;
 
   const [name,       setName]       = useState("");
   const [symbol,     setSymbol]     = useState("");
@@ -166,7 +171,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   const formValid = !!name.trim() && !!symbol.trim();
 
   const handlePreview = async () => {
-    if (CONTAINMENT.active) return; // fail-closed: never launch onto the mispriced preset (kami 24000)
+    if (wethLaunchPaused) return; // fail-closed: no WETH own-stack launch onto the mispriced preset (kami 24008); HOODIE allowed
     if (!address || !publicClient || !formValid) return;
     setPreviewing(true);
     setPreviewError(null);
@@ -197,7 +202,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   };
 
   const handleLaunch = async () => {
-    if (CONTAINMENT.active) return; // fail-closed: no launch tx while paused (kami 24000)
+    if (wethLaunchPaused) return; // fail-closed: no WETH own-stack launch tx while paused (kami 24008); HOODIE allowed
     if (!address || !publicClient || !walletClient || !preview) return;
     setSubmitting(true);
     setMetaState("idle");
@@ -596,11 +601,12 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
 
       {/* Action buttons — both pairs run the full preview → confirm → launch flow, a single launch tx each
           (HOODIE routes through the shared launcher; WETH through the factory). */}
-      {CONTAINMENT.active ? (
-        // Launches paused — every new pool inherits the mispriced numeraire-agnostic preset (fixed seed tick
-        // + misaligned wide range that early buys walk to ~1:1) until the factory is redeployed (kami 23986 / gojo 23992).
+      {wethLaunchPaused ? (
+        // WETH own-stack launches paused — a new WETH pool inherits the mispriced numeraire-agnostic preset
+        // (fixed quote-denominated seed tick + misaligned wide range early buys walk to ~1:1) until the WETH
+        // factory is redeployed (kami 24008 / gojo 23992). Switch the pair to HOODIE above to launch now.
         <div className="rounded-xl px-3 py-3 text-center text-sm leading-relaxed" style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.28)", color: "#E0A32E" }}>
-          {CONTAINMENT.launch}
+          {WETH_CONTAINMENT.launch}
         </div>
       ) : !isConnected ? (
         <p className="text-center text-sm text-pcs-textDim">Connect wallet to launch</p>

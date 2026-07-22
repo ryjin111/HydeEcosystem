@@ -9,7 +9,7 @@ import { useParams, Link } from "react-router-dom";
 import { useAccount } from "wagmi";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
-import { CONTAINMENT } from "../utils/containment";
+import { WETH_CONTAINMENT } from "../utils/containment";
 import { useHydeLaunches, useHydeToken } from "../hooks/useDopplerTokens";
 import { useTokenPosition } from "../hooks/useTokenPosition";
 import { V4SwapCard } from "../components/V4SwapCard";
@@ -289,16 +289,17 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             network={network}
             token={{ address: pool.address as `0x${string}`, symbol: sym, name: pool.baseToken.name, decimals: pool.baseToken.decimals }}
           />
-        ) : isGatewayLive(network.id) && !CONTAINMENT.active ? (
+        ) : isGatewayLive(network.id) && !WETH_CONTAINMENT.active ? (
           <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} forceTokenOut={pool.address.toLowerCase()} />
         ) : (
           <Card variant="panel">
             <SectionLabel>Trade</SectionLabel>
-            {/* CONTAINMENT (kami 23991): no audited in-app sell for WETH pairs → the whole external trade link
-                is removed (routing users to the broken pool is the same harm); price/FDV stays truthful. */}
-            {CONTAINMENT.active ? (
+            {/* WETH CONTAINMENT (kami 24005/24008): this branch is the non-HOODIE (WETH-paired) path — its preset
+                seeded the ~$1.9T pool. No audited in-app sell → the whole external trade link is removed (routing
+                users to the broken pool is the same harm); price/FDV stays truthful. HOODIE pairs never reach here. */}
+            {WETH_CONTAINMENT.active ? (
               <p className="mt-3 rounded-lg px-2.5 py-2 text-center text-sm leading-relaxed" style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.28)", color: "#E0A32E" }}>
-                {CONTAINMENT.noSell}
+                {WETH_CONTAINMENT.noSell}
               </p>
             ) : pair ? (
               <>

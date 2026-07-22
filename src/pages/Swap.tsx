@@ -1,7 +1,6 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive } from "../utils/constants";
-import { CONTAINMENT } from "../utils/containment";
 import { V4SwapCard } from "../components/V4SwapCard";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
@@ -126,7 +125,7 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
         /* Discovery / exchange view — pick a token to open its page */
         <div className="flex flex-col lg:flex-row gap-5 items-start">
           <div className="w-full lg:w-[440px] flex-shrink-0">
-            {isGatewayLive(network.id) && !CONTAINMENT.active ? (
+            {isGatewayLive(network.id) ? (
               <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} />
             ) : (
               <div
@@ -134,24 +133,14 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
                 style={{ background: "#121419", border: "1px solid #22252D" }}
               >
                 <h2 className="font-display text-lg font-semibold text-pcs-text">Exchange</h2>
-                {/* CONTAINMENT (kami 24000): no "trades live / trade" encouragement while paused — show the
-                    pause notice, not the stale copy. */}
-                {CONTAINMENT.active ? (
-                  <p className="rounded-lg px-3 py-2 text-sm leading-relaxed" style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.28)", color: "#E0A32E" }}>
-                    {CONTAINMENT.noSell}
-                  </p>
-                ) : (
-                  <>
-                    <p className="text-sm text-pcs-textDim">
-                      In-app swap is coming to Robinhood Chain shortly. Every launch trades
-                      live now in its locked-liquidity pool — pick one below to open its page.
-                    </p>
-                    <p className="text-xs text-pcs-textDim">
-                      Pick a token from Trending or Recently Launched to open its full page —
-                      chart, trade, and your position.
-                    </p>
-                  </>
-                )}
+                <p className="text-sm text-pcs-textDim">
+                  In-app swap is coming to Robinhood Chain shortly. Every HOODIE launch
+                  trades live now in its locked-liquidity pool — pick one below to open its page.
+                </p>
+                <p className="text-xs text-pcs-textDim">
+                  Pick a token from Trending or Recently Launched to open its full page —
+                  chart, trade, and your position.
+                </p>
               </div>
             )}
           </div>
