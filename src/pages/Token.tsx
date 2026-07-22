@@ -122,7 +122,6 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const { holders } = useTopHolders(address, network.id);
   const [copied, setCopied] = useState(false);
   const [feedTab, setFeedTab] = useState<"trades" | "holders">("trades"); // coin-mockup: Trades/Holders tabs
-  const [chartTf, setChartTf] = useState<"5m" | "1h" | "24h" | "7d">("1h");
   // Off-chain metadata (own-stack tokens store no tokenURI) — fetched by (chain, address); fail-neutral.
   const [meta, setMeta] = useState<LaunchMeta | null>(null);
   useEffect(() => {
@@ -146,7 +145,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const hoodieNumeraire = V4_CONTRACTS_BY_CHAIN[network.id]?.hoodieNumeraire;
   const isHoodiePair = !!hoodieNumeraire && pool?.quoteToken?.address?.toLowerCase() === hoodieNumeraire.toLowerCase();
   const { isConnected } = useAccount();
-  const position = useTokenPosition(pool?.address ?? "", network.id, isHoodiePair);
+  const { position, error: positionError } = useTokenPosition(pool?.address ?? "", network.id, isHoodiePair);
 
   if (tokenLoading && !boardPool) return <div className="py-20 text-center text-pcs-textSub">Loading token…</div>;
   if (!pool) {
@@ -210,11 +209,12 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             shimmer skeleton (never fabricated candles/axes/numbers), no external-indexer claim, and no
             CTA to a not-yet-enabled swap. */}
         <Card className="p-0 overflow-hidden">
-          {/* Timeframe tab chrome (coin-mockup) — visual placeholder for when on-chain price history lands. */}
-          <div className="flex items-center gap-1 px-4 pt-4">
+          {/* Timeframe chrome (coin-mockup) — NON-interactive until a price-history feed exists, so they're
+              not dead controls that change nothing (kami 23949 #6). "1h" shown as the eventual default. */}
+          <div className="flex items-center gap-1 px-4 pt-4" title="Price history begins with on-chain swaps">
             {(["5m", "1h", "24h", "7d"] as const).map((tf) => (
-              <button key={tf} type="button" onClick={() => setChartTf(tf)} className="rounded-lg px-2.5 py-1 text-[11px] font-semibold transition"
-                style={chartTf === tf ? { background: "rgba(46,159,230,0.14)", color: "#54B4F0" } : { color: "#5D6470" }}>{tf}</button>
+              <span key={tf} aria-disabled className="select-none rounded-lg px-2.5 py-1 text-[11px] font-semibold opacity-70"
+                style={tf === "1h" ? { background: "rgba(46,159,230,0.10)", color: "#54B4F0" } : { color: "#5D6470" }}>{tf}</span>
             ))}
           </div>
           <div
@@ -335,7 +335,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
 
         {/* Your Position — per-wallet covered-only PnL for HOODIE launches; net-of-slippage exit-sim mark,
             honest about uncovered/unprovable basis. Only for HOODIE pairs (the reconcilable own-stack pool). */}
-        {isHoodiePair && <YourPositionCard connected={isConnected} position={position} symbol={sym} />}
+        {isHoodiePair && <YourPositionCard connected={isConnected} position={position} error={positionError} symbol={sym} />}
 
         {/* Trust card — the Hyde stack is LIVE now (no Doppler rail, no COMING/future-tense; kami 23836). */}
         <Card variant="panel">

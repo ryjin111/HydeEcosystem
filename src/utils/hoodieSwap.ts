@@ -7,7 +7,7 @@
 //
 // This module carries NO React — it's the pure encode/sim seam the swap gate exercises directly.
 import {
-  encodeFunctionData, encodeAbiParameters, parseAbiParameters, keccak256, parseUnits,
+  encodeFunctionData, encodeAbiParameters, parseAbiParameters, keccak256, parseUnits, toHex,
   maxUint256, maxUint160, maxUint48, type Address, type Hex, type PublicClient,
 } from "viem";
 import {
@@ -75,6 +75,9 @@ const REVERT_HINTS: [RegExp, string][] = [
 export async function simulateHoodieSwap(args: {
   client: PublicClient; user: Address; token: Address; decimals: number; isBuy: boolean;
   amountIn: string; amountOutQuoted: string; slippagePercent: string; chainId: number;
+  /** Pin the sim to a specific block so a position snapshot stays consistent with its balance/log reads
+   *  (kami 23949 #1). Omit for a live quote/preflight. */
+  blockTag?: bigint;
 }): Promise<SwapSim> {
   const { hoodie, universalRouter, permit2 } = hoodieSwapContracts(args.chainId);
   const inToken = args.isBuy ? hoodie : args.token;
@@ -99,7 +102,7 @@ export async function simulateHoodieSwap(args: {
     res = await args.client.request({
       // eth_simulateV1 — supported on the 4663 RPC (probed). validation:false skips nonce/balance/gas checks.
       method: "eth_simulateV1" as never,
-      params: [{ blockStateCalls: [{ calls }], validation: false, traceTransfers: false }, "latest"] as never,
+      params: [{ blockStateCalls: [{ calls }], validation: false, traceTransfers: false }, args.blockTag != null ? toHex(args.blockTag) : "latest"] as never,
     }) as never;
   } catch (e) {
     return { ok: false, out: 0n, reason: `Quote unavailable (${String((e as Error)?.message ?? e).slice(0, 60)})` };

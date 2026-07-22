@@ -52,6 +52,24 @@ export type TokenPosition = {
   loading: boolean;
 };
 
+/** Which "Your Position" card body renders — a pure, deterministic decision (kami 23949 #2/#3 regression):
+ *  - `connect`         : wallet not connected.
+ *  - `error`           : adapter read FAILED — terminal, never an endless skeleton.
+ *  - `loading`         : resolving.
+ *  - `closed-realized` : no holdings but a proven nonzero realized PnL → show the closed-position result.
+ *  - `closed`          : no holdings and nothing realized.
+ *  - `active`          : a live position. */
+export type PositionCardState = "connect" | "error" | "loading" | "closed-realized" | "closed" | "active";
+export function positionCardState(connected: boolean, error: boolean, p: TokenPosition | null): PositionCardState {
+  if (!connected) return "connect";
+  if (error) return "error";
+  if (p == null || p.loading) return "loading";
+  if (p.balance === 0n && p.coveredUnits === 0n && p.uncoveredUnits === 0n) {
+    return p.realizedPnl != null && p.realizedPnl !== 0n ? "closed-realized" : "closed";
+  }
+  return "active";
+}
+
 /** One wallet-scoped tx aggregate the reducer consumes (the hook builds these from raw logs). */
 export type WalletTxMove = {
   blockNumber: bigint;

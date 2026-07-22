@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { positionCardState } from "../utils/positionPnl";
 import { Card, SectionLabel } from "./ui/kit";
 
 /**
@@ -81,18 +82,24 @@ function Row({ label, value, color }: { label: string; value: string; color?: st
 export function YourPositionCard({
   connected,
   position,
+  error = false,
   symbol,
 }: {
   connected: boolean;
   position: TokenPosition | null; // null before the hook resolves for a connected wallet
+  error?: boolean;                // adapter read failed — terminal state, not endless loading (kami 23949 #2)
   symbol: string;
 }) {
   const sym = symbol ? `$${symbol}` : "this token";
 
+  const state = positionCardState(connected, error, position);
   let body: ReactNode;
-  if (!connected) {
+  if (state === "connect") {
     body = <p className="mt-3 text-sm text-pcs-textDim">Connect your wallet to track your position &amp; PnL.</p>;
-  } else if (position == null || position.loading) {
+  } else if (state === "error") {
+    // A read failure is terminal, not loading — never an endless skeleton (kami 23949 #2).
+    body = <p className="mt-3 text-sm text-pcs-textDim">Position data is unavailable right now. Refresh to retry — no numbers are shown rather than a wrong one.</p>;
+  } else if (state === "loading") {
     body = (
       <div className="mt-3 space-y-2">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -100,10 +107,22 @@ export function YourPositionCard({
         ))}
       </div>
     );
-  } else if (position.balance === 0n && position.coveredUnits === 0n && position.uncoveredUnits === 0n) {
+  } else if (state === "closed-realized") {
+    // Closed position: surface the proven realized PnL, not just "you don't hold" (kami 23949 #3).
+    const p = position!;
+    body = (
+      <div className="mt-3 space-y-1.5">
+        <p className="text-sm text-pcs-textDim">Position closed — you don&rsquo;t hold {sym} now.</p>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-pcs-textDim">Realized PnL</span>
+          <span className="font-mono tabular-nums text-sm font-semibold" style={{ color: pnlColor(p.realizedPnl) }}>{fmtSigned(p.realizedPnl!, p.quoteDecimals, p.quoteSymbol)}</span>
+        </div>
+      </div>
+    );
+  } else if (state === "closed") {
     body = <p className="mt-3 text-sm text-pcs-textDim">You don&rsquo;t hold {sym} right now.</p>;
   } else {
-    const p = position;
+    const p = position!;
     const markLabel = MARK_LABEL[p.markStatus];
     const pct = pnlPct(p.unrealizedPnl, p.coveredCostBasis);
     body = (
@@ -149,13 +168,22 @@ export function YourPositionCard({
         {/* Honesty footnotes */}
         {p.uncoveredUnits > 0n && (
           <p className="pt-1 text-[11px] text-pcs-textDim leading-relaxed">
-            {fmtBig(p.uncoveredUnits, p.tokenDecimals)} {sym} received by transfer have no on-chain cost basis —
-            held in your balance but excluded from PnL.
+            {/* Uncovered units aren't always a transfer — they can be a plain transfer OR history we couldn't
+                fully scan (kami 23949 #4). Don't assert "received by transfer". */}
+            {fmtBig(p.uncoveredUnits, p.tokenDecimals)} {sym} aren&rsquo;t covered by verifiable swap history —
+            held in your balance but excluded from cost basis &amp; PnL.
           </p>
         )}
-        {p.basisStatus === "partial" && (
+        {/* Incomplete history is a DISTINCT, explicit state (kami 23949 #4): some blocks couldn't be scanned,
+            so cost basis / realized PnL cover only verifiable history — never a silent under-count. */}
+        {!p.historyComplete && (
           <p className="pt-1 text-[11px]" style={{ color: "#E0A32E" }}>
-            Some trades couldn&rsquo;t be reconciled on-chain — cost &amp; PnL cover verified history only.
+            History incomplete — some blocks couldn&rsquo;t be read; cost basis &amp; realized PnL cover only the verifiable history.
+          </p>
+        )}
+        {p.historyComplete && p.basisStatus === "partial" && (
+          <p className="pt-1 text-[11px]" style={{ color: "#E0A32E" }}>
+            Some trades couldn&rsquo;t be reconciled to a clean single-pool swap — cost &amp; PnL cover verified history only.
           </p>
         )}
         {p.realizedPnl == null && p.basisStatus !== "unknown" && (

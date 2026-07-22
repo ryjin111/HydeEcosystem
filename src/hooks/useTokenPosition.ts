@@ -108,13 +108,17 @@ async function buildHoodiePosition(publicClient: any, chainId: number, token: Ad
   const whole = 10n ** BigInt(decimals);
 
   // Authoritative attribution + inception: the token must have a HoodieLaunchCreated on the engine.
-  const created = await chunked<{ blockNumber: bigint | null }>(
+  const created = await chunked<{ blockNumber: bigint | null; args?: { poolId?: string } }>(
     (f, t) => publicClient.getLogs({ address: engine, event: HOODIE_LAUNCH_CREATED, args: { token }, fromBlock: f, toBlock: t }),
     MAINNET_HOODIE_ENGINE_BLOCK, latest,
   );
   if (created.length === 0) return balanceOnly(balance, decimals, latest, "HOODIE"); // not a HOODIE launch → no basis to prove
   const inception = created[0].blockNumber ?? MAINNET_HOODIE_ENGINE_BLOCK;
-  const poolId = hoodiePoolId(token, chainId); // sorted (token,HOODIE)/dynamic-fee/tick60/HydeHook — self-checked live
+  // Reconcile against the AUTHORITATIVE poolId from the HoodieLaunchCreated event itself (kami 23949 #5) —
+  // not a derived id trusted from a single probe token. The derived id is a cross-check; fall back to it only
+  // if the event omitted one.
+  const eventPoolId = created[0].args?.poolId;
+  const poolId = (eventPoolId ?? hoodiePoolId(token, chainId)) as string;
 
   // Wallet-scoped token + HOODIE transfers over [inception, latest]. Truncation guard (gojo/kami): ANY
   // getLogs failure marks history INCOMPLETE (→ realizedPnl null, "history incomplete" state) — never
@@ -164,6 +168,7 @@ async function buildHoodiePosition(publicClient: any, chainId: number, token: Ad
     const sim = await simulateHoodieSwap({
       client: publicClient, user: wallet, token, decimals, isBuy: false,
       amountIn: formatUnits(balance, decimals), amountOutQuoted: "0", slippagePercent: "0", chainId,
+      blockTag: latest, // pin the mark to the same block as balance/logs (kami 23949 #1)
     }).catch(() => null);
     if (sim && sim.ok && sim.out > 0n) { markPrice = (sim.out * whole) / balance; markStatus = "exit"; }
   }
@@ -181,14 +186,15 @@ async function buildHoodiePosition(publicClient: any, chainId: number, token: Ad
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function buildPosition(publicClient: any, chainId: number, token: Address, wallet: Address): Promise<TokenPosition> {
+  // Pin the snapshot to ONE block (kami 23949 #1): capture `latest` first, then read balance AT that block,
+  // scan logs THROUGH it, and run the exit sim AT it — so asOfBlock/historyComplete are truthful.
+  const latest = await publicClient.getBlockNumber();
   const decimals = Number(
     await publicClient.readContract({ address: token, abi: erc20Abi, functionName: "decimals" }),
   );
   const balance = (await publicClient.readContract({
-    address: token, abi: erc20Abi, functionName: "balanceOf", args: [wallet],
+    address: token, abi: erc20Abi, functionName: "balanceOf", args: [wallet], blockNumber: latest,
   })) as bigint;
-
-  const latest = await publicClient.getBlockNumber();
 
   // Mainnet 4663 HOODIE own-stack → dedicated HOODIE-numeraire path (sim-based mark, works at tick-liq 0).
   // The testnet (46630) WETH own-stack path continues below.
@@ -277,25 +283,28 @@ async function buildPosition(publicClient: any, chainId: number, token: Address,
  * The mark is computed on-chain with provenance (kami #5) — for HOODIE launches it's the net-of-slippage
  * sell sim.
  */
-export function useTokenPosition(address: string, networkId: number, enabled = true): TokenPosition | null {
+export function useTokenPosition(address: string, networkId: number, enabled = true): { position: TokenPosition | null; error: boolean } {
   const { address: wallet, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId: networkId });
   const [pos, setPos] = useState<TokenPosition | null>(null);
+  const [error, setError] = useState(false); // adapter failure — distinct from loading (kami 23949 #2)
 
   useEffect(() => {
     // `enabled` lets a caller skip the log scan for tokens that have no reconcilable own-stack pool
     // (e.g. non-HOODIE pairs) — a hook is always called, but does no I/O when off.
     if (!enabled || !isConnected || !wallet || !publicClient || !address) {
-      setPos(null);
+      setPos(null); setError(false);
       return;
     }
     let cancelled = false;
-    setPos(null); // loading
+    setPos(null); setError(false); // loading
     buildPosition(publicClient, networkId, address as Address, wallet as Address)
-      .then((p) => { if (!cancelled) setPos(p); })
-      .catch(() => { if (!cancelled) setPos(null); }); // fail-neutral: card falls back to skeleton, never a wrong number
+      .then((p) => { if (!cancelled) { setPos(p); setError(false); } })
+      // A read failure is NOT loading — surface a terminal "Position data unavailable" rather than an
+      // endless skeleton (kami 23949 #2). Never a fabricated number.
+      .catch(() => { if (!cancelled) { setPos(null); setError(true); } });
     return () => { cancelled = true; };
   }, [address, wallet, isConnected, networkId, publicClient, enabled]);
 
-  return pos;
+  return { position: pos, error };
 }
