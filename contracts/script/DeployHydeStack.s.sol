@@ -50,12 +50,17 @@ abstract contract HydeDeployConfig {
     uint16 internal constant MAX_WALLET_BPS = 100; // 1% (test)
     uint64 internal constant MAX_WALLET_WINDOW = 300;
     uint256 internal constant LAUNCH_FEE = 0.0004 ether; // flat native-ETH launch fee (4e14 wei)
-    int24 internal constant C0_INIT = -60_000;
-    int24 internal constant C0_LOWER = 0;
-    int24 internal constant C0_UPPER = 60_000;
-    int24 internal constant C1_INIT = 60_000;
-    int24 internal constant C1_LOWER = -60_000;
-    int24 internal constant C1_UPPER = 0;
+    // WETH preset — CORRECTED to a numeraire-aware ~$10k starting FDV (gojo 24027; clint 24024 picked $10k).
+    // The OLD ±60000 seed = ~1 WETH/token ⇒ ~$1.9T FDV (the incident). These ticks seed ~5.2138e-9 WETH/token
+    // = $0.00001/token, FDV ~$9,989 (both legs mirror). gojo's validator ACCEPTED; the on-chain _buildLeg
+    // requires hold: c0 initialTick(-190800) < tickLower(-190740); c1 tickUpper(190740) <= initialTick(190800);
+    // all ticks % TICK_SPACING(60) == 0. Presets are immutable ⇒ this is a REDEPLOY, not a setter.
+    int24 internal constant C0_INIT = -190_800;
+    int24 internal constant C0_LOWER = -190_740;
+    int24 internal constant C0_UPPER = -100_740;
+    int24 internal constant C1_INIT = 190_800;
+    int24 internal constant C1_LOWER = 100_740;
+    int24 internal constant C1_UPPER = 190_740;
     uint160 internal constant HOOK_FLAGS = uint160(
         Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
     );
