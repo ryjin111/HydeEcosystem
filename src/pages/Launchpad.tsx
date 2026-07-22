@@ -71,7 +71,7 @@ const CHAIN_LABELS: Record<number, string> = {
  *  same chain (stated in the page/footer), and repeating it was what squeezed the name column.
  *  Metrics are honesty-gated: MCAP/Liquidity render ONLY when the DEXScreener pair is real
  *  (graduated + indexed); curve-stage tokens show the on-chain curve % instead — never a fake $. */
-export function PoolCard({ pool, onTrade, showClaimable = false }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void; showClaimable?: boolean }) {
+export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void; showClaimable?: boolean; onClaimed?: () => void }) {
   const bt = pool.baseToken;
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
   const graduated = pool.type === "v2";
@@ -113,22 +113,37 @@ export function PoolCard({ pool, onTrade, showClaimable = false }: { pool: Doppl
   const publicClient = usePublicClient({ chainId: pool.chainId });
   const { data: walletClient } = useWalletClient({ chainId: pool.chainId });
   const [claiming, setClaiming] = useState(false);
+  const [claimed, setClaimed] = useState(false); // optimistic lock: hide the button the instant a claim lands
   const claimable = claimableBig(pool.creatorClaimable);
   const claimUnit = pool.quoteToken?.symbol ?? "WETH";
+  const canClaim = claimable > 0n && !claimed;
   const doClaim = async () => {
     if (!walletClient || !publicClient || !wallet) return;
+    const vault = feeVaultFor(pool);
+    const settle = () => { setClaimed(true); onClaimed?.(); }; // lock button + refetch the feed → read goes to 0
     try {
       setClaiming(true);
       toast.loading("Claiming fees…", { id: "claim" });
+      // Fresh preflight immediately before the write (kami 23897): claim is permissionless, so the balance
+      // can be drained between the displayed read and our submit. A NOTHING here = already claimed by someone
+      // (or us) → lock + refresh, NEVER fire a reverting tx.
+      try {
+        await publicClient.simulateContract({ address: vault, abi: hydeVaultAbi, functionName: "claimCreator", args: [bt.address as `0x${string}`], account: wallet });
+      } catch (sim) {
+        if (/nothing/i.test(sim instanceof Error ? sim.message : "")) { toast.success("Already claimed", { id: "claim" }); settle(); return; }
+        throw sim;
+      }
       const hash = await walletClient.writeContract({
-        address: feeVaultFor(pool), abi: hydeVaultAbi, functionName: "claimCreator",
+        address: vault, abi: hydeVaultAbi, functionName: "claimCreator",
         args: [bt.address as `0x${string}`], account: wallet, chain: walletClient.chain,
       });
       await publicClient.waitForTransactionReceipt({ hash });
       toast.success(`Claimed ${claimUnit} fees`, { id: "claim" });
+      settle();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
-      toast.error(/reject|denied/i.test(msg) ? "Claim rejected" : "Claim failed", { id: "claim" });
+      if (/nothing/i.test(msg)) { toast.success("Already claimed", { id: "claim" }); settle(); }
+      else toast.error(/reject|denied/i.test(msg) ? "Claim rejected" : "Claim failed", { id: "claim" });
     } finally { setClaiming(false); }
   };
 
@@ -226,12 +241,12 @@ export function PoolCard({ pool, onTrade, showClaimable = false }: { pool: Doppl
                     "you earned nothing", uncollected in-position fees are unknown); >0 = the amount. */}
                 {pool.creatorClaimable == null
                   ? "Unavailable"
-                  : claimable > 0n
+                  : canClaim
                     ? fmtClaimable(pool.creatorClaimable, claimUnit)
                     : "No settled fees yet"}
               </span>
             </div>
-            {claimable > 0n && (
+            {canClaim && (
               <button
                 type="button"
                 data-testid="claim-fees"
@@ -440,6 +455,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
                   pool={pool}
                   onTrade={handleTrade}
                   showClaimable
+                  onClaimed={refetch}
                 />
               ))}
             </div>
