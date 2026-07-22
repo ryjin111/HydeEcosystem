@@ -82,7 +82,11 @@ export async function simulateHarvestFlow(args: { client: PublicClient; token: A
     method: "eth_simulateV1" as never,
     params: [{ blockStateCalls: [{ calls }], validation: false }, "latest"] as never,
   }) as never as { calls: { status: string; returnData: Hex; error?: { message?: string } }[] }[];
-  const cc = res?.[0]?.calls ?? [];
+  // FAIL-CLOSED: an empty/missing/truncated result must NOT read as success (kami 23937 — `findIndex`
+  // returns -1 on `[]`). Require exactly one block whose calls array matches the planned length; anything
+  // else = simulation unavailable, never authorize a broadcast.
+  const cc = Array.isArray(res) && res.length === 1 ? res[0]?.calls : undefined;
+  if (!Array.isArray(cc) || cc.length !== calls.length) return { ok: false, reason: "harvest simulation unavailable" };
   const bad = cc.findIndex((x) => x.status !== "0x1");
   if (bad === -1) return { ok: true };
   return { ok: false, reason: revertReason((cc[bad].error?.message ?? cc[bad].returnData ?? "").toString()) };
@@ -151,7 +155,9 @@ async function send(walletClient: WalletClient, publicClient: PublicClient, to: 
   if (!isClaimConfirmed(receipt.status, replaced)) throw new Error(replaced === "cancelled" ? "CANCELLED" : "REVERTED");
 }
 
-export type HarvestResult = { claimed: boolean; ltPending: boolean };
+// `ltPending`: true = token-side fees remain · false = none · null = the LT read FAILED (unknown) — never
+// coerce a failed read to "no remainder" (kami 23937), so the UI can't imply fully-harvested when unsure.
+export type HarvestResult = { claimed: boolean; ltPending: boolean | null };
 
 /**
  * Run the harvest. An INITIAL full-flow sim gates the whole thing (fail fast, honest reason, no tx). Each
@@ -203,6 +209,10 @@ export async function runHarvest(args: {
   else onStep("claim", "skipped");
 
   // Token-side (LT) fees left over → not fully harvested; the UI surfaces an LT-pending state (kami #4).
-  const ltPending = (await readRaw(pc, token, token, args.chainId).catch(() => 0n)) > 0n;
+  // A FAILED read is `null` (unknown), never coerced to "no remainder" (kami 23937) — the UI then avoids
+  // asserting fully-harvested. The authoritative post-harvest state comes from the refetch (readFeeState).
+  let ltPending: boolean | null;
+  try { ltPending = (await readRaw(pc, token, token, args.chainId)) > 0n; }
+  catch { ltPending = null; }
   return { claimed, ltPending };
 }

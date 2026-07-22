@@ -194,10 +194,11 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
         publicClient, walletClient, token: bt.address as `0x${string}`, wallet, chainId: pool.chainId,
         onStep: (step, status) => setSteps((s) => ({ ...s, [step]: status })),
       });
-      if (didClaim && ltPending) toast.success("Numeraire fees claimed · token-side fees still settling", { id: "harvest" });
-      else if (didClaim) toast.success("Fees claimed", { id: "harvest" });
-      else if (ltPending) toast("Token-side fees still settling", { id: "harvest" });
-      else toast.success("Already harvested", { id: "harvest" });
+      // ltPending: true = LT fees remain · null = LT read failed (unknown — never imply "fully done",
+      // kami 23937) · false = clear. The refetch below shows the authoritative post-harvest state regardless.
+      if (ltPending === true) toast.success(didClaim ? "Numeraire fees claimed · token-side fees still settling" : "Token-side fees still settling", { id: "harvest" });
+      else if (ltPending === null) toast.success("Harvest complete — refreshing to confirm…", { id: "harvest" });
+      else toast.success(didClaim ? "Fees claimed" : "Already harvested", { id: "harvest" });
       onClaimed?.();
       await refreshFees();
     } catch (e) {
