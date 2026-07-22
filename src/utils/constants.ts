@@ -411,14 +411,31 @@ export const ROBINHOOD_TESTNET_VAULT = "0xF6318a4C874E9D2EBE627B05A247AD9d640173
  *  always pays the immutable on-chain `creator[token]`. */
 export const MAINNET_HOODIE_FEE_VAULT = "0x1ee72dCb5a18ddcC069e4E604Ba59ac5a0930DB4" as Address;
 export const MAINNET_WETH_FEE_VAULT = "0x04C204C264626Ad0067ac4317D54598286d2D791" as Address;
+/** HydeFeeCollector for the 4663 HOODIE stack (gojo 23892/23899). `collect(token)` harvests accrued V4
+ *  fees into the vault as `rawFees` (permissionless, swap-free, no oracle). */
+export const MAINNET_HOODIE_FEE_COLLECTOR = "0x08610aE598a24799e1843C683695B0Fc63b1bd6f" as Address;
 
-/** Minimal HydeFeeVault surface — per-token creator-claimable (public mapping getter) + the safe harvest.
- *  `claimCreator` sends `creatorClaimable[token]` to the immutable `creator[token]`; reverts only `NOTHING`
- *  when the claimable is 0, so it's exposed ONLY when the read is > 0 (kami 23894 — no dead/reverting button).
- *  Collect/Settle stay off the UI until gojo's live collect→settle proof (23892) lands. */
+/** Fee split — creator gets 90 of the 95% net remainder (5% Hyde), the other 5% is retained in-kind as
+ *  locked LP at collect. So settled creator claimable ≈ rawFees × 9000/9500 (gojo: rawH 1049.82 → 994.61). */
+export const HYDE_CREATOR_BPS = 9000n;
+export const HYDE_NET_BPS = 9500n;
+
+/** HydeFeeCollector surface — the permissionless, swap-free, oracle-free harvest of accrued V4 fees into
+ *  the vault (gojo 23892). Reverts only UNKNOWN; sims green even at 0. */
+export const hydeCollectorAbi = [
+  { type: "function", name: "collect", stateMutability: "nonpayable", inputs: [{ name: "token", type: "address" }], outputs: [] },
+] as const;
+
+/** HydeFeeVault surface — per-token creator-claimable + rawFees getters, the safe harvest (`claimCreator`
+ *  sends `creatorClaimable[token]` to the immutable `creator[token]`, reverts only `NOTHING`), and `settle`
+ *  (splits a raw leg 90 creator / 5 Hyde into creatorClaimable; numeraire leg is a pure reclassification —
+ *  ungated, callerMinOut 0; the LT leg is the system's only swap: TWAP-floored + deviation-gated, so a
+ *  caller-derived nonzero minOut only adds protection — gojo 23892/23904). */
 export const hydeVaultAbi = [
   { type: "function", name: "creatorClaimable", stateMutability: "view", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "rawFees", stateMutability: "view", inputs: [{ name: "token", type: "address" }, { name: "asset", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "claimCreator", stateMutability: "nonpayable", inputs: [{ name: "token", type: "address" }], outputs: [] },
+  { type: "function", name: "settle", stateMutability: "nonpayable", inputs: [{ name: "token", type: "address" }, { name: "asset", type: "address" }, { name: "amountIn", type: "uint256" }, { name: "callerMinOut", type: "uint256" }, { name: "deadline", type: "uint256" }], outputs: [] },
 ] as const;
 
 // Template encoding config for auto payload generation.

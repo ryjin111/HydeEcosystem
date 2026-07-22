@@ -10,6 +10,7 @@ import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import { hydeVaultAbi, MAINNET_HOODIE_FEE_VAULT, MAINNET_WETH_FEE_VAULT, ROBINHOOD_TESTNET_VAULT } from "../utils/constants";
 import { isClaimConfirmed, type ReplacedReason } from "../utils/txStatus";
+import { readFeeState, runHarvest, feeDisplayState, type FeeState, type HarvestStep, type StepStatus } from "../utils/hoodieFees";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 const RH_TESTNET_CHAIN_ID = 46630;
@@ -20,6 +21,14 @@ function feeVaultFor(pool: DopplerPool): `0x${string}` {
   if (pool.chainId === RH_TESTNET_CHAIN_ID) return ROBINHOOD_TESTNET_VAULT as `0x${string}`;
   return (pool.quoteToken?.symbol === "HOODIE" ? MAINNET_HOODIE_FEE_VAULT : MAINNET_WETH_FEE_VAULT) as `0x${string}`;
 }
+
+// Harvest stepper visuals (shiro 23903 — visible 3-step progress, never a one-shot spinner).
+const STEP_LABEL: Record<HarvestStep, string> = { collect: "Collect", settle: "Settle", claim: "Claim" };
+const stepColor = (s: StepStatus | "idle"): string =>
+  s === "done" ? "#34C77B" : s === "confirming" ? "#E0A32E" : s === "failed" ? "#F6465D" : "#7A828E";
+const stepMark = (s: StepStatus | "idle"): string =>
+  s === "done" ? "✓" : s === "failed" ? "✕" : s === "confirming" ? "…" : s === "skipped" ? "·" : "○";
+const fmtHoodieAmt = (v: bigint): string => Number(formatEther(v)).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 
@@ -117,7 +126,6 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
   const [claimed, setClaimed] = useState(false); // optimistic lock: hide the button the instant a claim lands
   const claimable = claimableBig(pool.creatorClaimable);
   const claimUnit = pool.quoteToken?.symbol ?? "WETH";
-  const canClaim = claimable > 0n && !claimed;
   const doClaim = async () => {
     if (!walletClient || !publicClient || !wallet) return;
     const vault = feeVaultFor(pool);
@@ -158,6 +166,52 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
       else toast.error("Claim failed", { id: "claim" });
     } finally { setClaiming(false); }
   };
+
+  // ── Collect & Claim harvest (HOODIE pairs) ─ accrued-but-unsettled creator fees. The pending figure is
+  // the REAL collect-sim output (gojo 23899) — read on card mount; the button runs the permissionless
+  // collect→settle→claim pipeline as a resumable stepper. Only a user's own click/sign broadcasts; the app
+  // never fires it (kami 23913). LT-leg swap-settle is a follow-up (rawLT ~0 today).
+  const isHoodieFeePair = showClaimable && pool.chainId === ROBINHOOD_CHAIN_ID && pool.quoteToken?.symbol === "HOODIE";
+  const [feeState, setFeeState] = useState<FeeState | null>(null);
+  const [harvesting, setHarvesting] = useState(false);
+  const [harvestFailed, setHarvestFailed] = useState(false);
+  const [steps, setSteps] = useState<Record<HarvestStep, StepStatus | "idle">>({ collect: "idle", settle: "idle", claim: "idle" });
+  useEffect(() => {
+    if (!isHoodieFeePair || !publicClient) { setFeeState(null); return; }
+    let off = false;
+    readFeeState({ client: publicClient, token: bt.address as `0x${string}`, chainId: pool.chainId })
+      .then((s) => { if (!off) setFeeState(s); })
+      .catch(() => { if (!off) setFeeState(null); });
+    return () => { off = true; };
+  }, [isHoodieFeePair, publicClient, bt.address, pool.chainId, claimed]);
+
+  const startHarvest = async () => {
+    if (!walletClient || !publicClient || !wallet) return;
+    setHarvesting(true); setHarvestFailed(false);
+    setSteps({ collect: "idle", settle: "idle", claim: "idle" });
+    try {
+      toast.loading("Harvesting fees…", { id: "harvest" });
+      const delivered = await runHarvest({
+        publicClient, walletClient, token: bt.address as `0x${string}`, wallet, chainId: pool.chainId,
+        onStep: (step, status) => setSteps((s) => ({ ...s, [step]: status })),
+      });
+      toast.success(delivered ? "Fees claimed" : "Already harvested", { id: "harvest" });
+      onClaimed?.();
+      const s = await readFeeState({ client: publicClient, token: bt.address as `0x${string}`, chainId: pool.chainId }).catch(() => null);
+      setFeeState(s);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (/reject|denied|cancelled/i.test(msg)) toast.error("Harvest cancelled", { id: "harvest" });
+      else if (/settle_dev|price/i.test(msg)) toast.error("Settlement temporarily unavailable · price unstable", { id: "harvest" });
+      else toast.error("Harvest didn't complete — you can Resume", { id: "harvest" });
+      setHarvestFailed(true); // steps already landed persist on-chain; Resume continues from the first not-done
+    } finally { setHarvesting(false); }
+  };
+
+  // Fee affordance — fresh feeState preferred over the (possibly stale) feed; optimistic `claimed` zeroes it.
+  const effClaimable: bigint | null = claimed ? 0n : feeState ? feeState.claimable : pool.creatorClaimable == null ? null : claimable;
+  const pendingHoodie = isHoodieFeePair ? feeState?.pendingHoodie ?? 0n : 0n;
+  const feeDisp = feeDisplayState(effClaimable, pendingHoodie);
 
   // Whole card is the trade target (clint 23774: "this entire one is clickable, less hassle").
   // A11y (kami 23788): the card wrapper is NON-interactive; a single absolute full-card native
@@ -244,21 +298,26 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
             style={{ background: "rgba(52,199,123,0.06)", border: "1px solid rgba(52,199,123,0.22)" }}
           >
             <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wide text-pcs-textDim">Claimable fees</span>
+              <span className="text-[10px] uppercase tracking-wide text-pcs-textDim">
+                {feeDisp === "awaiting" ? "Fees awaiting settlement" : "Claimable fees"}
+              </span>
               <span
                 className="text-sm font-semibold tabular-nums"
-                style={{ color: claimable > 0n ? "#34C77B" : "#7A828E" }}
+                style={{ color: feeDisp === "claim" || feeDisp === "awaiting" ? "#34C77B" : "#7A828E" }}
               >
-                {/* null read = honest "Unavailable"; real 0 = "No settled fees yet" (kami 23894 — never
-                    "you earned nothing", uncollected in-position fees are unknown); >0 = the amount. */}
-                {pool.creatorClaimable == null
+                {/* claim = settled amount · awaiting = real collect-sim pending (~X, never "you earned
+                    nothing" for real fees — shiro 23890/gojo 23899) · none = settled-zero · unavailable = null read. */}
+                {feeDisp === "unavailable"
                   ? "Unavailable"
-                  : canClaim
-                    ? fmtClaimable(pool.creatorClaimable, claimUnit)
-                    : "No settled fees yet"}
+                  : feeDisp === "claim"
+                    ? fmtClaimable((effClaimable ?? 0n).toString(), claimUnit)
+                    : feeDisp === "awaiting"
+                      ? `~${fmtHoodieAmt(pendingHoodie)} HOODIE`
+                      : "No settled fees yet"}
               </span>
             </div>
-            {canClaim && (
+
+            {feeDisp === "claim" && (
               <button
                 type="button"
                 data-testid="claim-fees"
@@ -269,6 +328,36 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
               >
                 {claiming ? "Claiming…" : `Claim ${claimUnit}`}
               </button>
+            )}
+
+            {feeDisp === "awaiting" && (
+              <div className="space-y-1.5">
+                {(harvesting || harvestFailed) && (
+                  <div className="flex items-center justify-center gap-1.5 text-[10px] font-medium" data-testid="harvest-steps">
+                    {(["collect", "settle", "claim"] as HarvestStep[]).map((st, i) => (
+                      <span key={st} className="flex items-center gap-1">
+                        {i > 0 && <span className="text-pcs-textDim">→</span>}
+                        <span style={{ color: stepColor(steps[st]) }}>{stepMark(steps[st])} {STEP_LABEL[st]}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {!harvesting && (
+                  <button
+                    type="button"
+                    data-testid="collect-claim"
+                    onClick={(e) => { e.stopPropagation(); void startHarvest(); }}
+                    disabled={!walletClient}
+                    className="relative z-20 w-full rounded-lg py-1.5 text-xs font-bold text-pcs-bg transition disabled:opacity-50"
+                    style={{ background: "#34C77B" }}
+                  >
+                    {harvestFailed ? "Resume — Settle & Claim" : "Collect & Claim"}
+                  </button>
+                )}
+                {harvesting && (
+                  <p className="text-center text-[10px] text-pcs-textDim">Confirm each step in your wallet…</p>
+                )}
+              </div>
             )}
           </div>
         )}
