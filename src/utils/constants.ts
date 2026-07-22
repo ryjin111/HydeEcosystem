@@ -406,9 +406,19 @@ export const ROBINHOOD_TESTNET_STATE_VIEW = "0x81d5A6B7433420F7011612771eA74Ef71
  *  MUST track ROBINHOOD_TESTNET.factory on any redeploy. */
 export const ROBINHOOD_TESTNET_VAULT = "0xF6318a4C874E9D2EBE627B05A247AD9d6401731C" as Address;
 
-/** Minimal HydeFeeVault surface — the per-token creator-claimable WETH (public mapping getter). */
+/** HydeFeeVault addresses on 4663 mainnet (gojo 23892 / kami 23894). Creator fees settle here in the
+ *  vault's SETTLEMENT_TOKEN — $HOODIE for the HOODIE stack, WETH for the WETH stack. `claimCreator(token)`
+ *  always pays the immutable on-chain `creator[token]`. */
+export const MAINNET_HOODIE_FEE_VAULT = "0x1ee72dCb5a18ddcC069e4E604Ba59ac5a0930DB4" as Address;
+export const MAINNET_WETH_FEE_VAULT = "0x04C204C264626Ad0067ac4317D54598286d2D791" as Address;
+
+/** Minimal HydeFeeVault surface — per-token creator-claimable (public mapping getter) + the safe harvest.
+ *  `claimCreator` sends `creatorClaimable[token]` to the immutable `creator[token]`; reverts only `NOTHING`
+ *  when the claimable is 0, so it's exposed ONLY when the read is > 0 (kami 23894 — no dead/reverting button).
+ *  Collect/Settle stay off the UI until gojo's live collect→settle proof (23892) lands. */
 export const hydeVaultAbi = [
   { type: "function", name: "creatorClaimable", stateMutability: "view", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "claimCreator", stateMutability: "nonpayable", inputs: [{ name: "token", type: "address" }], outputs: [] },
 ] as const;
 
 // Template encoding config for auto payload generation.

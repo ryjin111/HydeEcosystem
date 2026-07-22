@@ -1,14 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useAccount } from "wagmi";
+import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { formatEther } from "viem";
+import toast from "react-hot-toast";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { LaunchTokenForm } from "../components/LaunchTokenForm";
 import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta } from "../utils/launchMeta";
+import { hydeVaultAbi, MAINNET_HOODIE_FEE_VAULT, MAINNET_WETH_FEE_VAULT, ROBINHOOD_TESTNET_VAULT } from "../utils/constants";
 
 const ROBINHOOD_CHAIN_ID = 4663;
+const RH_TESTNET_CHAIN_ID = 46630;
+
+/** The fee vault a pool's creator fees settle into, by (chain, numeraire) — HOODIE vault for HOODIE
+ *  pairs, WETH vault for WETH pairs, testnet vault on 46630. `claimCreator(token)` pays the creator. */
+function feeVaultFor(pool: DopplerPool): `0x${string}` {
+  if (pool.chainId === RH_TESTNET_CHAIN_ID) return ROBINHOOD_TESTNET_VAULT as `0x${string}`;
+  return (pool.quoteToken?.symbol === "HOODIE" ? MAINNET_HOODIE_FEE_VAULT : MAINNET_WETH_FEE_VAULT) as `0x${string}`;
+}
 
 /* ─── helpers ─────────────────────────────────────────────────────────────── */
 
@@ -35,14 +45,15 @@ function claimableBig(wei: string | null | undefined): bigint {
   try { return BigInt(wei ?? "0"); } catch { return 0n; }
 }
 
-/** Claimable WETH display. Honest: null read = "Unavailable"; a real "0" = settled-zero (legit, not
- *  fabricated); otherwise the WETH amount (kami acceptance — never invent a value). */
-function fmtClaimable(wei: string | null | undefined): string {
+/** Claimable-fee display in the pool's numeraire (`unit` = HOODIE for HOODIE pairs, WETH for WETH pairs;
+ *  kami 23889 — never hardcode WETH). Honest: null read = "Unavailable"; a real "0" = settled-zero (legit,
+ *  not fabricated); otherwise the amount (kami acceptance — never invent a value). */
+function fmtClaimable(wei: string | null | undefined, unit = "WETH"): string {
   if (wei == null) return "Unavailable";
   try {
     const n = parseFloat(formatEther(BigInt(wei)));
-    if (n === 0) return "0 WETH";
-    return `${n < 0.0001 ? n.toExponential(2) : n.toFixed(4)} WETH`;
+    if (n === 0) return `0 ${unit}`;
+    return `${n < 0.0001 ? n.toExponential(2) : n.toFixed(4)} ${unit}`;
   } catch {
     return "Unavailable";
   }
@@ -92,6 +103,33 @@ export function PoolCard({ pool, onTrade, showClaimable = false }: { pool: Doppl
       setCopyState("fail");
     }
     setTimeout(() => setCopyState("idle"), 1400);
+  };
+
+  // Settled-fee claim (My Launches only). SAFE by construction: the button renders ONLY when the vault's
+  // creatorClaimable read is > 0, and `claimCreator` reverts only NOTHING (0) — so it can't revert on gas
+  // (kami 23894). Collect/Settle stay non-interactive until gojo's live proof; a raw-but-unsettled balance
+  // isn't wired here yet (LILHOODIE reads all-zero today → "No settled fees yet").
+  const { address: wallet } = useAccount();
+  const publicClient = usePublicClient({ chainId: pool.chainId });
+  const { data: walletClient } = useWalletClient({ chainId: pool.chainId });
+  const [claiming, setClaiming] = useState(false);
+  const claimable = claimableBig(pool.creatorClaimable);
+  const claimUnit = pool.quoteToken?.symbol ?? "WETH";
+  const doClaim = async () => {
+    if (!walletClient || !publicClient || !wallet) return;
+    try {
+      setClaiming(true);
+      toast.loading("Claiming fees…", { id: "claim" });
+      const hash = await walletClient.writeContract({
+        address: feeVaultFor(pool), abi: hydeVaultAbi, functionName: "claimCreator",
+        args: [bt.address as `0x${string}`], account: wallet, chain: walletClient.chain,
+      });
+      await publicClient.waitForTransactionReceipt({ hash });
+      toast.success(`Claimed ${claimUnit} fees`, { id: "claim" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      toast.error(/reject|denied/i.test(msg) ? "Claim rejected" : "Claim failed", { id: "claim" });
+    } finally { setClaiming(false); }
   };
 
   // Whole card is the trade target (clint 23774: "this entire one is clickable, less hassle").
@@ -170,20 +208,41 @@ export function PoolCard({ pool, onTrade, showClaimable = false }: { pool: Doppl
           </div>
         )}
 
-        {/* Claimable creator fees — shown only on My Launches. Real WETH from the vault; honest
-            "Unavailable" for a null read, "0 WETH" for a real settled-zero — never fabricated (kami). */}
+        {/* Claimable creator fees — shown only on My Launches. Real fees from the pair's vault, in the pool's
+            numeraire (HOODIE / WETH); honest "Unavailable" for a null read, settled-zero for a real 0 — never
+            fabricated (kami 23889). The one-click harvest itself lands with gojo's collect→settle→claim proof. */}
         {showClaimable && (
           <div
-            className="flex items-center justify-between rounded-xl px-3 py-2"
+            className="rounded-xl px-3 py-2 space-y-2"
             style={{ background: "rgba(52,199,123,0.06)", border: "1px solid rgba(52,199,123,0.22)" }}
           >
-            <span className="text-[10px] uppercase tracking-wide text-pcs-textDim">Claimable fees</span>
-            <span
-              className="text-sm font-semibold tabular-nums"
-              style={{ color: claimableBig(pool.creatorClaimable) > 0n ? "#34C77B" : "#7A828E" }}
-            >
-              {fmtClaimable(pool.creatorClaimable)}
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wide text-pcs-textDim">Claimable fees</span>
+              <span
+                className="text-sm font-semibold tabular-nums"
+                style={{ color: claimable > 0n ? "#34C77B" : "#7A828E" }}
+              >
+                {/* null read = honest "Unavailable"; real 0 = "No settled fees yet" (kami 23894 — never
+                    "you earned nothing", uncollected in-position fees are unknown); >0 = the amount. */}
+                {pool.creatorClaimable == null
+                  ? "Unavailable"
+                  : claimable > 0n
+                    ? fmtClaimable(pool.creatorClaimable, claimUnit)
+                    : "No settled fees yet"}
+              </span>
+            </div>
+            {claimable > 0n && (
+              <button
+                type="button"
+                data-testid="claim-fees"
+                onClick={(e) => { e.stopPropagation(); void doClaim(); }}
+                disabled={claiming || !walletClient}
+                className="relative z-20 w-full rounded-lg py-1.5 text-xs font-bold text-pcs-bg transition disabled:opacity-50"
+                style={{ background: "#34C77B" }}
+              >
+                {claiming ? "Claiming…" : `Claim ${claimUnit}`}
+              </button>
+            )}
           </div>
         )}
 
@@ -324,24 +383,11 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         ))}
       </div>
 
-      {/* My Launches tab — the connected wallet's own launches (browsing everyone's lives on the
-          Landing now, clint ①). Only meaningful on the testnet own-stack rail: mainnet Doppler tokens
-          carry no creator attribution, so we can't compute "yours" there — gate it honestly rather than
-          claim a personal zero or run a meaningless sort. */}
-      {tab === "mine" && !isTestnet && (
-        <div className="rounded-2xl p-10 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
-          <p className="text-pcs-text text-sm font-medium">My Launches is available on Robinhood Testnet.</p>
-          <p className="text-pcs-textDim text-xs mt-1.5 max-w-sm mx-auto leading-relaxed">
-            Tokens on the Robinhood&nbsp;Chain rail aren't attributed to a creator, so your launches can't
-            be filtered here. Switch to Robinhood&nbsp;Testnet to see and sort your own launches.
-          </p>
-          <button onClick={() => navigate("/")} className="btn-primary mt-4 px-5 py-2 text-sm">
-            Browse all launches
-          </button>
-        </div>
-      )}
-
-      {tab === "mine" && isTestnet && (
+      {/* My Launches tab — the connected wallet's own launches. Both live rails are own-stack now (mainnet
+          4663 WETH factory + HOODIE engine, testnet 46630 factory), and BOTH carry indexed `creator` in
+          their launch events, so "yours" is computable on either — no more testnet-only gate (clint 23887 /
+          kami 23889: mainnet launches weren't reflecting because this was hidden off-testnet). */}
+      {tab === "mine" && (
         <div>
           {/* Sort + refresh */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
