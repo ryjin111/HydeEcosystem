@@ -28,11 +28,13 @@ const TRANSFER_EVENT = parseAbiItem("event Transfer(address indexed from, addres
 // The 4663 board now reads OUR factories' launch events ONLY — no Doppler Airlock (clint: "only our
 // stack"). WETH factory emits `LaunchCreated`; the HOODIE launcher-launcher engine emits
 // `HoodieLaunchCreated` (standard shape, human creator indexed). Deploy blocks bound every scan.
-const MAINNET_WETH_FACTORY = "0x710fEa288266518528A4230771E07ee310ce509f" as `0x${string}`;
-const MAINNET_WETH_FACTORY_BLOCK = 15643595n;
+// WETH stack REDEPLOYED 2026-07-24 (numeraire-aware $5k preset, audited 08d99a7) — old broken
+// factory 0x710fEa…509f + its $1.9T HYDE are delisted by pointing the board at the new factory.
+const MAINNET_WETH_FACTORY = "0x159A2fa37427299466B0723713eaa260e6124cbc" as `0x${string}`;
+const MAINNET_WETH_FACTORY_BLOCK = 17418907n;
 const MAINNET_HOODIE_ENGINE = "0x8062951c99CfFA5365f979D5139Cf96b5c77CFCc" as `0x${string}`;
 const MAINNET_HOODIE_ENGINE_BLOCK = 15652257n;
-const MAINNET_WETH_VAULT = "0x04C204C264626Ad0067ac4317D54598286d2D791" as `0x${string}`;
+const MAINNET_WETH_VAULT = "0x02Ce83859BEa69d248973Aa4beE09D7e12Ed0227" as `0x${string}`;
 const MAINNET_HOODIE_VAULT = "0x1ee72dCb5a18ddcC069e4E604Ba59ac5a0930DB4" as `0x${string}`;
 const MAINNET_HOODIE = "0xC72c01AAB5f5678dc1d6f5C6d2B417d91D402Ba3" as `0x${string}`;
 const HOODIE_LAUNCH_CREATED = parseAbiItem(

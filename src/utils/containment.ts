@@ -9,8 +9,11 @@
 // While active, WETH-paired launches + trade routes are paused; HOODIE launches/buys/sells are untouched.
 // No cosmetic price/FDV clamp — the honest number stays; the banner explains it. Permanent fix = redeploy the
 // WETH factory with a numeraire-aware preset + migrate existing WETH pools (Clint-owned FDV/depth call).
+// LIFTED 2026-07-24: WETH factory redeployed with the numeraire-aware $5k preset (0x159A…4cbc, audited
+// 08d99a7; on-chain-verified HOOK/WETH/tickSpacing=60/preset/seed). The $1.9T-bug root cause is fixed at
+// the contract level, so containment is no longer needed — WETH launches/trade resume on the corrected stack.
 export const WETH_CONTAINMENT = {
-  active: true,
+  active: false,
   // Copy matched to capability. WETH pairs have no audited in-app sell → trading unavailable; launch copy is
   // WETH-scoped (HOODIE launches are NOT paused).
   noSell: "Trading temporarily unavailable — launch price under review.",
