@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useParams, useSearchParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { Header } from "./components/Header";
 import { TrendingTicker } from "./components/TrendingTicker";
@@ -19,7 +19,13 @@ function TokenRedirect() {
 }
 
 function App() {
-  const [selectedNetworkId, setSelectedNetworkId] = useState(NETWORKS[0].id);
+  // Global chain context can be URL-initialized (?network=988) so a chain view is shareable/linkable; the
+  // header selector remains the live authority thereafter. Validated against NETWORKS.
+  const [searchParams] = useSearchParams();
+  const urlNetwork = Number(searchParams.get("network"));
+  const [selectedNetworkId, setSelectedNetworkId] = useState(
+    NETWORKS.some((n) => n.id === urlNetwork) ? urlNetwork : NETWORKS[0].id,
+  );
   const selectedNetwork = useMemo(
     () => NETWORKS.find((network) => network.id === selectedNetworkId) ?? NETWORKS[0],
     [selectedNetworkId]
@@ -141,7 +147,7 @@ function App() {
       </aside>
 
       {/* Main area */}
-      <div className={`flex-1 flex flex-col transition-all duration-200 ${sidebarOpen ? "md:ml-56" : "ml-0"}`}>
+      <div className={`flex-1 min-w-0 flex flex-col transition-all duration-200 ${sidebarOpen ? "md:ml-56" : "ml-0"}`}>
         <Header
           selectedNetwork={selectedNetwork}
           onNetworkChange={setSelectedNetworkId}

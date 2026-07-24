@@ -7,9 +7,17 @@
 }
 
 body {
-  @apply min-h-screen bg-pcs-bg text-pcs-text font-sans;
+  @apply min-h-screen text-pcs-text font-sans;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
+  /* Undersea theme — "the hideout beneath the surface" (shiro/kami). Restrained background LAYER only:
+     a soft cyan surface light up top, a faint violet caustic, over a deep-sea depth gradient. Dark enough
+     that solid panels stay high-contrast/readable (kami: no glassy aquarium clutter). */
+  background:
+    radial-gradient(130% 80% at 50% -12%, rgba(46, 159, 230, 0.12), transparent 58%),
+    radial-gradient(80% 55% at 82% 4%, rgba(139, 92, 246, 0.07), transparent 55%),
+    linear-gradient(180deg, #0a1622 0%, #0b0c0f 52%, #070809 100%);
+  background-attachment: fixed;
 }
 
 /* Display type — headings, brand, page titles */

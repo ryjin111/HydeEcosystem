@@ -539,7 +539,21 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     setPools([]); // drop prior-chain launches immediately on a chain switch (kami A-blocker #3)
     setLoading(true);
 
-    const fetcher = chainId === RH_TESTNET_ID ? fetchHydeFactoryPools : fetchMainnetOwnStackPools;
+    // Only chains with a live Hyde deployment have launches. A "coming" chain (e.g. Stable/988) has none —
+    // return empty rather than falling back to the mainnet fetch (would leak Robinhood data onto Stable).
+    const fetcher =
+      chainId === RH_TESTNET_ID
+        ? fetchHydeFactoryPools
+        : chainId === ROBINHOOD_CHAIN_ID
+          ? fetchMainnetOwnStackPools
+          : null;
+    if (!fetcher) {
+      setPools([]);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     fetcher()
       .then((items) => {
         if (!cancelled) setPools(items);

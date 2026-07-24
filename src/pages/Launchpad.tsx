@@ -5,7 +5,8 @@ import { formatEther } from "viem";
 import toast from "react-hot-toast";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
-import { LaunchTokenForm } from "../components/LaunchTokenForm";
+import { EngineAwareLaunch } from "../components/EngineAwareLaunch";
+import { chainEngineCapabilities } from "../utils/chainRegistry";
 import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import { hydeVaultAbi, MAINNET_HOODIE_FEE_VAULT, MAINNET_WETH_FEE_VAULT, ROBINHOOD_TESTNET_VAULT } from "../utils/constants";
@@ -503,7 +504,9 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         <p className="text-sm text-pcs-textSub mt-1">
           {isTestnet
             ? "Live launches on Robinhood Testnet — custody-locked liquidity."
-            : "Live token launches on Robinhood Chain."}
+            : chainEngineCapabilities(chainId)[0]?.engine === "v3-single-sided"
+              ? `Single-sided launches on ${chainEngineCapabilities(chainId)[0]?.name ?? "this chain"} — liquidity permanently locked.`
+              : `Live token launches on ${chainEngineCapabilities(chainId)[0]?.name ?? "Robinhood Chain"}.`}
         </p>
       </div>
 
@@ -590,8 +593,8 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         </div>
       )}
 
-      {/* Launch tab — network-aware: own-stack HydeTokenFactory on testnet, Doppler rail on mainnet */}
-      {tab === "launch" && <LaunchTokenForm chainId={chainId} />}
+      {/* Launch tab — engine-aware: chain toggle → V3/V4 selector → live V4 form or fail-closed coming panel */}
+      {tab === "launch" && <EngineAwareLaunch defaultChainId={chainId} />}
     </div>
   );
 }
