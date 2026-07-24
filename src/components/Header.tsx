@@ -79,10 +79,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
   // chain-switch; selectedNetwork then follows the wallet via the auto-follow effect above. On reject
   // nothing changes, so the control snaps back to mirroring the wallet chain (no two-brain divergence).
   const handleNetworkSelect = async (id: number) => {
-    const target = networks.find((n) => n.id === id);
-    // Browse-only for a "coming" chain (Stable V3): never request a wallet switch with unverified metadata
-    // (kami 24317). Selecting it just changes the app's chain context so pages fail closed accordingly.
-    if (!isConnected || id === chainId || target?.comingSoon) { onNetworkChange(id); return; }
+    if (!isConnected || id === chainId) { onNetworkChange(id); return; }
     try {
       await switchChainAsync({ chainId: id });
     } catch {
@@ -91,11 +88,8 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
   };
 
   const addNetworkToWallet = async () => {
-    // Never push unverified chain metadata (explorer/native symbol) to the wallet for a "coming" chain.
-    if (selectedNetwork.comingSoon) {
-      toast.error(`${selectedNetwork.name} isn't available to add yet`);
-      return;
-    }
+    // Stable's metadata is verified (explorer + USDT0 native, gojo 24328), so wallet-add is allowed even
+    // for a `comingSoon` chain — `comingSoon` gates the in-app launch/trade features, not chain identity.
     const provider = (window as unknown as { ethereum?: EthereumProvider }).ethereum;
     if (!provider) {
       toast.error("MetaMask not detected");

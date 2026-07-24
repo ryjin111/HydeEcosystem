@@ -128,13 +128,18 @@ export const STABLE_MAINNET: NetworkConfig = {
   id: 988,
   name: "Stable",
   rpcUrl: "https://rpc.stable.xyz",
-  explorerUrl: "", // unverified — do NOT ship a guessed explorer to wallet-add (kami 24317); gojo to verify
-  currencySymbol: "", // unverified native gas symbol — gojo to verify; wallet add/switch disabled meanwhile
+  explorerUrl: "https://stablescan.xyz", // verified: Stablescan (gojo 24328, ethereum-lists/chains eip155-988)
+  // Verified NATIVE gas symbol is USDT0 (18-dec) — Stable is a Tether L1 that uses USDT0 for gas, NOT ETH
+  // (gojo 24328). NOTE: this 18-dec NATIVE USDT0 is distinct from the 6-dec ERC20 USDT0 (0x779D…3736) used
+  // as the launchpad numeraire / "1 USDT0" fee — never conflate the two (10^12 trap).
+  currencySymbol: "USDT0",
   factory: PLACEHOLDER_FACTORY,
   router: PLACEHOLDER_ROUTER,
   weth: PLACEHOLDER_WETH,
   tokens: [],
-  comingSoon: true, // trade/liquidity/portfolio fail closed; wallet add/switch disabled until verified
+  // Metadata is verified → wallet add/switch enabled. `comingSoon` now gates only the LAUNCH/TRADE features
+  // (no Hyde deployment on Stable yet) → Swap/liquidity/portfolio fail closed; launch shows the V3 coming panel.
+  comingSoon: true,
 };
 
 export const PHAROS_ATLANTIC_TESTNET: NetworkConfig = {
