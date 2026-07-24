@@ -14,3 +14,24 @@ invariant = { runs = 256, depth = 32 }
 
 # Level-3 own-stack contracts (CONTRACT_SPEC_L3.md): HydeERC20 / HydeFeeCollector (+ HydeTokenFactory, held).
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+# Pinned, reproducible build profile for the V3 reach-line launchpad (src/v3/**) — the deploy gate flagged
+# in review. The default profile above does NOT pin solc/EVM (defaults to a newer EVM target), which drifts
+# the deployed bytecode away from the audited PASS. Compile + DEPLOY the V3 contracts ONLY under this
+# profile so on-chain bytecode matches audit:  FOUNDRY_PROFILE=v3 forge build
+# (Does not alter the default V4 profile.)
+# Scoped to src/v3 + test/v3 ONLY: pinning solc 0.8.24 here does NOT touch the V4 stack (v4-periphery
+# requires 0.8.26 and would fail under a global 0.8.24 pin). cancun is load-bearing — HydeERC20's runtime
+# differs under the default (newer) EVM target, so deploying off the default profile ships un-audited
+# bytecode. Deploy the V3 launchpad ONLY from this profile:  FOUNDRY_PROFILE=v3 forge build
+[profile.v3]
+src = "src/v3"
+test = "test/v3"
+out = "out"
+libs = ["lib"]
+solc = "0.8.24"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+bytecode_hash = "none"
