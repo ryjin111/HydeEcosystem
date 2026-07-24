@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { V4LiquidityCard } from "../components/V4LiquidityCard";
 import { ComingChainNotice } from "../components/ComingChainNotice";
-import { chainSupportsTrade } from "../utils/chainRegistry";
+import { chainV3Capability } from "../utils/chainRegistry";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 
 type Props = {
@@ -13,8 +13,8 @@ type Props = {
 export function AddLiquidityPage({ network, tokens, onAddCustomToken }: Props) {
   const [mode, setMode] = useState<"add" | "remove">("add");
 
-  // Fail closed where the registry says the chain has no in-app V4 trade (Stable V3) — no V4 liquidity card.
-  if (!chainSupportsTrade(network.id)) {
+  // Stable-specific fail-close: a single-sided V3 chain has no V4 liquidity (kami 24334). Robinhood untouched.
+  if (chainV3Capability(network.id)) {
     return (
       <div className="pt-8">
         <ComingChainNotice chainName={network.name} feature="Adding liquidity" />

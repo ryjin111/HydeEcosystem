@@ -11,7 +11,7 @@ import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { ROBINHOOD_MAINNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import type { NetworkConfig } from "../utils/constants";
 import { ComingChainNotice } from "../components/ComingChainNotice";
-import { chainSupportsTrade } from "../utils/chainRegistry";
+import { chainV3Capability } from "../utils/chainRegistry";
 import { Card, Button, Stat, VerifiedBadge, SectionLabel } from "../components/ui/kit";
 
 // Base numeraire assets are pool pairs, never "a launch you hold" — excluded from Hyde holdings so
@@ -91,12 +91,12 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
   const { address: connected } = useAccount();
   const address = (routeAddr || connected || "").toLowerCase();
   const [copied, setCopied] = useState(false);
-  const supportsTrade = chainSupportsTrade(network.id);
-  const { holdings, loading } = useHydeHoldings(address, supportsTrade);
+  // Stable-specific: a single-sided V3 chain has no chain-scoped holdings source (the query is Robinhood-
+  // scoped). Disable the request AND fail the render closed (kami 24334 / 24323 #4). Robinhood untouched.
+  const isV3Chain = !!chainV3Capability(network.id);
+  const { holdings, loading } = useHydeHoldings(address, !isV3Chain);
 
-  // Fail closed where the registry says the chain has no in-app V4 trade (Stable V3): portfolio isn't
-  // tracked, and the Robinhood-scoped holdings request above is disabled (kami 24323 #1/#4).
-  if (!supportsTrade) {
+  if (isV3Chain) {
     return (
       <div className="pt-8">
         <ComingChainNotice chainName={network.name} feature="Portfolio" />

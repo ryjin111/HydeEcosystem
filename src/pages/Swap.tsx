@@ -3,7 +3,7 @@ import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive } from "../utils/constants";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { ComingChainNotice } from "../components/ComingChainNotice";
-import { chainSupportsTrade } from "../utils/chainRegistry";
+import { chainV3Capability } from "../utils/chainRegistry";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { TokenDetail } from "./Token";
@@ -110,9 +110,9 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 
 export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
-  // Fail closed where the registry says the chain has no in-app V4 trade (e.g. Stable V3) — registry is the
-  // single readiness truth, not a flag (kami 24323 #1). Never a Robinhood-copy fallback.
-  if (!chainSupportsTrade(network.id)) {
+  // Stable-specific fail-close: a single-sided V3 chain has no V4 swap (trade:null). This never matches a
+  // v4-hook chain, so Robinhood's existing isGatewayLive gate is untouched (kami 24334).
+  if (chainV3Capability(network.id)) {
     return (
       <div className="w-full max-w-6xl mx-auto pt-8">
         <ComingChainNotice chainName={network.name} feature="In-app swap" />

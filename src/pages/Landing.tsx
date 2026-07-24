@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
-import { chainEngineCapabilities, chainLaunchLive } from "../utils/chainRegistry";
+import { chainEngineCapabilities, chainV3Capability } from "../utils/chainRegistry";
 import { PoolCard } from "./Launchpad";
 
 const ROBINHOOD_CHAIN_ID = 4663;
@@ -18,7 +18,10 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   // chain whose launch isn't live (kami 24317 / 24323 #2).
   const engine = chainEngineCapabilities(chainId)[0]?.engine;
   const chainName = chainEngineCapabilities(chainId)[0]?.name ?? "Robinhood Chain";
-  const launchLive = chainLaunchLive(chainId);
+  // Coming-soon CTA ONLY for a single-sided V3 chain that isn't live yet (Stable). Robinhood keeps its
+  // existing live CTA — this never gates a v4-hook chain (kami 24334).
+  const v3Cap = chainV3Capability(chainId);
+  const launchLive = !v3Cap || v3Cap.status === "live";
 
   const handleTrade = (tokenAddress: string, chainId: number) => {
     // Landing is the browse-all home for BOTH supported rails now — allow Robinhood mainnet (4663) and

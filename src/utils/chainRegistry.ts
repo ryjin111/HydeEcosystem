@@ -365,17 +365,9 @@ export function chainCapability(chainId: number): ChainCapability | { id: number
   return hit ?? { id: chainId, status: "unsupported" };
 }
 
-/** THE readiness truth for in-app V4 trade (Swap / add-liquidity / portfolio) — derived from the registry,
- *  never a hand-set flag (kami 24323 #1). A chain supports trade iff it exposes a v4-hook engine (Robinhood).
- *  A single-sided V3 chain (Stable) does not → those routes fail closed. */
-export function chainSupportsTrade(chainId: number): boolean {
-  return chainEngineCapabilities(chainId).some((c) => c.engine === "v4-hook");
-}
-
-/** Whether a chain's LAUNCH is live (vs "coming"), for the Landing CTA/copy. v4-hook chains are app-live;
- *  a v3 chain is live only once its capability status is "live" (Hyde deployed + evidence). */
-export function chainLaunchLive(chainId: number): boolean {
-  return chainEngineCapabilities(chainId).some(
-    (c) => c.engine === "v4-hook" || (c.engine === "v3-single-sided" && c.status === "live"),
-  );
+/** The launched chain's single-sided-V3 capability, if any — the ONLY fail-closed signal Stable-specific UI
+ *  should use. It never matches a v4-hook chain (Robinhood), so it can't regress live V4 gates (kami 24334).
+ *  Returns the V3 capability so callers can read its `status` (coming vs live). */
+export function chainV3Capability(chainId: number): ChainCapability | undefined {
+  return chainEngineCapabilities(chainId).find((c) => c.engine === "v3-single-sided");
 }
