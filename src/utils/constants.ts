@@ -134,8 +134,8 @@ export const STABLE_MAINNET: NetworkConfig = {
   router: PLACEHOLDER_ROUTER,
   weth: PLACEHOLDER_WETH,
   tokens: [],
-  // Feature-readiness (trade/launch fail-closed) is DERIVED from chainRegistry (chainSupportsTrade /
-  // chainLaunchLive), not a flag here — the registry is the single source of truth (kami 24323 #1).
+  // Stable's fail-closed behavior is DERIVED from its V3 capability (chainRegistry `chainV3Capability`),
+  // not a flag here — Robinhood's existing gates stay untouched (kami 24334).
 };
 
 export const PHAROS_ATLANTIC_TESTNET: NetworkConfig = {

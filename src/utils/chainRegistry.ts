@@ -290,8 +290,8 @@ export const V3_CANDIDATES: V3ChainRow[] = [
     name: "Stable",
     shortName: "STBL",
     rpcUrl: "https://rpc.stable.xyz",
-    explorer: "", // TODO(gojo chainverify): Stable explorer URL — display-only, does not gate status
-    nativeSymbol: "ETH", // TODO(gojo chainverify): confirm Stable native gas symbol — display-only
+    explorer: "https://stablescan.xyz", // verified (gojo 24328); matches the wagmi NetworkConfig
+    nativeSymbol: "USDT0", // verified native gas symbol (gojo 24328) — NOT ETH; matches NetworkConfig
     v3Factory: "0x88F0a512eF09175D456bc9547f914f48C013E4aA",
     positionManager: "0x3BdC3437405f7D801b6036532713fc1F179136a6",
     numeraire: {

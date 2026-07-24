@@ -154,7 +154,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
           </select>
 
           {!isConnected ? (
-            <button className="btn-primary px-4 py-1.5 text-xs" onClick={connectWallet} disabled={isPending}>
+            <button className="btn-accent px-4 py-1.5 text-xs" onClick={connectWallet} disabled={isPending}>
               {isPending ? "..." : "Connect"}
             </button>
           ) : (

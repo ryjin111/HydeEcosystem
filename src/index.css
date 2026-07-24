@@ -48,16 +48,40 @@ body {
 }
 
 /* Primary action button — solid accent, no gradient, no glow */
+/* Primary VALUE action (Launch / Buy / Swap) — AMBER, the one loud action per screen (shiro 24322 / kami
+   brand call). Amber "money moves here"; dark text; pops against the cool sea. */
 .btn-primary {
+  @apply rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  background: linear-gradient(180deg, #FFC23D 0%, #FFAE00 100%);
+  color: #0B0C0F;
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.btn-primary:active:not(:disabled) {
+  filter: brightness(0.94);
+}
+/* Accent (utility) action — Connect wallet etc. BLUE, never amber (amber is reserved for the one value
+   action per screen — shiro 24322). */
+.btn-accent {
   @apply rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
   background: #2E9FE6;
   color: #0B0C0F;
 }
-.btn-primary:hover:not(:disabled) {
+.btn-accent:hover:not(:disabled) {
   background: #54B4F0;
 }
-.btn-primary:active:not(:disabled) {
+.btn-accent:active:not(:disabled) {
   background: #1F81C0;
+}
+
+/* Neon headline — cyan→violet, tied to the shark's palette (shiro undersea look). Gradient text + glow. */
+.hyde-neon {
+  background: linear-gradient(92deg, #54B4F0 0%, #7DA8FF 45%, #A78BFA 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 20px rgba(84, 180, 240, 0.35)) drop-shadow(0 0 34px rgba(167, 139, 250, 0.2));
 }
 
 /* Secondary / outline button — neutral, quiet */

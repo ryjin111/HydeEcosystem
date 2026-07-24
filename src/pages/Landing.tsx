@@ -33,22 +33,37 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
 
   return (
     <div className="max-w-6xl mx-auto w-full">
-      {/* Hero */}
+      {/* Hero — "the hideout beneath the surface": sea-depth gradient, caustic light, the neon shark
+          emerging from the glow on the right (screen-blended so its black drops out). */}
       <div
-        className="rounded-2xl p-10 mb-12"
-        style={{ background: "#101216", border: "1px solid #1C1F26" }}
+        className="relative overflow-hidden rounded-2xl p-10 mb-12"
+        style={{ background: "linear-gradient(115deg, #0a1622 0%, #0d1a2b 52%, #0a0c10 100%)", border: "1px solid #1C1F26" }}
       >
-        <div className="max-w-3xl">
+        {/* caustic surface light */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{ background: "radial-gradient(75% 65% at 18% -12%, rgba(46,159,230,0.18), transparent 60%), radial-gradient(55% 55% at 88% 18%, rgba(139,92,246,0.14), transparent 55%)" }}
+        />
+        {/* shark from the glow (right stage) */}
+        <img
+          src="/logo/lo.png"
+          alt=""
+          aria-hidden
+          className="pointer-events-none absolute right-0 top-1/2 hidden w-[440px] -translate-y-1/2 translate-x-8 opacity-90 lg:block"
+          style={{ mixBlendMode: "screen" }}
+        />
+        <div className="relative max-w-2xl">
             <h1 className="font-display font-bold leading-[1.05] text-pcs-text" style={{ fontSize: "44px" }}>
               Launch a token.
               <br />
-              <span style={{ color: "#54B4F0" }}>Liquidity locked forever.</span>
+              <span className="hyde-neon">Liquidity locked forever.</span>
             </h1>
             <p className="text-sm text-pcs-textSub mt-5 leading-relaxed max-w-xl">
               {engine === "v3-single-sided" ? (
                 <>
                   <span className="text-pcs-text font-medium">Coming soon on {chainName}.</span> Single-sided V3
-                  launches &mdash; creators will keep 95% of fees, 5% to Hyde, and liquidity is <span className="text-pcs-text font-medium">permanently locked</span> (principal can’t be removed).
+                  launches &mdash; creators will keep 95% of fees, 5% to Hyde, and liquidity will be <span className="text-pcs-text font-medium">permanently locked</span> (principal can’t be removed).
                 </>
               ) : (
                 <>
