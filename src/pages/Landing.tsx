@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
-import { chainEngineCapabilities } from "../utils/chainRegistry";
+import { chainEngineCapabilities, chainLaunchLive } from "../utils/chainRegistry";
 import { PoolCard } from "./Launchpad";
 
 const ROBINHOOD_CHAIN_ID = 4663;
@@ -14,9 +14,11 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   const { pools } = useHydeLaunches(chainId);
   const navigate = useNavigate();
   const trending = pools.slice(0, TRENDING_COUNT);
-  // Hero economics are ENGINE-derived — never hardcode Robinhood/V4 copy on another chain (kami 24317).
+  // Hero economics + CTA are REGISTRY-derived — never hardcode Robinhood/V4 copy or an active CTA on a
+  // chain whose launch isn't live (kami 24317 / 24323 #2).
   const engine = chainEngineCapabilities(chainId)[0]?.engine;
   const chainName = chainEngineCapabilities(chainId)[0]?.name ?? "Robinhood Chain";
+  const launchLive = chainLaunchLive(chainId);
 
   const handleTrade = (tokenAddress: string, chainId: number) => {
     // Landing is the browse-all home for BOTH supported rails now — allow Robinhood mainnet (4663) and
@@ -42,8 +44,8 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
             <p className="text-sm text-pcs-textSub mt-5 leading-relaxed max-w-xl">
               {engine === "v3-single-sided" ? (
                 <>
-                  <span className="text-pcs-text font-medium">Single-sided launches on {chainName}.</span> Creators
-                  keep 95% of fees, 5% to Hyde, and liquidity is <span className="text-pcs-text font-medium">permanently locked</span> &mdash; principal can’t be removed.
+                  <span className="text-pcs-text font-medium">Coming soon on {chainName}.</span> Single-sided V3
+                  launches &mdash; creators will keep 95% of fees, 5% to Hyde, and liquidity is <span className="text-pcs-text font-medium">permanently locked</span> (principal can’t be removed).
                 </>
               ) : (
                 <>
@@ -54,9 +56,19 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               {" "}Proven in code, not promised.
             </p>
             <div className="flex flex-wrap gap-3 mt-8">
-              <NavLink to="/launchpad?tab=launch" className="btn-primary px-6 py-3 text-sm font-semibold rounded-xl">
-                Launch a Token
-              </NavLink>
+              {launchLive ? (
+                <NavLink to="/launchpad?tab=launch" className="btn-primary px-6 py-3 text-sm font-semibold rounded-xl">
+                  Launch a Token
+                </NavLink>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="rounded-xl border border-pcs-border bg-pcs-cardLight px-6 py-3 text-sm font-semibold text-pcs-textDim cursor-not-allowed"
+                >
+                  Launch — Coming soon
+                </button>
+              )}
             </div>
         </div>
       </div>

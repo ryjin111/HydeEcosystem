@@ -34,9 +34,6 @@ export type NetworkConfig = {
   weth: Address;
   /** Official token list for this chain. Users can add extra tokens via the custom token flow. */
   tokens: TokenInfo[];
-  /** "Coming" chain (e.g. Stable V3, pre-deploy): selectable/browsable, but trade/liquidity/portfolio
-   *  features fail closed and wallet add/switch is disabled until its metadata + deployment are verified. */
-  comingSoon?: boolean;
 };
 
 export type V4Contracts = {
@@ -137,9 +134,8 @@ export const STABLE_MAINNET: NetworkConfig = {
   router: PLACEHOLDER_ROUTER,
   weth: PLACEHOLDER_WETH,
   tokens: [],
-  // Metadata is verified → wallet add/switch enabled. `comingSoon` now gates only the LAUNCH/TRADE features
-  // (no Hyde deployment on Stable yet) → Swap/liquidity/portfolio fail closed; launch shows the V3 coming panel.
-  comingSoon: true,
+  // Feature-readiness (trade/launch fail-closed) is DERIVED from chainRegistry (chainSupportsTrade /
+  // chainLaunchLive), not a flag here — the registry is the single source of truth (kami 24323 #1).
 };
 
 export const PHAROS_ATLANTIC_TESTNET: NetworkConfig = {

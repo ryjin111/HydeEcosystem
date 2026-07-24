@@ -16,8 +16,9 @@ export function ComingChainNotice({
     <Card variant="panel" className="mx-auto max-w-md text-center">
       <p className="text-sm font-medium text-pcs-text">{feature} isn’t available on {chainName} yet.</p>
       <p className="mt-2 text-xs leading-relaxed text-pcs-textSub">
-        {chainName} is a single-sided V3 launch chain — liquidity is permanently locked and tokens trade on
-        the canonical Uniswap pool. In-app {feature.toLowerCase()} opens once the chain is verified.
+        {chainName} is a single-sided V3 launch chain. Once launches go live here, liquidity will be
+        permanently locked and tokens will trade on their canonical Uniswap pool. In-app{" "}
+        {feature.toLowerCase()} opens after the chain is verified.
       </p>
       {onSwitch && (
         <Button variant="secondary" className="mt-4" onClick={onSwitch}>

@@ -11,6 +11,7 @@ import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { ROBINHOOD_MAINNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import type { NetworkConfig } from "../utils/constants";
 import { ComingChainNotice } from "../components/ComingChainNotice";
+import { chainSupportsTrade } from "../utils/chainRegistry";
 import { Card, Button, Stat, VerifiedBadge, SectionLabel } from "../components/ui/kit";
 
 // Base numeraire assets are pool pairs, never "a launch you hold" — excluded from Hyde holdings so
@@ -34,11 +35,13 @@ function fmtBalance(value: string, decimals: number): string {
 
 // Real ERC-20 holdings from Blockscout, filtered to Hyde launch tokens (cheap
 // getCode proxy check each; capped). Fails neutral → empty, never throws.
-function useHydeHoldings(address?: string): { holdings: Holding[]; loading: boolean } {
+function useHydeHoldings(address?: string, enabled = true): { holdings: Holding[]; loading: boolean } {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) { setHoldings([]); setLoading(false); return; }
+    // No portfolio request on a non-trade chain (kami 24323 #4): this query is Robinhood-scoped, so it must
+    // NOT fire for Stable etc. — gate it, don't just hide the render.
+    if (!enabled || !address || !/^0x[0-9a-fA-F]{40}$/.test(address)) { setHoldings([]); setLoading(false); return; }
     let cancelled = false;
     setHoldings([]); // clear the prior wallet's holdings before refetch (no stale carry-over)
     setLoading(true);
@@ -61,7 +64,7 @@ function useHydeHoldings(address?: string): { holdings: Holding[]; loading: bool
       .catch(() => { /* fail neutral → empty */ })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [address]);
+  }, [address, enabled]);
   return { holdings, loading };
 }
 
@@ -88,11 +91,12 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
   const { address: connected } = useAccount();
   const address = (routeAddr || connected || "").toLowerCase();
   const [copied, setCopied] = useState(false);
-  const { holdings, loading } = useHydeHoldings(address);
+  const supportsTrade = chainSupportsTrade(network.id);
+  const { holdings, loading } = useHydeHoldings(address, supportsTrade);
 
-  // Fail closed on a "coming" chain (Stable V3): portfolio holdings aren't tracked there — never show
-  // Robinhood data on Stable (kami 24317).
-  if (network.comingSoon) {
+  // Fail closed where the registry says the chain has no in-app V4 trade (Stable V3): portfolio isn't
+  // tracked, and the Robinhood-scoped holdings request above is disabled (kami 24323 #1/#4).
+  if (!supportsTrade) {
     return (
       <div className="pt-8">
         <ComingChainNotice chainName={network.name} feature="Portfolio" />
