@@ -34,6 +34,9 @@ export type NetworkConfig = {
   weth: Address;
   /** Official token list for this chain. Users can add extra tokens via the custom token flow. */
   tokens: TokenInfo[];
+  /** "Coming" chain (e.g. Stable V3, pre-deploy): selectable/browsable, but trade/liquidity/portfolio
+   *  features fail closed and wallet add/switch is disabled until its metadata + deployment are verified. */
+  comingSoon?: boolean;
 };
 
 export type V4Contracts = {
@@ -125,12 +128,13 @@ export const STABLE_MAINNET: NetworkConfig = {
   id: 988,
   name: "Stable",
   rpcUrl: "https://rpc.stable.xyz",
-  explorerUrl: "https://stablescan.xyz",
-  currencySymbol: "ETH",
+  explorerUrl: "", // unverified — do NOT ship a guessed explorer to wallet-add (kami 24317); gojo to verify
+  currencySymbol: "", // unverified native gas symbol — gojo to verify; wallet add/switch disabled meanwhile
   factory: PLACEHOLDER_FACTORY,
   router: PLACEHOLDER_ROUTER,
   weth: PLACEHOLDER_WETH,
   tokens: [],
+  comingSoon: true, // trade/liquidity/portfolio fail closed; wallet add/switch disabled until verified
 };
 
 export const PHAROS_ATLANTIC_TESTNET: NetworkConfig = {

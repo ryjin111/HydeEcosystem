@@ -9,6 +9,8 @@ import { useAccount } from "wagmi";
 import { isMainnetOwnStackLaunch } from "../hooks/useDopplerTokens";
 import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { ROBINHOOD_MAINNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
+import type { NetworkConfig } from "../utils/constants";
+import { ComingChainNotice } from "../components/ComingChainNotice";
 import { Card, Button, Stat, VerifiedBadge, SectionLabel } from "../components/ui/kit";
 
 // Base numeraire assets are pool pairs, never "a launch you hold" — excluded from Hyde holdings so
@@ -81,12 +83,22 @@ function HoldingRow({ h }: { h: Holding }) {
   );
 }
 
-export function ProfilePage() {
+export function ProfilePage({ network }: { network: NetworkConfig }) {
   const { address: routeAddr } = useParams();
   const { address: connected } = useAccount();
   const address = (routeAddr || connected || "").toLowerCase();
   const [copied, setCopied] = useState(false);
   const { holdings, loading } = useHydeHoldings(address);
+
+  // Fail closed on a "coming" chain (Stable V3): portfolio holdings aren't tracked there — never show
+  // Robinhood data on Stable (kami 24317).
+  if (network.comingSoon) {
+    return (
+      <div className="pt-8">
+        <ComingChainNotice chainName={network.name} feature="Portfolio" />
+      </div>
+    );
+  }
 
   if (!address) {
     return (

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { V4LiquidityCard } from "../components/V4LiquidityCard";
+import { ComingChainNotice } from "../components/ComingChainNotice";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 
 type Props = {
@@ -10,6 +11,15 @@ type Props = {
 
 export function AddLiquidityPage({ network, tokens, onAddCustomToken }: Props) {
   const [mode, setMode] = useState<"add" | "remove">("add");
+
+  // Fail closed on a "coming" chain (Stable V3): no V4 liquidity card (kami 24317).
+  if (network.comingSoon) {
+    return (
+      <div className="pt-8">
+        <ComingChainNotice chainName={network.name} feature="Adding liquidity" />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[440px] mx-auto">

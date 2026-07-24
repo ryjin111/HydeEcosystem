@@ -187,8 +187,8 @@ function App() {
               <Route path="/launches" element={<Navigate to="/launchpad" replace />} />
               {/* /token/<addr> is only an alias now — one canonical token page at /swap?out= (kami 23477). */}
               <Route path="/token/:address" element={<TokenRedirect />} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/profile/:address" element={<ProfilePage />} />
+              <Route path="/profile" element={<ProfilePage network={selectedNetwork} />} />
+              <Route path="/profile/:address" element={<ProfilePage network={selectedNetwork} />} />
               <Route path="/launchpad" element={<LaunchpadPage chainId={selectedNetwork.id} />} />
               {/* /_ui (internal dev kit) is REMOVED from prod entirely — the catch-all handles a typed URL. */}
               <Route path="/remove-liquidity" element={<Navigate to="/add-liquidity" replace />} />

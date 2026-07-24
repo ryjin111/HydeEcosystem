@@ -2,6 +2,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive } from "../utils/constants";
 import { V4SwapCard } from "../components/V4SwapCard";
+import { ComingChainNotice } from "../components/ComingChainNotice";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { TokenDetail } from "./Token";
@@ -108,6 +109,14 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 
 export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
+  // Fail closed on a "coming" chain (Stable V3): no in-app swap, never a Robinhood-copy fallback (kami 24317).
+  if (network.comingSoon) {
+    return (
+      <div className="w-full max-w-6xl mx-auto pt-8">
+        <ComingChainNotice chainName={network.name} feature="In-app swap" />
+      </div>
+    );
+  }
   const out = searchParams.get("out") ?? "";
   const weth = network.weth.toLowerCase();
   const showDetail = !!out && out.toLowerCase() !== weth && out.toLowerCase() !== ZERO;
