@@ -111,9 +111,8 @@ function timeAgo(iso: string): string | null {
 const OWN_STACK_SUPPLY = "1,000,000,000";
 
 /**
- * TokenDetail — the full token-detail layout, address-as-prop so it can render BOTH as its own
- * route AND embedded inside the /swap?out=<token> page (kami 23471: /swap is the canonical token
- * page). The thin `TokenPage` wrapper below preserves the old /token/:address entry.
+ * TokenDetail — the full token-detail layout rendered by the canonical /token/:address route.
+ * Legacy /swap?out links redirect here, and the trade widget stays embedded beside token data.
  */
 export function TokenDetail({ address, network, tokens, onAddCustomToken }: Props & { address: string }) {
   // Chain-scoped to the active network (clint #4): testnet and mainnet each read only their configured
@@ -135,7 +134,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   // Prefer the board pool (richer: precise graduation %); else read the token
   // directly by address so launches OUTSIDE the newest-60 page still render.
   const boardPool = useMemo(() => pools.find((p) => p.address.toLowerCase() === address.toLowerCase()), [pools, address]);
-  const { pool: fetchedPool, loading: tokenLoading } = useHydeToken(address, network.id);
+  const { pool: fetchedPool, loading: tokenLoading, error: tokenError } = useHydeToken(address, network.id);
   const pool = boardPool ?? fetchedPool;
 
   // HOODIE-numeraire own-stack pool → live in-app Buy/Sell + per-wallet PnL via the canonical UniversalRouter
@@ -149,6 +148,14 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const { position, error: positionError } = useTokenPosition(pool?.address ?? "", network.id, isHoodiePair);
 
   if (tokenLoading && !boardPool) return <div className="py-20 text-center text-pcs-textSub">Loading token…</div>;
+  if (tokenError && !boardPool) {
+    return (
+      <Card variant="panel" className="mx-auto max-w-lg text-center">
+        <p className="py-6 text-pcs-textSub">Token data is temporarily unavailable.</p>
+        <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+      </Card>
+    );
+  }
   if (!pool) {
     return (
       <Card variant="panel" className="mx-auto max-w-lg text-center">
@@ -177,7 +184,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
 
       <div className="grid gap-5 lg:grid-cols-[1fr,380px]">
         {/* ---------- main ---------- */}
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           {/* Header — image · name · by creator · time · address · right-aligned price (coin-mockup) */}
           <Card>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -285,7 +292,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
       </div>
 
       {/* ---------- right rail ---------- */}
-      <div className="space-y-5">
+      <div className="min-w-0 space-y-5">
         {/* Rail-aware trade widget (§3.2). When the router genuinely goes live, the reused
            V4SwapCard executes; otherwise the primary action routes to the live pair and the
            in-app Buy/Sell is shown REFERENCE-ONLY (dimmed, non-interactive) — never implying
@@ -372,8 +379,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   );
 }
 
-/** Thin wrapper preserving the /token/:address entry — resolves the param then renders TokenDetail.
- *  App redirects /token/:address → /swap?out= (kami 23477), but this keeps the component reusable. */
+/** Canonical /token/:address entry: resolves the param and renders TokenDetail with embedded trading. */
 export function TokenPage(props: Props) {
   const { address = "" } = useParams();
   return <TokenDetail address={address} {...props} />;

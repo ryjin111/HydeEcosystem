@@ -5,7 +5,7 @@ import type { DopplerPool } from "../utils/dopplerConfig";
 
 // Global DexScreener-style trending ticker — a thin, full-width strip pinned under the header on
 // EVERY page (clint 23798/23812: move Trending off the token page to the top, dexscreener-style).
-// rank · icon · symbol · %move; the whole item routes to /swap?out=. % change shows a neutral "—"
+// rank · icon · symbol · %move; the whole item routes to the canonical token page. % change shows a neutral "—"
 // until real 24h change data exists (kami 23802 — never a fabricated number). Auto-scroll marquee
 // (pause-on-hover) kicks in only once there are enough tokens to fill the bar; with a few tokens it's
 // a clean, static, manually-scrollable row (a lone token looping would read as broken).
@@ -70,7 +70,7 @@ export function TrendingTicker({ chainId }: { chainId: number }) {
               key={`${pool.address}-${i}`}
               pool={pool}
               rank={(i % items.length) + 1}
-              onClick={() => navigate(`/swap?out=${pool.baseToken.address}`)}
+              onClick={() => navigate(`/token/${pool.baseToken.address}`)}
             />
           ))}
         </div>

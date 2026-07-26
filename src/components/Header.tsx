@@ -17,12 +17,10 @@ type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
 
-// Pro-Terminal top nav (mock 24229). Discover lands on the dense market section; Launch opens the
-// chain-aware launch form. Swap/Stats keep their existing routes.
+// Discovery is the card board; trading lives on each token page.
 const NAV: { label: string; to: string; match: (p: string, s: string) => boolean }[] = [
   { label: "Launch", to: "/launchpad?tab=launch", match: (p) => p.startsWith("/launchpad") },
-  { label: "Discover", to: "/#live-market", match: (p) => p === "/" },
-  { label: "Swap", to: "/swap", match: (p) => p.startsWith("/swap") },
+  { label: "Discover", to: "/discover", match: (p) => p === "/" || p.startsWith("/discover") || p.startsWith("/token/") },
   { label: "Stats", to: "/stats", match: (p) => p.startsWith("/stats") },
 ];
 
@@ -195,7 +193,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
 
         {/* Mobile navigation keeps the reference hierarchy without forcing the chain control off-screen. */}
         <nav
-          className="grid grid-cols-4 gap-1 px-3 pb-2 md:hidden"
+          className="grid grid-cols-3 gap-1 px-3 pb-2 md:hidden"
           style={{ borderTop: "1px solid var(--term-border-soft)" }}
         >
           {NAV.map((n) => (

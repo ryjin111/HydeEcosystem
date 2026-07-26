@@ -39,7 +39,7 @@ function RecentlyLaunched({ onSelect }: { onSelect: (pool: DopplerPool) => void 
         </span>
         <button
           className="text-[10px] text-pcs-primary hover:underline"
-          onClick={() => navigate("/launchpad")}
+          onClick={() => navigate("/discover")}
         >
           View all →
         </button>
@@ -95,10 +95,8 @@ function RecentlyLaunched({ onSelect }: { onSelect: (pool: DopplerPool) => void 
 }
 
 /* ─── Page ────────────────────────────────────────────────────────────────────
-   /swap?out=<token> is the ONE canonical token page (clint 23476 / kami 23477): when `out` is a
-   real token it renders the full TokenDetail (header · stats · chart · trade · Your Position · Trust ·
-   holders). With no token it's the discovery/exchange view. Selecting anywhere sets ?out= so the page
-   is shareable and /token/<addr> can redirect straight into it. */
+   Legacy component retained for compatibility history. App now routes /swap links to the canonical
+   /token/:address page (or /discover when no token is supplied), so this surface is no longer mounted. */
 
 type Props = {
   network: NetworkConfig;

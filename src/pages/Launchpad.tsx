@@ -479,7 +479,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
     // Hyde launches live on Robinhood mainnet (4663) OR the testnet own-stack (46630) — allow both;
     // the swap page trades on whichever network is selected in the dropdown (matches the board).
     if (poolChainId !== ROBINHOOD_CHAIN_ID && poolChainId !== RH_TESTNET_ID) return;
-    navigate(`/swap?out=${tokenAddress}`);
+    navigate(`/token/${tokenAddress}`);
   };
 
   return (

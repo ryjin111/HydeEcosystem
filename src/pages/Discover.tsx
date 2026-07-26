@@ -65,23 +65,8 @@ function CurveBar({ pct, tone = C.blue }: { pct: number; tone?: string }) {
   );
 }
 
-function TradeLink({ address }: { address: string }) {
-  // Rail-aware (§3.2, kami 21204.2): the current rail can't carry an in-app order and amount/side
-  // presets would only route to the same page without executing — so it's ONE honest "Trade ↗"
-  // that takes the user to the coin page's rail-aware widget. No fake executable presets.
-  return (
-    <Link
-      to={`/token/${address}`}
-      className="mt-3 block rounded-md py-1.5 text-center text-[11px] font-semibold transition"
-      style={{ background: C.elevated, color: C.blueH, border: `1px solid ${C.blue}45` }}
-    >
-      Trade ↗
-    </Link>
-  );
-}
-
 /* ── coin card ────────────────────────────────────────────────────────────── */
-function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }) {
+export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }) {
   const verify = useVerifiedStatus(p.address, p.chainId);
   const graduated = p.type === "v2";
   const sym = p.baseToken.symbol || "?";
@@ -139,7 +124,12 @@ function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }) {
         </div>
         {p.progress != null && <div className="mt-2"><CurveBar pct={p.progress} tone={graduated ? C.green : C.blue} /></div>}
 
-        <TradeLink address={p.address} />
+        <span
+          className="mt-3 block rounded-md py-1.5 text-center text-[11px] font-semibold transition group-hover:brightness-110"
+          style={{ background: C.elevated, color: C.blueH, border: `1px solid ${C.blue}45` }}
+        >
+          Open &amp; trade →
+        </span>
       </div>
     </Link>
   );
@@ -159,7 +149,9 @@ function ClosestToGraduation({ p }: { p: DopplerPool }) {
           boxShadow: "0 0 0 1px rgba(46,159,230,.30), 0 0 30px -8px rgba(46,159,230,.45)",
         }}
       >
-        <div className="mb-3 text-[11px] font-semibold tracking-wide" style={{ color: C.blueH }}>🎯 Closest to Graduation</div>
+        <div className="mb-3 text-[11px] font-semibold tracking-wide" style={{ color: C.blueH }}>
+          {p.progress != null ? "🎯 Closest to Graduation" : "Newest launch"}
+        </div>
         <div className="flex items-center gap-4">
           <TokenImage symbol={sym} className="h-16 w-16 shrink-0 rounded-2xl text-2xl" style={{ border: `1px solid ${C.hairline}` }} />
           <div className="min-w-0 flex-1">
@@ -188,11 +180,13 @@ function ClosestToGraduation({ p }: { p: DopplerPool }) {
 }
 
 /* ── Almost Graduated column ──────────────────────────────────────────────── */
-function AlmostGraduated({ pools }: { pools: DopplerPool[] }) {
+function AlmostGraduated({ pools, unavailable = false }: { pools: DopplerPool[]; unavailable?: boolean }) {
   return (
     <div className="rounded-[14px] p-4" style={{ background: C.surface, border: `1px solid ${C.hairline}` }}>
       <h3 className="mb-3 text-[13px] font-semibold" style={{ color: C.text }}>Almost graduated</h3>
-      {pools.length === 0 ? (
+      {unavailable ? (
+        <p className="py-4 text-center text-xs" style={{ color: C.faint }}>Launch data unavailable.</p>
+      ) : pools.length === 0 ? (
         <p className="py-4 text-center text-xs" style={{ color: C.faint }}>None near the milestone right now.</p>
       ) : (
         <div className="space-y-3">
@@ -237,8 +231,8 @@ function RecentLaunches({ pools }: { pools: DopplerPool[] }) {
 }
 
 /* ── board ────────────────────────────────────────────────────────────────── */
-export function DiscoverPage() {
-  const { pools, loading } = useHydeLaunches();
+export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
+  const { pools, loading, error, refetch } = useHydeLaunches(chainId);
   const [filter, setFilter] = useState<Filter>("new");
   const [sort, setSort] = useState<SortKey>("new");
   const [q, setQ] = useState("");
@@ -246,8 +240,13 @@ export function DiscoverPage() {
   // King = the live coin closest to graduation (highest real curve progress). An honest "furthest
   // along" highlight — not a fabricated velocity/volume metric (kami 21204.1).
   const king = useMemo(() => {
-    const live = pools.filter((p) => p.type === "v4" && p.progress != null);
-    return live.length ? [...live].sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))[0] : null;
+    const live = pools.filter((p) => p.type === "v4");
+    if (live.length === 0) return null;
+    const withProgress = live.filter((p) => p.progress != null);
+    if (withProgress.length > 0) {
+      return [...withProgress].sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))[0];
+    }
+    return [...live].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
   }, [pools]);
 
   const almost = useMemo(
@@ -293,7 +292,11 @@ export function DiscoverPage() {
 
       {/* King of the Hill + Almost graduated */}
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        {loading ? (
+        {error ? (
+          <div className="rounded-[14px] p-8 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
+            Launch data is temporarily unavailable.
+          </div>
+        ) : loading ? (
           <div className="rounded-[14px] p-8 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
             Loading the board…
           </div>
@@ -301,10 +304,10 @@ export function DiscoverPage() {
           <ClosestToGraduation p={king} />
         ) : (
           <div className="rounded-[14px] p-8 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
-            No live launches yet — <Link to="/launch" style={{ color: C.blue }}>be the first</Link>.
+            No live launches yet — <Link to="/launchpad?tab=launch" style={{ color: C.blue }}>be the first</Link>.
           </div>
         )}
-        <AlmostGraduated pools={almost} />
+        <AlmostGraduated pools={almost} unavailable={Boolean(error)} />
       </div>
 
       {/* filters + sort + search */}
@@ -344,7 +347,14 @@ export function DiscoverPage() {
       </div>
 
       {/* grid */}
-      {loading ? (
+      {error ? (
+        <div className="rounded-[13px] py-10 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
+          <p>Launch data is temporarily unavailable.</p>
+          <button type="button" onClick={refetch} className="mt-3 rounded-md px-3 py-1.5 text-xs font-semibold" style={{ color: C.blueH, border: `1px solid ${C.blue}45` }}>
+            Retry
+          </button>
+        </div>
+      ) : loading ? (
         <div className="py-16 text-center text-sm" style={{ color: C.muted }}>Loading launches…</div>
       ) : shown.length === 0 ? (
         <div className="rounded-[13px] py-10 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>

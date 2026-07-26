@@ -1,20 +1,27 @@
-import { Navigate, Route, Routes, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { Header } from "./components/Header";
 import { AddLiquidityPage } from "./pages/AddLiquidity";
-import { SwapPage } from "./pages/Swap";
 import { LaunchpadPage } from "./pages/Launchpad";
 import { LandingPage } from "./pages/Landing";
+import { DiscoverPage } from "./pages/Discover";
 import { StatsPage } from "./pages/Stats";
+import { TokenPage } from "./pages/Token";
 import { ProfilePage } from "./pages/Profile";
 import { NETWORKS } from "./utils/constants";
 import { useTokenList } from "./hooks/useTokenList";
 import { useHydeTokens } from "./hooks/useDopplerTokens";
 
-/** /token/<addr> → the canonical /swap?out=<addr> token page (kami 23477). Preserves shared links. */
-function TokenRedirect() {
-  const { address = "" } = useParams();
-  return <Navigate to={address ? `/swap?out=${address}` : "/swap"} replace />;
+/** Preserve old /swap links while keeping discovery → token page → embedded trade canonical. */
+function LegacySwapRedirect() {
+  const [searchParams] = useSearchParams();
+  const address = searchParams.get("out") ?? "";
+  return (
+    <Navigate
+      to={/^0x[0-9a-fA-F]{40}$/.test(address) ? `/token/${address}` : "/discover"}
+      replace
+    />
+  );
 }
 
 function App() {
@@ -54,10 +61,7 @@ function App() {
 
       <main className="mx-auto w-full max-w-[1920px] px-4 pt-6 pb-16 sm:px-8 md:px-10">
         <Routes>
-          <Route
-            path="/swap"
-            element={<SwapPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />}
-          />
+          <Route path="/swap" element={<LegacySwapRedirect />} />
           <Route
             path="/add-liquidity"
             element={<AddLiquidityPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />}
@@ -69,10 +73,13 @@ function App() {
           <Route path="/stats" element={<StatsPage chainId={selectedNetwork.id} />} />
           {/* Landing (Pro-Terminal): stat-bar + hero + LIVE MARKET table + positions. */}
           <Route path="/" element={<LandingPage chainId={selectedNetwork.id} />} />
-          {/* The board lives ONLY at /launchpad — collapse duplicate board routes. */}
-          <Route path="/discover" element={<Navigate to="/launchpad" replace />} />
-          <Route path="/launches" element={<Navigate to="/launchpad" replace />} />
-          <Route path="/token/:address" element={<TokenRedirect />} />
+          {/* Card discovery is canonical; legacy launch-list links converge here. */}
+          <Route path="/discover" element={<DiscoverPage chainId={selectedNetwork.id} />} />
+          <Route path="/launches" element={<Navigate to="/discover" replace />} />
+          <Route
+            path="/token/:address"
+            element={<TokenPage network={selectedNetwork} tokens={tokens} onAddCustomToken={addCustomToken} />}
+          />
           <Route path="/profile" element={<ProfilePage network={selectedNetwork} />} />
           <Route path="/profile/:address" element={<ProfilePage network={selectedNetwork} />} />
           <Route path="/launchpad" element={<LaunchpadPage chainId={selectedNetwork.id} />} />

@@ -1,15 +1,14 @@
 import { useMemo, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import toast from "react-hot-toast";
 import { ConnectorAlreadyConnectedError, useAccount, useConnect } from "wagmi";
-import { TokenImage } from "../components/TokenImage";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { chainEngineCapabilities, chainV3Capability } from "../utils/chainRegistry";
+import { CoinCard } from "./Discover";
 
 const ROBINHOOD_CHAIN_ID = 4663;
-const RH_TESTNET_ID = 46630;
-const MARKET_ROW_COUNT = 5;
+const MARKET_ROW_COUNT = 6;
 
 type MarketSort = "trending" | "new" | "graduating" | "mcap";
 
@@ -67,10 +66,9 @@ function sortMarket(pools: DopplerPool[], sort: MarketSort): DopplerPool[] {
  *  The layout follows the reference; every number and readiness state remains chain/data-derived.
  */
 export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
-  const { pools, loading } = useHydeLaunches(chainId);
+  const { pools, loading, error, refetch } = useHydeLaunches(chainId);
   const { address, isConnected } = useAccount();
   const { connectAsync, connectors, isPending } = useConnect();
-  const navigate = useNavigate();
   const [marketSort, setMarketSort] = useState<MarketSort>("trending");
 
   const capability = chainEngineCapabilities(chainId)[0];
@@ -86,12 +84,6 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   );
   const volume24h = useMemo(() => sumKnown(pools.map((pool) => pool.volumeUsd)), [pools]);
   const lockedLiquidity = useMemo(() => sumKnown(pools.map((pool) => pool.dollarLiquidity)), [pools]);
-
-  const openMarket = (pool: DopplerPool) => {
-    if (!/^0x[0-9a-fA-F]{40}$/.test(pool.baseToken.address)) return;
-    if (pool.chainId !== ROBINHOOD_CHAIN_ID && pool.chainId !== RH_TESTNET_ID) return;
-    navigate(`/swap?out=${pool.baseToken.address}`);
-  };
 
   const connectWallet = async () => {
     const connector = connectors[0];
@@ -113,7 +105,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
       <section className="term-panel mb-4 grid overflow-hidden rounded-lg grid-cols-2 lg:grid-cols-4">
         <ProtocolStat
           label="Total launches"
-          value={loading && pools.length === 0 ? "—" : pools.length.toLocaleString("en-US")}
+          value={loading || error ? "—" : pools.length.toLocaleString("en-US")}
         />
         <ProtocolStat label="24h volume" value={formatUsd(volume24h, true)} accent />
         <ProtocolStat label="LP locked" value={formatUsd(lockedLiquidity, true)} />
@@ -182,7 +174,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
         </div>
       </section>
 
-      {/* Dense live-market table. Mobile keeps the table intact inside a horizontal scroll region. */}
+      {/* Card-first discovery mirrors the token-first launchpad flow: pick a token, then trade on its page. */}
       <section id="live-market" className="mb-9 scroll-mt-28">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <h2 className="mr-3 font-display text-sm font-bold uppercase tracking-[0.14em] text-[var(--term-sub)]">
@@ -202,39 +194,31 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               {tab.label}
             </button>
           ))}
-          <NavLink to="/launchpad" className="ml-auto text-[12px] font-semibold text-[var(--term-teal)] hover:underline">
+          <NavLink to="/discover" className="ml-auto text-[12px] font-semibold text-[var(--term-teal)] hover:underline">
             View all →
           </NavLink>
         </div>
 
-        <div className="term-panel overflow-x-auto rounded-lg">
-          <table className="w-full min-w-[760px] border-collapse">
-            <thead>
-              <tr className="border-b border-[var(--term-border)] text-left">
-                <th className="term-table-head">Token</th>
-                <th className="term-table-head text-right">Price</th>
-                <th className="term-table-head text-right">24h vol</th>
-                <th className="term-table-head text-right">Mkt cap</th>
-                <th className="term-table-head text-right">Graduation</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && marketRows.length === 0 ? (
-                <MarketMessage text="Indexing live launches…" />
-              ) : marketRows.length === 0 ? (
-                <MarketMessage text={`No launches indexed on ${chainName} yet.`} />
-              ) : (
-                marketRows.map((pool) => (
-                  <MarketRow
-                    key={`${pool.chainId}-${pool.address}-${pool.baseToken.address}`}
-                    pool={pool}
-                    onOpen={() => openMarket(pool)}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        {error ? (
+          <div className="term-panel rounded-lg px-5 py-10 text-center">
+            <p className="text-sm text-[var(--term-sub)]">Launch data is temporarily unavailable.</p>
+            <button type="button" onClick={refetch} className="btn-ghost-term mt-4 px-4 py-2">Retry</button>
+          </div>
+        ) : loading && marketRows.length === 0 ? (
+          <div className="term-panel rounded-lg px-5 py-10 text-center font-code text-[12px] text-[var(--term-dim)]">
+            Indexing live launches…
+          </div>
+        ) : marketRows.length === 0 ? (
+          <div className="term-panel rounded-lg px-5 py-10 text-center font-code text-[12px] text-[var(--term-dim)]">
+            No launches indexed on {chainName} yet.
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {marketRows.map((pool) => (
+              <CoinCard key={`${pool.chainId}-${pool.address}`} p={pool} />
+            ))}
+          </div>
+        )}
       </section>
 
       <section>
@@ -306,65 +290,6 @@ function ProtocolStat({
         {note && <span className="text-[10px] uppercase tracking-wider text-[var(--term-dim)]">{note}</span>}
       </div>
     </div>
-  );
-}
-
-function MarketMessage({ text }: { text: string }) {
-  return (
-    <tr>
-      <td colSpan={5} className="px-5 py-12 text-center font-code text-[12px] text-[var(--term-dim)]">
-        {text}
-      </td>
-    </tr>
-  );
-}
-
-function MarketRow({ pool, onOpen }: { pool: DopplerPool; onOpen: () => void }) {
-  const progress = graduation(pool);
-  const canOpen = pool.chainId === ROBINHOOD_CHAIN_ID || pool.chainId === RH_TESTNET_ID;
-
-  return (
-    <tr className="border-b border-[var(--term-border-soft)] last:border-b-0 hover:bg-white/[0.015]">
-      <td className="px-5 py-4">
-        <button
-          type="button"
-          onClick={onOpen}
-          disabled={!canOpen}
-          className="flex max-w-[310px] items-center gap-3 text-left disabled:cursor-default"
-        >
-          <TokenImage symbol={pool.baseToken.symbol} className="h-9 w-9 shrink-0 rounded-lg text-[11px]" />
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold text-[var(--term-text)]">
-              {pool.baseToken.name}
-            </span>
-            <span className="block truncate font-code text-[11px] text-[var(--term-dim)]">
-              {pool.baseToken.symbol}
-            </span>
-          </span>
-        </button>
-      </td>
-      <td className="px-5 py-4 text-right font-code text-[13px] font-semibold text-[var(--term-text)]">
-        {formatUsd(numeric(pool.priceUsd))}
-      </td>
-      <td className="px-5 py-4 text-right font-code text-[13px] text-[var(--term-teal)]">
-        {formatUsd(numeric(pool.volumeUsd), true)}
-      </td>
-      <td className="px-5 py-4 text-right font-code text-[13px] font-semibold text-[var(--term-text)]">
-        {formatUsd(numeric(pool.marketCapUsd), true)}
-      </td>
-      <td className="px-5 py-4">
-        <div className="ml-auto flex w-[170px] items-center justify-end gap-3">
-          <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[var(--term-border)]">
-            {progress != null && (
-              <div className="h-full bg-[var(--term-teal)]" style={{ width: `${progress}%` }} />
-            )}
-          </div>
-          <span className="w-10 text-right font-code text-[12px] font-semibold text-[var(--term-teal)]">
-            {progress == null ? "—" : `${Math.round(progress)}%`}
-          </span>
-        </div>
-      </td>
-    </tr>
   );
 }
 

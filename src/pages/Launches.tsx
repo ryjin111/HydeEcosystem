@@ -244,7 +244,7 @@ export function LaunchesPage() {
             <TokenCard
               key={pool.address}
               pool={pool}
-              onTrade={() => navigate(`/swap?out=${pool.baseToken.address}`)}
+              onTrade={() => navigate(`/token/${pool.baseToken.address}`)}
             />
           ))}
         </div>

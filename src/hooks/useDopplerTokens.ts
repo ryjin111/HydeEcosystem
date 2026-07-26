@@ -34,8 +34,6 @@ const MAINNET_WETH_FACTORY = "0x159A2fa37427299466B0723713eaa260e6124cbc" as `0x
 const MAINNET_WETH_FACTORY_BLOCK = 17418907n;
 const MAINNET_HOODIE_ENGINE = "0x8062951c99CfFA5365f979D5139Cf96b5c77CFCc" as `0x${string}`;
 const MAINNET_HOODIE_ENGINE_BLOCK = 15652257n;
-const MAINNET_WETH_VAULT = "0x02Ce83859BEa69d248973Aa4beE09D7e12Ed0227" as `0x${string}`;
-const MAINNET_HOODIE_VAULT = "0x1ee72dCb5a18ddcC069e4E604Ba59ac5a0930DB4" as `0x${string}`;
 const MAINNET_HOODIE = "0xC72c01AAB5f5678dc1d6f5C6d2B417d91D402Ba3" as `0x${string}`;
 const HOODIE_LAUNCH_CREATED = parseAbiItem(
   "event HoodieLaunchCreated(address indexed launcher, address indexed creator, address indexed token, bytes32 poolId, uint256 tokenId)"
@@ -58,6 +56,86 @@ const client = createPublicClient({ chain: robinhoodChain, transport: http() });
 // dropped — the count reflects the page, and there's a documented cap here).
 const RANGE = 100_000n;   // blocks per getLogs (public-RPC-safe)
 const MAX_SHOWN = 60;     // newest launches enriched per board load
+const BLOCKSCOUT_BASE = ROBINHOOD_MAINNET.explorerUrl.replace(/\/$/, "");
+const LAUNCH_CREATED_TOPIC = "0x8af4c8ab7fe4c9373619cf9401e1cd3d4a3c3794b4dbc6fdf28648062817790e";
+const HOODIE_LAUNCH_CREATED_TOPIC = "0x972f647994f3d28b970cea4db05f18ae9917dc52b856f836eb66266659572ca0";
+
+type ExplorerLog = {
+  address: string;
+  blockNumber: string;
+  data: string;
+  timeStamp: string;
+  topics: (string | null)[];
+  transactionHash: string;
+};
+
+type ExplorerToken = {
+  address_hash?: string;
+  decimals?: string | null;
+  name?: string | null;
+  symbol?: string | null;
+};
+
+function topicAddress(topic?: string | null): `0x${string}` | null {
+  if (!topic || !/^0x[0-9a-fA-F]{64}$/.test(topic)) return null;
+  return `0x${topic.slice(-40)}` as `0x${string}`;
+}
+
+function topicForAddress(address: `0x${string}`): string {
+  return `0x${address.slice(2).padStart(64, "0")}`;
+}
+
+function explorerInteger(value: string): number {
+  return Number(BigInt(value));
+}
+
+async function explorerFetch(url: URL | string): Promise<Response> {
+  let response: Response | null = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    response = await fetch(url);
+    if (response.status !== 429) return response;
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 750 * (2 ** attempt)));
+    }
+  }
+  return response!;
+}
+
+async function fetchExplorerLogs(
+  contract: `0x${string}`,
+  topic0: string,
+  fromBlock: bigint,
+  indexedMatch?: { position: 1 | 3; value: string },
+): Promise<ExplorerLog[]> {
+  const url = new URL(`${BLOCKSCOUT_BASE}/api`);
+  url.searchParams.set("module", "logs");
+  url.searchParams.set("action", "getLogs");
+  url.searchParams.set("fromBlock", fromBlock.toString());
+  url.searchParams.set("toBlock", "latest");
+  url.searchParams.set("address", contract);
+  url.searchParams.set("topic0", topic0);
+  url.searchParams.set("page", "1");
+  url.searchParams.set("offset", "1000");
+  if (indexedMatch) {
+    url.searchParams.set(`topic${indexedMatch.position}`, indexedMatch.value);
+    url.searchParams.set(`topic0_${indexedMatch.position}_opr`, "and");
+  }
+
+  const response = await explorerFetch(url);
+  if (!response.ok) throw new Error(`Blockscout logs HTTP ${response.status}`);
+  const payload = await response.json() as { status?: string; message?: string; result?: ExplorerLog[] | string };
+  if (payload.status === "1" && Array.isArray(payload.result)) return payload.result;
+  if (payload.status === "0" && payload.message === "No logs found" && Array.isArray(payload.result)) return [];
+  throw new Error(typeof payload.result === "string" ? payload.result : "Blockscout logs unavailable");
+}
+
+async function fetchExplorerToken(address: `0x${string}`): Promise<ExplorerToken> {
+  const response = await explorerFetch(`${BLOCKSCOUT_BASE}/api/v2/tokens/${address}`);
+  if (!response.ok) throw new Error(`Blockscout token HTTP ${response.status}`);
+  const token = await response.json() as ExplorerToken;
+  if (!token.name || !token.symbol) throw new Error("Blockscout token metadata incomplete");
+  return token;
+}
 
 // chunked getLogs over bounded ranges; the call factory keeps viem's typed logs
 async function getLogsChunked<E>(call: (from: bigint, to: bigint) => Promise<E[]>, fromBlock: bigint, toBlock: bigint): Promise<E[]> {
@@ -211,31 +289,59 @@ export async function isMainnetOwnStackLaunch(address: `0x${string}`): Promise<b
   const a = address.toLowerCase();
   // Base numeraire assets are never a "launch you hold" — exclude fast, before any log query.
   if (a === MAINNET_HOODIE.toLowerCase() || a === ROBINHOOD_MAINNET.weth.toLowerCase()) return false;
+  const tokenTopic = topicForAddress(address);
   const [weth, hoodie] = await Promise.all([
-    client.getLogs({ address: MAINNET_WETH_FACTORY, event: LAUNCH_CREATED, args: { token: address }, fromBlock: MAINNET_WETH_FACTORY_BLOCK, toBlock: "latest" }).catch(() => []),
-    client.getLogs({ address: MAINNET_HOODIE_ENGINE, event: HOODIE_LAUNCH_CREATED, args: { token: address }, fromBlock: MAINNET_HOODIE_ENGINE_BLOCK, toBlock: "latest" }).catch(() => []),
+    fetchExplorerLogs(MAINNET_WETH_FACTORY, LAUNCH_CREATED_TOPIC, MAINNET_WETH_FACTORY_BLOCK, { position: 1, value: tokenTopic }).catch(() => []),
+    fetchExplorerLogs(MAINNET_HOODIE_ENGINE, HOODIE_LAUNCH_CREATED_TOPIC, MAINNET_HOODIE_ENGINE_BLOCK, { position: 3, value: tokenTopic }).catch(() => []),
   ]);
   return weth.length > 0 || hoodie.length > 0;
 }
 
 /** Single-token read for launches outside the board page. Network-aware: mainnet reads the two live
  *  own-stack launch sources; testnet reads its own factory. Fails to null (honest not-found). */
-export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN_ID): { pool: DopplerPool | null; loading: boolean } {
+export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN_ID): {
+  pool: DopplerPool | null;
+  loading: boolean;
+  error: string | null;
+} {
   const [pool, setPool] = useState<DopplerPool | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) { setPool(null); setLoading(false); return; }
+    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      setPool(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     let cancelled = false;
     setPool(null); // drop the prior token immediately on address/chain change (kami A-blocker #3)
     setLoading(true);
-    const fetcher = chainId === RH_TESTNET_ID ? fetchTestnetLaunchToken : fetchMainnetLaunchToken;
+    setError(null);
+    const fetcher =
+      chainId === RH_TESTNET_ID
+        ? fetchTestnetLaunchToken
+        : chainId === ROBINHOOD_CHAIN_ID
+          ? fetchMainnetLaunchToken
+          : null;
+    if (!fetcher) {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
     fetcher(address as `0x${string}`)
       .then((p) => { if (!cancelled) setPool(p); })
-      .catch(() => { if (!cancelled) setPool(null); })
+      .catch(() => {
+        if (!cancelled) {
+          setPool(null);
+          setError("Token data source unavailable");
+        }
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [address, chainId]);
-  return { pool, loading };
+  return { pool, loading, error };
 }
 
 /* ─── Testnet OWN-STACK (46630) — reads OUR HydeTokenFactory, not Doppler ───────────────
@@ -394,36 +500,35 @@ export async function fetchTestnetLaunchToken(address: `0x${string}`): Promise<D
   };
 }
 
-type OwnStackLog = { args: { token: `0x${string}`; creator?: `0x${string}` }; blockNumber: bigint | null };
-
-/** Single-token read for /swap?out= on 4663 — authoritative attribution: the address must have a
+/** Single-token read for /token/:address on 4663 — authoritative attribution: the address must have a
  *  `LaunchCreated` (WETH factory) OR `HoodieLaunchCreated` (HOODIE engine) event, bounded from each
  *  deploy block. Mirrors the testnet reader so a mainnet token page resolves OUR launches (not the
  *  old Doppler clone-impl check). Fails to null (honest not-found); the page refines graduation/price. */
 async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
+  const boardPool = (await fetchMainnetOwnStackPools().catch(() => []))
+    .find((pool) => pool.address.toLowerCase() === address.toLowerCase());
+  if (boardPool) return boardPool;
+
+  const tokenTopic = topicForAddress(address);
   const [wethCreated, hoodieCreated] = await Promise.all([
-    client.getLogs({ address: MAINNET_WETH_FACTORY, event: LAUNCH_CREATED, args: { token: address }, fromBlock: MAINNET_WETH_FACTORY_BLOCK, toBlock: "latest" }).catch(() => []),
-    client.getLogs({ address: MAINNET_HOODIE_ENGINE, event: HOODIE_LAUNCH_CREATED, args: { token: address }, fromBlock: MAINNET_HOODIE_ENGINE_BLOCK, toBlock: "latest" }).catch(() => []),
+    fetchExplorerLogs(MAINNET_WETH_FACTORY, LAUNCH_CREATED_TOPIC, MAINNET_WETH_FACTORY_BLOCK, { position: 1, value: tokenTopic }),
+    fetchExplorerLogs(MAINNET_HOODIE_ENGINE, HOODIE_LAUNCH_CREATED_TOPIC, MAINNET_HOODIE_ENGINE_BLOCK, { position: 3, value: tokenTopic }),
   ]);
   if (wethCreated.length === 0 && hoodieCreated.length === 0) return null; // not one of our launches
   const isHoodiePair = hoodieCreated.length > 0;
-
-  const meta = await client
-    .multicall({
-      contracts: [
-        { address, abi: ERC20_META_ABI, functionName: "name" } as const,
-        { address, abi: ERC20_META_ABI, functionName: "symbol" } as const,
-      ],
-    })
-    .catch(() => null);
-  const name = meta?.[0]?.result as string | undefined;
-  const symbol = meta?.[1]?.result as string | undefined;
-  if (!name || !symbol) return null;
+  const event = (isHoodiePair ? hoodieCreated : wethCreated)[0];
+  const meta = await fetchExplorerToken(address);
+  const timestamp = event?.timeStamp ? explorerInteger(event.timeStamp) : 0;
 
   return {
     address,
     chainId: ROBINHOOD_CHAIN_ID,
-    baseToken: { address, name, symbol, decimals: 18 },
+    baseToken: {
+      address,
+      name: meta.name!,
+      symbol: meta.symbol!,
+      decimals: meta.decimals ? Number(meta.decimals) : 18,
+    },
     // HOODIE-paired launches quote in $HOODIE; WETH launches quote in WETH.
     quoteToken: isHoodiePair
       ? { address: MAINNET_HOODIE, name: "Hoodie", symbol: "HOODIE", decimals: 18 }
@@ -433,7 +538,7 @@ async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerP
     volumeUsd: null,
     marketCapUsd: null,
     priceUsd: null,
-    createdAt: new Date(0).toISOString(),
+    createdAt: new Date(timestamp * 1000).toISOString(),
     progress: null,
   };
 }
@@ -442,80 +547,81 @@ async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerP
  *  `HoodieLaunchCreated`; NO Doppler Airlock (clint: "only our stack"). Bounded from each contract's
  *  deploy block. Same enrichment as the Doppler board (curve % + DEXScreener MCAP/price on graduated
  *  tokens), so only tokens minted through OUR factories ever surface. */
-async function fetchMainnetOwnStackPools(): Promise<DopplerPool[]> {
-  const latest = await client.getBlockNumber();
-  const [wethLogs, hoodieLogs] = await Promise.all([
-    getLogsChunked((f, t) => client.getLogs({ address: MAINNET_WETH_FACTORY, event: LAUNCH_CREATED, fromBlock: f, toBlock: t }), MAINNET_WETH_FACTORY_BLOCK, latest),
-    getLogsChunked((f, t) => client.getLogs({ address: MAINNET_HOODIE_ENGINE, event: HOODIE_LAUNCH_CREATED, fromBlock: f, toBlock: t }), MAINNET_HOODIE_ENGINE_BLOCK, latest),
-  ]);
-  const rows = [
-    ...(wethLogs as unknown as OwnStackLog[]).map((l) => ({ ...l, isHoodiePair: false })),
-    ...(hoodieLogs as unknown as OwnStackLog[]).map((l) => ({ ...l, isHoodiePair: true })),
+async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
+  // Blockscout's indexed REST API is browser-safe. Robinhood's public JSON-RPC currently emits
+  // duplicate Access-Control-Allow-Origin headers, so using it directly in the SPA fails CORS and
+  // previously collapsed the board/Stats into a false zero state.
+  const wethLogs = await fetchExplorerLogs(MAINNET_WETH_FACTORY, LAUNCH_CREATED_TOPIC, MAINNET_WETH_FACTORY_BLOCK);
+  const hoodieLogs = await fetchExplorerLogs(MAINNET_HOODIE_ENGINE, HOODIE_LAUNCH_CREATED_TOPIC, MAINNET_HOODIE_ENGINE_BLOCK);
+
+  type ExplorerLaunch = {
+    token: `0x${string}`;
+    creator: `0x${string}` | null;
+    block: number;
+    timestamp: number;
+    isHoodiePair: boolean;
+  };
+  const rows: ExplorerLaunch[] = [
+    ...wethLogs.map((log) => ({
+      token: topicAddress(log.topics[1]),
+      creator: topicAddress(log.topics[2]),
+      block: explorerInteger(log.blockNumber),
+      timestamp: explorerInteger(log.timeStamp),
+      isHoodiePair: false,
+    })),
+    ...hoodieLogs.map((log) => ({
+      token: topicAddress(log.topics[3]),
+      creator: topicAddress(log.topics[2]),
+      block: explorerInteger(log.blockNumber),
+      timestamp: explorerInteger(log.timeStamp),
+      isHoodiePair: true,
+    })),
   ]
-    .map((l) => ({ token: l.args.token, creator: l.args.creator, block: l.blockNumber ?? 0n, isHoodiePair: l.isHoodiePair }))
-    .sort((a, b) => (a.block < b.block ? 1 : a.block > b.block ? -1 : 0)) // newest first
+    .filter((row): row is ExplorerLaunch => row.token !== null)
+    .sort((a, b) => b.block - a.block)
     .slice(0, MAX_SHOWN);
-  if (rows.length === 0) return [];
 
-  const tokens = rows.map((r) => r.token);
-  const createBlockOf = new Map(rows.map((r) => [r.token.toLowerCase(), r.block]));
-  const fromB = rows.map((r) => r.block).reduce((a, b) => (a < b ? a : b), latest);
-
-  const seedTransfers = await getLogsChunked((f, t) => client.getLogs({ address: tokens, event: TRANSFER_EVENT, args: { to: POOL_MANAGER }, fromBlock: f, toBlock: t }), fromB, latest);
-  const initialCurve = new Map<string, bigint>();
-  for (const t of seedTransfers) {
-    const a = t.address.toLowerCase();
-    if ((t.blockNumber ?? 0n) !== createBlockOf.get(a)) continue;
-    initialCurve.set(a, (initialCurve.get(a) ?? 0n) + (t.args.value as bigint));
+  const enriched: DopplerPool[] = [];
+  for (let i = 0; i < rows.length; i += 5) {
+    const batch = rows.slice(i, i + 5);
+    const metadata = await Promise.all(batch.map((row) => fetchExplorerToken(row.token)));
+    for (let j = 0; j < batch.length; j += 1) {
+      const row = batch[j];
+      const meta = metadata[j];
+      enriched.push({
+        address: row.token,
+        chainId: ROBINHOOD_CHAIN_ID,
+        baseToken: {
+          address: row.token,
+          name: meta.name!,
+          symbol: meta.symbol!,
+          decimals: meta.decimals ? Number(meta.decimals) : 18,
+        },
+        quoteToken: row.isHoodiePair
+          ? { address: MAINNET_HOODIE, name: "Hoodie", symbol: "HOODIE", decimals: 18 }
+          : { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+        type: "v4",
+        dollarLiquidity: null,
+        volumeUsd: null,
+        marketCapUsd: null,
+        priceUsd: null,
+        createdAt: new Date(row.timestamp * 1000).toISOString(),
+        // Blockscout establishes launch membership + metadata. Curve progress remains unknown until
+        // a browser-safe indexed balance series is available; null is intentional, never fabricated.
+        progress: null,
+        creator: row.creator ?? undefined,
+        creatorClaimable: null,
+      });
+    }
   }
 
-  const meta = await client.multicall({
-    contracts: tokens.flatMap((token) => [
-      { address: token, abi: ERC20_META_ABI, functionName: "name" } as const,
-      { address: token, abi: ERC20_META_ABI, functionName: "symbol" } as const,
-      { address: token, abi: ERC20_META_ABI, functionName: "balanceOf", args: [POOL_MANAGER] } as const,
-    ]),
-  });
-  const claimRes = await client.multicall({
-    contracts: rows.map((r) => ({
-      address: r.isHoodiePair ? MAINNET_HOODIE_VAULT : MAINNET_WETH_VAULT,
-      abi: hydeVaultAbi,
-      functionName: "creatorClaimable",
-      args: [r.token],
-    } as const)),
-  }).catch(() => null);
-  const uniqueBlocks = [...new Set(rows.map((r) => r.block))];
-  const blockTimes = new Map((await Promise.all(uniqueBlocks.map((bn) => client.getBlock({ blockNumber: bn })))).map((b) => [b.number, Number(b.timestamp)]));
-
-  const pools = rows.map((r, i): DopplerPool | null => {
-    const key = r.token.toLowerCase();
-    const name = meta[i * 3].result as string | undefined;
-    const symbol = meta[i * 3 + 1].result as string | undefined;
-    const pmBalance = meta[i * 3 + 2].result as bigint | undefined;
-    if (!name || !symbol) return null;
-    const initial = initialCurve.get(key);
-    let progress: number | null = null;
-    if (initial && initial > 0n && pmBalance !== undefined) {
-      const sold = initial > pmBalance ? initial - pmBalance : 0n;
-      progress = Math.min(100, Number((sold * 10000n) / initial) / 100);
-    }
-    const ts = blockTimes.get(r.block);
-    const claim = claimRes?.[i];
-    return {
-      address: r.token, chainId: ROBINHOOD_CHAIN_ID,
-      baseToken: { address: r.token, name, symbol, decimals: 18 },
-      quoteToken: r.isHoodiePair
-        ? { address: MAINNET_HOODIE, name: "Hoodie", symbol: "HOODIE", decimals: 18 }
-        : { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
-      type: "v4", dollarLiquidity: null, volumeUsd: null, marketCapUsd: null, priceUsd: null,
-      createdAt: new Date((ts ?? 0) * 1000).toISOString(), progress,
-      creator: r.creator as string | undefined,
-      creatorClaimable: claim && claim.status === "success" ? (claim.result as bigint).toString() : null,
-    };
-  });
-  const nonNull = pools.filter((p): p is DopplerPool => p !== null);
   const seen = new Set<string>();
-  const deduped = nonNull.filter((p) => { const k = p.address.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  const deduped = enriched.filter((p) => {
+    const key = p.address.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   const dex = await fetchDexData(deduped.map((p) => p.address));
   return deduped.map((p) => {
     const d = dex.get(p.address.toLowerCase());
@@ -524,15 +630,67 @@ async function fetchMainnetOwnStackPools(): Promise<DopplerPool[]> {
   });
 }
 
+const MAINNET_LAUNCH_CACHE_KEY = "hyde_mainnet_launches_v2";
+const MAINNET_LAUNCH_CACHE_TTL = 5 * 60 * 1000;
+let mainnetLaunchMemoryCache: { at: number; pools: DopplerPool[] } | null = null;
+let mainnetLaunchInFlight: Promise<DopplerPool[]> | null = null;
+
+function readMainnetLaunchCache(): { at: number; pools: DopplerPool[] } | null {
+  if (mainnetLaunchMemoryCache && Date.now() - mainnetLaunchMemoryCache.at < MAINNET_LAUNCH_CACHE_TTL) {
+    return mainnetLaunchMemoryCache;
+  }
+  try {
+    const raw = localStorage.getItem(MAINNET_LAUNCH_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as { at?: number; pools?: DopplerPool[] };
+    if (
+      typeof cached.at !== "number"
+      || !Array.isArray(cached.pools)
+      || Date.now() - cached.at >= MAINNET_LAUNCH_CACHE_TTL
+    ) return null;
+    mainnetLaunchMemoryCache = { at: cached.at, pools: cached.pools };
+    return mainnetLaunchMemoryCache;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMainnetOwnStackPools(force = false): Promise<DopplerPool[]> {
+  if (!force) {
+    const cached = readMainnetLaunchCache();
+    if (cached) return cached.pools;
+    if (mainnetLaunchInFlight) return mainnetLaunchInFlight;
+  }
+
+  const request = loadMainnetOwnStackPools().then((pools) => {
+    const cached = { at: Date.now(), pools };
+    mainnetLaunchMemoryCache = cached;
+    try {
+      localStorage.setItem(MAINNET_LAUNCH_CACHE_KEY, JSON.stringify(cached));
+    } catch {
+      /* storage unavailable; memory cache still prevents duplicate reads */
+    }
+    return pools;
+  });
+  mainnetLaunchInFlight = request;
+  try {
+    return await request;
+  } finally {
+    if (mainnetLaunchInFlight === request) mainnetLaunchInFlight = null;
+  }
+}
+
 /** Full pool objects for the Launchpad explore tab and trending carousel. Network-aware: Robinhood
  *  Testnet + mainnet both read our own-stack factories (mainnet = WETH factory + HOODIE engine). */
 export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
   pools: DopplerPool[];
   loading: boolean;
+  error: string | null;
   refetch: () => void;
 } {
   const [pools, setPools] = useState<DopplerPool[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const refetch = () => setTick((t) => t + 1);
 
@@ -540,6 +698,7 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     let cancelled = false;
     setPools([]); // drop prior-chain launches immediately on a chain switch (kami A-blocker #3)
     setLoading(true);
+    setError(null);
 
     // Only chains with a live Hyde deployment have launches. A "coming" chain (e.g. Stable/988) has none —
     // return empty rather than falling back to the mainnet fetch (would leak Robinhood data onto Stable).
@@ -547,11 +706,12 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
       chainId === RH_TESTNET_ID
         ? fetchHydeFactoryPools
         : chainId === ROBINHOOD_CHAIN_ID
-          ? fetchMainnetOwnStackPools
+          ? () => fetchMainnetOwnStackPools(tick > 0)
           : null;
     if (!fetcher) {
       setPools([]);
       setLoading(false);
+      setError(null);
       return () => {
         cancelled = true;
       };
@@ -561,7 +721,10 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
         if (!cancelled) setPools(items);
       })
       .catch(() => {
-        if (!cancelled) setPools([]);
+        if (!cancelled) {
+          setPools([]);
+          setError("Launch data source unavailable");
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -572,7 +735,7 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     };
   }, [tick, chainId]);
 
-  return { pools, loading, refetch };
+  return { pools, loading, error, refetch };
 }
 
 /* ─── Platform stats (transparency page) ──────────────────────────────────────
