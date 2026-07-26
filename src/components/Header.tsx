@@ -125,7 +125,13 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
         <div className="mx-auto flex h-14 max-w-[1920px] items-center gap-3 px-4 sm:px-8 md:px-10">
           {/* Brand */}
           <NavLink to="/" className="flex items-center gap-2 shrink-0">
-            <BridgeMark />
+            <span className="relative h-8 w-8 shrink-0 overflow-hidden" aria-hidden="true">
+              <img
+                src="/logo/trademark-shark-light.png"
+                alt=""
+                className="h-full w-full object-contain"
+              />
+            </span>
             <span className="font-display text-[15px] font-bold tracking-tight text-[var(--term-text)]">HYDEOUT</span>
           </NavLink>
 
@@ -253,15 +259,5 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
         </div>
       )}
     </>
-  );
-}
-
-/* Bridge/arch mark — the HYDEOUT logotype glyph from the mock (teal). */
-function BridgeMark() {
-  return (
-    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="var(--term-teal)" strokeWidth={2} strokeLinecap="round">
-      <path d="M3 19V11a9 9 0 0 1 18 0v8" />
-      <path d="M3 19h4v-6M21 19h-4v-6M11 19v-5a1 1 0 0 1 2 0v5" />
-    </svg>
   );
 }
