@@ -303,9 +303,9 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     positionManager: "0x58daec3116aae6D93017bAAea7749052E8a04fA7" as Address,
     permit2:         "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway:         PLACEHOLDER_V4_GATEWAY, // HydeV4Gateway not yet deployed on 4663 — Foundry deploy needs clint's key
-    // LIVE Hyde own-stack WETH factory on 4663 mainnet (deployed 2026-07-21, kami 23610). Same
-    // HydeTokenFactory source/ABI as testnet → the WETH-pair launch + board read our own contracts.
-    hydeTokenFactory: "0x710fEa288266518528A4230771E07ee310ce509f" as Address,
+    // LIVE Hyde own-stack WETH factory on 4663 mainnet — REDEPLOYED 2026-07-24 (numeraire-aware $5k
+    // preset, audited 08d99a7, kuro broadcast). Supersedes the broken 0x710fEa…509f ($1.9T-bug factory).
+    hydeTokenFactory: "0x159A2fa37427299466B0723713eaa260e6124cbc" as Address,
     // LIVE HOODIE launcher-launcher on 4663 mainnet (deployed 2026-07-21, kami 23624).
     hoodieMetaFactory: "0x101Fe0c0328De00F6F6f928B79d512E899fE2fC0" as Address,
     hoodieEngine:      "0x8062951c99CfFA5365f979D5139Cf96b5c77CFCc" as Address,
@@ -432,7 +432,7 @@ export const ROBINHOOD_TESTNET_VAULT = "0xF6318a4C874E9D2EBE627B05A247AD9d640173
  *  vault's SETTLEMENT_TOKEN — $HOODIE for the HOODIE stack, WETH for the WETH stack. `claimCreator(token)`
  *  always pays the immutable on-chain `creator[token]`. */
 export const MAINNET_HOODIE_FEE_VAULT = "0x1ee72dCb5a18ddcC069e4E604Ba59ac5a0930DB4" as Address;
-export const MAINNET_WETH_FEE_VAULT = "0x04C204C264626Ad0067ac4317D54598286d2D791" as Address;
+export const MAINNET_WETH_FEE_VAULT = "0x02Ce83859BEa69d248973Aa4beE09D7e12Ed0227" as Address; // REDEPLOYED 2026-07-24 (new $5k WETH stack; old 0x04C204…D791 retired w/ broken factory)
 /** HydeFeeCollector for the 4663 HOODIE stack (gojo 23892/23899). `collect(token)` harvests accrued V4
  *  fees into the vault as `rawFees` (permissionless, swap-free, no oracle). */
 export const MAINNET_HOODIE_FEE_COLLECTOR = "0x08610aE598a24799e1843C683695B0Fc63b1bd6f" as Address;

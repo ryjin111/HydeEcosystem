@@ -145,8 +145,8 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
               >
                 <h2 className="font-display text-lg font-semibold text-pcs-text">Exchange</h2>
                 <p className="text-sm text-pcs-textDim">
-                  In-app swap is coming to Robinhood Chain shortly. Every launch trades
-                  live now in its locked-liquidity pool — pick one below to open its page.
+                  In-app swap is coming to Robinhood Chain shortly. Every HOODIE launch
+                  trades live now in its locked-liquidity pool — pick one below to open its page.
                 </p>
                 <p className="text-xs text-pcs-textDim">
                   Pick a token from Trending or Recently Launched to open its full page —
