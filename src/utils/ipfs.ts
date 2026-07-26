@@ -10,7 +10,7 @@
  * Gateway is configurable via `VITE_IPFS_GATEWAY`, defaulting to the public ipfs.io gateway.
  */
 
-const DEFAULT_IPFS_GATEWAY = "https://inland-fuchsia-dove.myfilebase.com/ipfs/";
+const DEFAULT_IPFS_GATEWAY = "https://ipfs.io/ipfs/";
 
 /** Resolved gateway base, always with a single trailing slash. */
 export function ipfsGateway(): string {

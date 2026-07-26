@@ -1,16 +1,15 @@
 // Board — HYDEOUT_DESIGN_SPEC §2.A (board-first, pump.fun-behavior, Hyde skin).
 // Real feed via useHydeLaunches — NOTHING simulated (§3.4): market cap / holders / 24h vol are
-// not in the adapter, so they are HIDDEN, never faked. Curve % + graduation + createdAt + the
-// bytecode-verified ✓ badge are all source-true. Trending-only Hyde-blue neon (clint 21135) stays
+// not in the adapter, so they are HIDDEN, never faked. Curve % + graduation + createdAt are
+// source-true. Trending-only Hyde-blue neon (clint 21135) stays
 // DORMANT (no card flagged, no "Sort: Trending") until the adapter exposes a real market-velocity
 // signal — the CSS is kept ready (kami 21204.1/21210). Fee copy = 95% creator (LIVE rail, §3.9).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
-import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
-import { VerifiedBadge } from "../components/ui/kit";
 import { TokenImage } from "../components/TokenImage";
 import type { DopplerPool } from "../utils/dopplerConfig";
+import { fetchLaunchMeta } from "../utils/launchMeta";
 
 // Spec palette (§1) — kept local for pixel control against the mock.
 const C = {
@@ -66,8 +65,30 @@ function CurveBar({ pct, tone = C.blue }: { pct: number; tone?: string }) {
 }
 
 /* ── coin card ────────────────────────────────────────────────────────────── */
+function LaunchTokenImage({
+  p,
+  className,
+  style,
+}: {
+  p: DopplerPool;
+  className: string;
+  style?: CSSProperties;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSrc(null);
+    fetchLaunchMeta(p.chainId, p.baseToken.address).then((meta) => {
+      if (!cancelled) setSrc(meta?.image || null);
+    });
+    return () => { cancelled = true; };
+  }, [p.baseToken.address, p.chainId]);
+
+  return <TokenImage src={src} symbol={p.baseToken.symbol || "?"} className={className} style={style} />;
+}
+
 export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }) {
-  const verify = useVerifiedStatus(p.address, p.chainId);
   const graduated = p.type === "v2";
   const sym = p.baseToken.symbol || "?";
   return (
@@ -92,7 +113,7 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
           </span>
         )}
         <div className="flex items-center gap-3">
-          <TokenImage symbol={sym} className="h-11 w-11 shrink-0 rounded-xl text-base" style={{ border: `1px solid ${C.hairline}` }} />
+          <LaunchTokenImage p={p} className="h-11 w-11 shrink-0 rounded-xl text-base" style={{ border: `1px solid ${C.hairline}` }} />
           <div className="min-w-0 flex-1">
             <p className="truncate font-semibold" style={{ color: C.text }}>
               {p.baseToken.name} <span className="font-mono text-xs" style={{ color: C.muted }}>${sym}</span>
@@ -112,10 +133,7 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
-            <VerifiedBadge status={verify} />
-            <CreatorFeeChip />
-          </div>
+          <CreatorFeeChip />
           {p.progress != null && (
             <span className="font-mono text-[11px] tabular-nums" style={{ color: graduated ? C.green : C.blueH }}>
               {p.progress.toFixed(1)}%
@@ -137,7 +155,6 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
 
 /* ── Closest-to-Graduation hero (honest: highest real curve %, not a "hot/king" signal) ── */
 function ClosestToGraduation({ p }: { p: DopplerPool }) {
-  const verify = useVerifiedStatus(p.address, p.chainId);
   const sym = p.baseToken.symbol || "?";
   return (
     <Link to={`/token/${p.address}`} className="block">
@@ -153,13 +170,12 @@ function ClosestToGraduation({ p }: { p: DopplerPool }) {
           {p.progress != null ? "🎯 Closest to Graduation" : "Newest launch"}
         </div>
         <div className="flex items-center gap-4">
-          <TokenImage symbol={sym} className="h-16 w-16 shrink-0 rounded-2xl text-2xl" style={{ border: `1px solid ${C.hairline}` }} />
+          <LaunchTokenImage p={p} className="h-16 w-16 shrink-0 rounded-2xl text-2xl" style={{ border: `1px solid ${C.hairline}` }} />
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-xl font-bold" style={{ color: C.text }}>
               {p.baseToken.name} <span className="font-mono text-sm" style={{ color: C.muted }}>${sym}</span>
             </p>
             <div className="mt-1 flex items-center gap-2">
-              <VerifiedBadge status={verify} />
               <CreatorFeeChip />
               <span className="font-mono text-[11px] tabular-nums" style={{ color: C.faint }}>{ageOf(p.createdAt)} ago</span>
             </div>
@@ -193,7 +209,7 @@ function AlmostGraduated({ pools, unavailable = false }: { pools: DopplerPool[];
           {pools.map((p) => (
             <Link key={p.address} to={`/token/${p.address}`} className="block">
               <div className="flex items-center gap-2">
-                <TokenImage symbol={p.baseToken.symbol || "?"} className="h-7 w-7 shrink-0 rounded-lg text-[10px]" />
+                <LaunchTokenImage p={p} className="h-7 w-7 shrink-0 rounded-lg text-[10px]" />
                 <span className="min-w-0 flex-1 truncate text-xs" style={{ color: C.text }}>${p.baseToken.symbol}</span>
                 <span className="font-mono text-[11px] tabular-nums" style={{ color: C.blueH }}>{(p.progress ?? 0).toFixed(0)}%</span>
               </div>
