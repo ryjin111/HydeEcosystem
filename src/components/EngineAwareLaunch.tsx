@@ -16,31 +16,31 @@ const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ")
 function ComingLaunchBody({ chainId, chainName }: { chainId: number; chainName: string }) {
   const meta = ENGINE_META["v3-single-sided"];
   return (
-    <div className="mx-auto w-full max-w-md rounded-2xl border border-pcs-border bg-pcs-card p-6 shadow-card">
+    <div className="term-panel mx-auto w-full max-w-[680px] rounded-lg p-6 sm:p-8">
       <div className="mb-1 flex items-center justify-between">
         <h2 className="font-display text-lg font-semibold text-pcs-text">Launch a token</h2>
         <span className="font-mono text-[11px] text-pcs-textDim">{chainName} · {chainId}</span>
       </div>
       <p className="mb-4 text-xs text-pcs-textSub">{meta.title} — {meta.subtitle}</p>
 
-      <div className="mb-4 grid grid-cols-2 gap-3">
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block">
           <SectionLabel>Name</SectionLabel>
-          <input disabled placeholder="e.g. Hoodie Coin" className="mt-1 w-full rounded-xl border border-pcs-border bg-pcs-input px-3 py-2 text-sm text-pcs-text placeholder:text-pcs-textDim disabled:opacity-60" />
+          <input disabled placeholder="e.g. Hoodie Coin" className="mt-1 w-full rounded-lg border border-pcs-border bg-pcs-input px-3 py-2.5 text-sm text-pcs-text placeholder:text-pcs-textDim disabled:opacity-60" />
         </label>
         <label className="block">
           <SectionLabel>Symbol</SectionLabel>
-          <input disabled placeholder="HOODIE" className="mt-1 w-full rounded-xl border border-pcs-border bg-pcs-input px-3 py-2 text-sm text-pcs-text placeholder:text-pcs-textDim disabled:opacity-60" />
+          <input disabled placeholder="HOODIE" className="mt-1 w-full rounded-lg border border-pcs-border bg-pcs-input px-3 py-2.5 font-code text-sm text-pcs-text placeholder:text-pcs-textDim disabled:opacity-60" />
         </label>
       </div>
 
-      <div className="flex flex-col gap-1.5 rounded-xl border border-pcs-border bg-white/[0.02] px-4 py-3 text-xs">
+      <div className="flex flex-col gap-2 rounded-lg border border-pcs-border bg-white/[0.02] px-4 py-4 text-xs">
         <div className="flex justify-between text-pcs-textDim"><span>Starting FDV</span><span className="font-mono text-pcs-text">$5,000</span></div>
         <div className="flex justify-between text-pcs-textDim"><span>Fee split</span><span className="text-pcs-text">{meta.feeSplitLabel}</span></div>
         <div className="flex justify-between text-pcs-textDim"><span>Launch cost</span><span className="font-mono text-pcs-text">1 USDT0</span></div>
       </div>
 
-      <Button variant="primary" size="lg" className="mt-4 w-full" disabled>
+      <Button variant="primary" size="lg" className="mt-5 w-full" disabled>
         Launch on {chainName} — Coming soon
       </Button>
       <p className="mt-3 text-center text-[11px] text-pcs-textDim">🔒 {meta.trustLine}</p>
@@ -52,7 +52,11 @@ function ComingLaunchBody({ chainId, chainName }: { chainId: number; chainName: 
  *  evidence.launch); V4 is the real launch form. */
 function EngineBody({ engine, chainId, chainName }: { engine: LaunchEngine; chainId: number; chainName: string }) {
   if (engine === "v3-single-sided") return <ComingLaunchBody chainId={chainId} chainName={chainName} />;
-  return <LaunchTokenForm chainId={chainId} />;
+  return (
+    <div className="terminal-launch-form">
+      <LaunchTokenForm chainId={chainId} />
+    </div>
+  );
 }
 
 /** 2+ live engines on one chain (none today): a minimal engine-mode selector over the registry-derived
@@ -60,14 +64,14 @@ function EngineBody({ engine, chainId, chainName }: { engine: LaunchEngine; chai
 function MultiEngineLaunch({ engines, chainId, chainName }: { engines: LaunchEngine[]; chainId: number; chainName: string }) {
   const [picked, setPicked] = useState<LaunchEngine>(engines[0]);
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-3">
-      <div className="grid grid-cols-2 gap-1 rounded-xl border border-pcs-border bg-pcs-input p-1">
+    <div className="mx-auto flex w-full max-w-[680px] flex-col gap-3">
+      <div className="grid grid-cols-2 gap-1 rounded-lg border border-pcs-border bg-pcs-input p-1">
         {engines.map((e) => (
           <button
             key={e}
             onClick={() => setPicked(e)}
             className={cx(
-              "rounded-lg py-2 text-xs font-semibold transition",
+              "rounded-md py-2 text-xs font-semibold transition",
               picked === e ? "border border-pcs-primary/40 bg-pcs-primary/15 text-pcs-primaryBright" : "border border-transparent text-pcs-textSub hover:text-pcs-text",
             )}
           >
@@ -93,7 +97,7 @@ export function EngineAwareLaunch({ defaultChainId = 4663 }: { defaultChainId?: 
 
   if (engines.length === 0) {
     return (
-      <div className="mx-auto w-full max-w-md rounded-2xl border border-pcs-border bg-pcs-card p-8 text-center shadow-card">
+      <div className="term-panel mx-auto w-full max-w-[680px] rounded-lg p-8 text-center">
         <p className="text-sm text-pcs-textSub">Launching isn’t available on {chainName} yet.</p>
         <p className="mt-1 text-xs text-pcs-textDim">This chain has no verified launch engine.</p>
       </div>

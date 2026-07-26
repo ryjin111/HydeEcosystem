@@ -1,6 +1,6 @@
 // Hydeout design-system primitives (Wave A foundation, per HYDEOUT_DESIGN_SPEC.md).
 // Presentational + responsive only — NO data, NO protocol, NO fee/copy strings.
-// One card system + amber-CTA/blue-ghost buttons + mono numbers + glow-on-hero-only.
+// One card system + terminal-teal actions + mono numbers.
 import type { ReactNode, ButtonHTMLAttributes } from 'react';
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(' ');
@@ -28,7 +28,7 @@ export function Card({
   );
 }
 
-/* ---------------- Button (amber primary / blue ghost) ---------------- */
+/* ---------------- Button (terminal teal primary / quiet secondary) ---------------- */
 type BtnVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type BtnSize = 'lg' | 'md' | 'sm';
 export function Button({
@@ -36,14 +36,14 @@ export function Button({
 }: { variant?: BtnVariant; size?: BtnSize; children: ReactNode } & ButtonHTMLAttributes<HTMLButtonElement>) {
   const sizes: Record<BtnSize, string> = { lg: 'h-12 px-6 text-[15px]', md: 'h-10 px-4 text-sm', sm: 'h-8 px-3 text-[13px]' };
   const variants: Record<BtnVariant, string> = {
-    primary: 'bg-brand-yellow text-black hover:brightness-105 font-semibold',
+    primary: 'bg-pcs-primary text-[#04120d] hover:bg-pcs-primaryBright font-semibold',
     secondary: 'border border-pcs-primary/60 text-pcs-primary hover:bg-pcs-primary/10',
     ghost: 'text-pcs-textSub hover:text-pcs-text hover:bg-white/[0.04]',
     danger: 'bg-pcs-failure text-white hover:brightness-105',
   };
   return (
     <button
-      className={cx('inline-flex items-center justify-center gap-2 rounded-xl font-medium transition disabled:opacity-50 disabled:cursor-not-allowed',
+      className={cx('inline-flex items-center justify-center gap-2 rounded-lg font-medium transition disabled:opacity-40 disabled:cursor-not-allowed',
         sizes[size], variants[variant], className)}
       {...rest}
     >

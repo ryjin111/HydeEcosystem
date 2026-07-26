@@ -57,7 +57,7 @@ ok("launch-only ⇒ trade null (in-app Swap disabled, kami #5)", stableCap.trade
 ok("V3 evidence EXPOSED (not discarded), infra present (kami #4)", !!stableCap.evidence && "infra" in stableCap.evidence && (stableCap.evidence as V3ChainEvidence).infra?.factory.tickSpacing === 200);
 
 console.log("\nFully-signed evidence → live (needs metadata row):");
-const rowWithMeta = { ...stableRow, explorer: "https://explorer.stable.example", nativeSymbol: "ETH" };
+const rowWithMeta = { ...stableRow, explorer: "https://explorer.stable.example", nativeSymbol: "USDT0" };
 const liveEv: V3ChainEvidence = { chainId: 988, generatedAtBlock: "1", infra: infraFor(stableRow), launch: signedLaunch, readSmoke: { verifiedAtBlock: "1" } };
 const capLive = deriveV3Capability(rowWithMeta, liveEv);
 ok("infra + signed launch + metadata + read smoke → live", capLive.status === "live");
@@ -72,7 +72,8 @@ const noDeployTx: V3ChainEvidence = { ...liveEv, launch: { ...signedLaunch, depl
 ok("launch missing deploy-tx provenance → coming", deriveV3Capability(rowWithMeta, noDeployTx).status === "coming");
 const badBinding: V3ChainEvidence = { ...liveEv, launch: { ...signedLaunch, padLockerBinding: "0x3333333333333333333333333333333333333333" } };
 ok("launch pad↔locker cross-bind wrong → coming", deriveV3Capability(rowWithMeta, badBinding).status === "coming");
-ok("no metadata on row (explorer empty) → coming even if fully signed", deriveV3Capability(stableRow, liveEv).status === "coming");
+const rowWithoutExplorer = { ...stableRow, explorer: "" };
+ok("no metadata on row (explorer empty) → coming even if fully signed", deriveV3Capability(rowWithoutExplorer, liveEv).status === "coming");
 
 console.log("\nEngine-aware lookups — V4-only / V3-only / both / neither (kami #1):");
 const mk = (id: number, engine: "v4-hook" | "v3-single-sided") => ({ id, engine } as unknown as ChainCapability);

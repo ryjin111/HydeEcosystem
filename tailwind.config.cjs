@@ -4,29 +4,29 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Hyde dark — flat, credible-finance palette. One accent, no neon.
+        // Hyde Pro-Terminal — dense teal-on-near-black instrument palette (approved mock 24229).
         pcs: {
-          bg: "#0B0C0F",
-          card: "#121419",
-          cardLight: "#181B22",
-          input: "#0E1014",
-          border: "#22252D",
-          hover: "#1A1D24",
-          text: "#EDEFF3",
-          textSub: "#9BA1AC",
-          textDim: "#5D6470",
-          primary: "#2E9FE6",
-          primaryDark: "#1F81C0",
-          primaryBright: "#54B4F0",
+          bg: "#08090B",
+          card: "#0E1114",
+          cardLight: "#111519",
+          input: "#0B0D10",
+          border: "#1B1F25",
+          hover: "#14191D",
+          text: "#E8EBEE",
+          textSub: "#8B93A0",
+          textDim: "#5A6270",
+          primary: "#2AD4A6",
+          primaryDark: "#1BBF92",
+          primaryBright: "#4FE3BE",
           secondary: "#8B93A3",
-          success: "#34C77B",
+          success: "#2AD4A6",
           warning: "#E8A33D",
-          failure: "#E5484D",
-          accentGlow: "rgba(46,159,230,0.14)", // hero/active card glow only
+          failure: "#F6465D",
+          accentGlow: "rgba(42,212,166,0.14)",
         },
         brand: {
           yellow: "#E8A33D",
-          blue: "#2E9FE6"
+          blue: "#2AD4A6"
         },
       },
       boxShadow: {
@@ -35,7 +35,7 @@ module.exports = {
         neon: "0 1px 2px rgba(0, 0, 0, 0.4)",
         neonPink: "0 1px 2px rgba(0, 0, 0, 0.4)",
         // hero/active glow-border (the one premium tell — used sparingly)
-        glow: "inset 0 0 0 1px rgba(46,159,230,0.35), 0 0 44px rgba(46,159,230,0.14)",
+        glow: "inset 0 0 0 1px rgba(42,212,166,0.35), 0 0 44px rgba(42,212,166,0.14)",
       },
       borderRadius: {
         '2.5xl': '1.25rem',

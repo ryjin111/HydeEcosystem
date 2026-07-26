@@ -247,7 +247,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
         <TokenImage src={image} symbol={bt.symbol} className="h-40 w-full text-4xl" style={{ borderRadius: 0, borderWidth: 0 }} />
         <span
           className="absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
-          style={{ background: graduated ? "rgba(52,199,123,0.92)" : "rgba(46,159,230,0.92)", color: "#0B0D10" }}
+          style={{ background: graduated ? "rgba(52,199,123,0.92)" : "rgba(42,212,166,0.92)", color: "#0B0D10" }}
         >
           {graduated ? "Graduated" : "Live"}
         </span>
@@ -400,7 +400,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
               <div
                 className="h-full rounded-full"
-                style={{ width: `${Math.max(pool.progress, pool.progress > 0 ? 2 : 0)}%`, background: "#2E9FE6" }}
+                style={{ width: `${Math.max(pool.progress, pool.progress > 0 ? 2 : 0)}%`, background: "#2AD4A6" }}
               />
             </div>
           </div>
@@ -414,7 +414,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
           <span
             aria-hidden="true"
             className="pointer-events-none text-xs font-semibold px-4 py-2 rounded-lg flex-shrink-0 transition group-hover:brightness-125"
-            style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
+            style={{ background: "rgba(42,212,166,0.12)", color: "#4FE3BE" }}
           >
             Trade →
           </span>
@@ -483,11 +483,11 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 w-full">
+    <div className="w-full">
       {/* Testnet indicator — unmistakable; nothing can read as mainnet/real money (shiro #1). */}
       {isTestnet && (
         <div
-          className="mb-4 flex items-center gap-2.5 rounded-xl px-4 py-2.5 text-sm"
+          className="mb-4 flex items-center gap-2.5 rounded-lg px-4 py-2.5 text-sm"
           style={{ background: "rgba(224,163,46,0.10)", border: "1px solid rgba(224,163,46,0.35)", color: "#E0A32E" }}
         >
           <span className="text-base">🧪</span>
@@ -499,9 +499,10 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       )}
 
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="font-display text-2xl font-semibold text-pcs-text">Launchpad</h1>
-        <p className="text-sm text-pcs-textSub mt-1">
+      <div className="mb-6 border-b border-[var(--term-border)] pb-5">
+        <p className="term-label mb-2">Hydeout protocol</p>
+        <h1 className="font-display text-2xl font-semibold text-[var(--term-text)]">Launchpad</h1>
+        <p className="mt-1 text-sm text-[var(--term-sub)]">
           {isTestnet
             ? "Live launches on Robinhood Testnet — custody-locked liquidity."
             : chainEngineCapabilities(chainId)[0]?.engine === "v3-single-sided"
@@ -511,16 +512,19 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #1C1F26" }}>
+      <div
+        className="mb-6 flex w-fit gap-1 rounded-lg p-1"
+        style={{ background: "var(--term-panel-2)", border: "1px solid var(--term-border)" }}
+      >
         {(["launch", "mine"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className="px-5 py-2 rounded-lg text-sm font-semibold transition"
+            className="rounded-md px-5 py-2 text-sm font-semibold transition"
             style={
               tab === t
-                ? { background: "rgba(46,159,230,0.14)", color: "#54B4F0" }
-                : { color: "#5D6470" }
+                ? { background: "var(--term-teal-dim)", color: "var(--term-teal)" }
+                : { color: "var(--term-dim)" }
             }
           >
             {t === "mine" ? "My Launches" : "Launch a Token"}

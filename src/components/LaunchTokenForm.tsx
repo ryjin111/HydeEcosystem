@@ -264,7 +264,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           HOODIE = the HOODIE-native launcher-launcher. Segmented pill, matching the page's tab style. */}
       <div className="grid grid-cols-2 gap-1 rounded-xl p-1" style={{ background: "#0E1014", border: "1px solid #22252D" }}>
         {([
-          { key: "weth",   label: "WETH PAIR",   accent: "#54B4F0", tint: "rgba(46,159,230,0.14)" },
+          { key: "weth",   label: "WETH PAIR",   accent: "#4FE3BE", tint: "rgba(42,212,166,0.14)" },
           { key: "hoodie", label: "HOODIE PAIR", accent: "#E0A32E", tint: "rgba(224,163,46,0.14)" },
         ] as const).map((opt) => {
           const on = pair === opt.key;
@@ -444,7 +444,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             {!hasImage ? (
               <label
                 className={`text-xs font-semibold px-3 py-2.5 rounded-xl transition flex items-center justify-center gap-2 ${uploading ? "opacity-60 cursor-wait" : "cursor-pointer"}`}
-                style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0", border: "1px dashed rgba(46,159,230,0.35)" }}
+                style={{ background: "rgba(42,212,166,0.12)", color: "#4FE3BE", border: "1px dashed rgba(42,212,166,0.35)" }}
               >
                 {uploading ? "Pinning to IPFS…" : "Upload image"}
                 <input
@@ -511,7 +511,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
       {isConnected && address && preview && (
         <div
           className="rounded-xl px-4 py-3 flex flex-col gap-3"
-          style={{ background: "rgba(46,159,230,0.06)", border: "1px solid rgba(46,159,230,0.25)" }}
+          style={{ background: "rgba(42,212,166,0.06)", border: "1px solid rgba(42,212,166,0.25)" }}
         >
           <p className="text-xs font-medium text-pcs-textSub">Pre-flight receipt</p>
 
@@ -547,7 +547,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
                 : "100% to the launch curve — nothing pre-minted or held back"}</span>
             </div>
             <div className="h-1 rounded-full overflow-hidden" style={{ background: "#22252D" }}>
-              <div className="h-full" style={{ width: "100%", background: "#2E9FE6" }} />
+              <div className="h-full" style={{ width: "100%", background: "#2AD4A6" }} />
             </div>
           </div>
 
@@ -598,7 +598,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
       ) : chainMismatch ? (
         <button
           className="w-full rounded-xl py-3 text-sm font-semibold transition"
-          style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
+          style={{ background: "rgba(42,212,166,0.14)", color: "#4FE3BE" }}
           onClick={() => switchChain({ chainId })}
         >
           Switch to {targetName}
@@ -614,7 +614,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
       ) : submitting ? (
         <button
           className="w-full rounded-xl py-3 text-sm font-semibold transition disabled:opacity-50"
-          style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
+          style={{ background: "rgba(42,212,166,0.14)", color: "#4FE3BE" }}
           disabled
         >
           Launching…
@@ -678,7 +678,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
                   {metaError && <p className="text-pcs-textDim break-all">{metaError}</p>}
                   <button
                     className="self-start rounded-lg px-3 py-1.5 text-xs font-semibold"
-                    style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
+                    style={{ background: "rgba(42,212,166,0.14)", color: "#4FE3BE" }}
                     onClick={() => saveMetaFor(launched.token, launched.image, launched.description)}
                   >
                     Retry signature

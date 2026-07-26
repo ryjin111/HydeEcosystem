@@ -6,18 +6,94 @@
   color-scheme: dark;
 }
 
+/* Pro-Terminal theme — clint's LOOK B (mock 24229): dense, restrained, "serious money" trading
+   terminal. Teal-on-near-black, mono numbers, flat panels with hairline borders (ref: Hyperliquid ·
+   Photon). Replaces the undersea look on the shell + Landing. */
+:root {
+  --term-bg: #08090b;
+  --term-panel: #0e1114;
+  --term-panel-2: #0b0d10;
+  --term-border: #1b1f25;
+  --term-border-soft: #14171c;
+  --term-teal: #2ad4a6;
+  --term-teal-bright: #4fe3be;
+  --term-teal-dim: rgba(42, 212, 166, 0.14);
+  --term-red: #f6465d;
+  --term-text: #e8ebee;
+  --term-sub: #8b93a0;
+  --term-dim: #5a6270;
+}
+
 body {
   @apply min-h-screen text-pcs-text font-sans;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
-  /* Undersea theme — "the hideout beneath the surface" (shiro/kami). Restrained background LAYER only:
-     a soft cyan surface light up top, a faint violet caustic, over a deep-sea depth gradient. Dark enough
-     that solid panels stay high-contrast/readable (kami: no glassy aquarium clutter). */
-  background:
-    radial-gradient(130% 80% at 50% -12%, rgba(46, 159, 230, 0.12), transparent 58%),
-    radial-gradient(80% 55% at 82% 4%, rgba(139, 92, 246, 0.07), transparent 55%),
-    linear-gradient(180deg, #0a1622 0%, #0b0c0f 52%, #070809 100%);
-  background-attachment: fixed;
+  /* Flat near-black — no gradient. The terminal reads as an instrument, not a marketing page. */
+  background: var(--term-bg);
+}
+
+/* Teal accent text (protocol headline 2nd line, positive deltas, active tabs) */
+.term-teal { color: var(--term-teal); }
+.term-red { color: var(--term-red); }
+
+/* Panel — flat surface, hairline border (stat cells, hero band, table wrapper, positions panel) */
+.term-panel {
+  background: var(--term-panel);
+  border: 1px solid var(--term-border);
+}
+
+/* Primary value action — teal solid, dark text (Launch / Connect in the Pro-Terminal system). */
+.btn-terminal {
+  @apply rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  background: var(--term-teal);
+  color: #04120d;
+}
+.btn-terminal:hover:not(:disabled) { background: var(--term-teal-bright); }
+.btn-terminal:active:not(:disabled) { filter: brightness(0.94); }
+
+/* Ghost / secondary — quiet outline on near-black (Browse market, tabs). */
+.btn-ghost-term {
+  @apply rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  border: 1px solid var(--term-border);
+  background: transparent;
+  color: var(--term-sub);
+}
+.btn-ghost-term:hover:not(:disabled) { border-color: #2c323b; color: var(--term-text); }
+
+/* Small-caps label used across the terminal (stat labels, section headers). */
+.term-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--term-dim);
+}
+
+.protocol-stat {
+  border-right: 1px solid var(--term-border);
+  border-bottom: 1px solid var(--term-border);
+}
+.protocol-stat:nth-child(2n) { border-right: 0; }
+.protocol-stat:nth-child(n + 3) { border-bottom: 0; }
+@media (min-width: 1024px) {
+  .protocol-stat { border-right: 1px solid var(--term-border); border-bottom: 0; }
+  .protocol-stat:last-child { border-right: 0; }
+}
+
+.term-table-head {
+  padding: 0.8rem 1.25rem;
+  color: var(--term-dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.terminal-launch-form > div {
+  max-width: 680px !important;
+  border-color: var(--term-border) !important;
+  border-radius: 0.5rem !important;
+  background: var(--term-panel) !important;
+  box-shadow: none !important;
 }
 
 /* Display type — headings, brand, page titles */
@@ -43,45 +119,33 @@ body {
   border-color: #22252D;
 }
 .input:focus {
-  border-color: rgba(46, 159, 230, 0.55);
-  box-shadow: 0 0 0 3px rgba(46, 159, 230, 0.12);
+  border-color: rgba(42, 212, 166, 0.55);
+  box-shadow: 0 0 0 3px rgba(42, 212, 166, 0.12);
 }
 
-/* Primary action button — solid accent, no gradient, no glow */
-/* Primary VALUE action (Launch / Buy / Swap) — AMBER, the one loud action per screen (shiro 24322 / kami
-   brand call). Amber "money moves here"; dark text; pops against the cool sea. */
+/* Primary action button — solid terminal accent, no gradient or glow. */
 .btn-primary {
-  @apply rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
-  background: linear-gradient(180deg, #FFC23D 0%, #FFAE00 100%);
-  color: #0B0C0F;
+  @apply rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  background: var(--term-teal);
+  color: #04120d;
 }
 .btn-primary:hover:not(:disabled) {
-  filter: brightness(1.06);
+  background: var(--term-teal-bright);
 }
 .btn-primary:active:not(:disabled) {
   filter: brightness(0.94);
 }
-/* Accent (utility) action — Connect wallet etc. BLUE, never amber (amber is reserved for the one value
-   action per screen — shiro 24322). */
+/* Accent utility action — intentionally shares the terminal accent. */
 .btn-accent {
-  @apply rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
-  background: #2E9FE6;
-  color: #0B0C0F;
+  @apply rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  background: var(--term-teal);
+  color: #04120d;
 }
 .btn-accent:hover:not(:disabled) {
-  background: #54B4F0;
+  background: var(--term-teal-bright);
 }
 .btn-accent:active:not(:disabled) {
-  background: #1F81C0;
-}
-
-/* Neon headline — cyan→violet, tied to the shark's palette (shiro undersea look). Gradient text + glow. */
-.hyde-neon {
-  background: linear-gradient(92deg, #54B4F0 0%, #7DA8FF 45%, #A78BFA 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 0 20px rgba(84, 180, 240, 0.35)) drop-shadow(0 0 34px rgba(167, 139, 250, 0.2));
+  filter: brightness(0.94);
 }
 
 /* Secondary / outline button — neutral, quiet */
@@ -99,16 +163,16 @@ body {
 
 /* Large CTA (legacy name kept — components reference it). Solid accent. */
 .btn-neon {
-  @apply rounded-xl px-5 py-3 text-base font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
-  background: #2E9FE6;
-  color: #0B0C0F;
+  @apply rounded-lg px-5 py-3 text-base font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
+  background: var(--term-teal);
+  color: #04120d;
   letter-spacing: 0.01em;
 }
 .btn-neon:hover:not(:disabled) {
-  background: #54B4F0;
+  background: var(--term-teal-bright);
 }
 .btn-neon:active:not(:disabled) {
-  background: #1F81C0;
+  filter: brightness(0.94);
   transform: scale(0.99);
 }
 
@@ -129,7 +193,7 @@ body {
 
 /* Selection highlight */
 ::selection {
-  background: rgba(46, 159, 230, 0.30);
+  background: rgba(42, 212, 166, 0.30);
   color: #EDEFF3;
 }
 
