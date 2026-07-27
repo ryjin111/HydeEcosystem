@@ -51,6 +51,20 @@ function ageOf(iso: string): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
+function compactUsd(value: number | null): string {
+  if (value == null || !Number.isFinite(value) || value < 0) return "Not indexed";
+  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(value >= 10_000_000_000 ? 1 : 2)}B`;
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(value >= 10_000_000 ? 1 : 2)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}K`;
+  return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
+function priceUsd(value: number | null): string {
+  if (value == null || !Number.isFinite(value) || value <= 0) return "Not indexed";
+  if (value >= 1) return `$${value.toLocaleString("en-US", { maximumFractionDigits: 4 })}`;
+  return `$${value.toLocaleString("en-US", { maximumSignificantDigits: 5 })}`;
+}
+
 // NOTE (kami 21204.1): "Trending" is DORMANT. `progress ÷ age` is still curve-derived, not observed
 // market velocity — so no card is flagged trending and there is no "Sort: Trending" until the adapter
 // exposes real volume/trades/holder-delta. The neon CSS + `trending` card prop stay in place (unused)
@@ -117,63 +131,91 @@ function LaunchTokenImage({
 
 export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }) {
   const sym = p.baseToken.symbol || "?";
+  const hasMarketCap = p.marketCapUsd != null && Number.isFinite(p.marketCapUsd);
+  const hasPrice = p.priceUsd != null && Number.isFinite(p.priceUsd) && p.priceUsd > 0;
   return (
-    <LaunchLink p={p} className="group relative block">
-      <div
-        className="trench-market-card relative rounded-[13px] p-[14px] transition-colors"
-        style={{
-          background: C.surface,
-          border: `1px solid ${trending ? C.blue : C.hairline}`,
-          // Trending-only neon (mock recipe) — soft blue outer border + faint inner sheen, scarce.
-          boxShadow: trending
-            ? "0 0 0 1px rgba(46,159,230,.45), 0 0 20px -3px rgba(46,159,230,.5), inset 0 0 26px -16px rgba(84,180,240,.65)"
-            : "none",
-        }}
-      >
-        {trending && (
-          <span
-            className="absolute right-2.5 top-2.5 rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-wide"
-            style={{ background: "rgba(46,159,230,0.14)", color: C.blueH, border: `1px solid ${C.blue}55` }}
-          >
-            🔥 Trending
-          </span>
-        )}
-        <div className="flex items-center gap-3">
-          <LaunchTokenImage p={p} className="h-11 w-11 shrink-0 rounded-xl text-base" style={{ border: `1px solid ${C.hairline}` }} />
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-semibold" style={{ color: C.text }}>
-              {p.baseToken.name} <span className="font-mono text-xs" style={{ color: C.muted }}>${sym}</span>
-            </p>
-            <p className="font-mono text-[11px] tabular-nums" style={{ color: C.faint }}>{ageOf(p.createdAt)} ago</p>
+    <LaunchLink p={p} className="group block min-w-0 outline-none">
+      <article className="min-w-0">
+        <div
+          className="relative aspect-square overflow-hidden rounded-xl border bg-pcs-card transition duration-200 group-hover:-translate-y-0.5 group-hover:border-pcs-primary/40 group-focus-visible:ring-2 group-focus-visible:ring-pcs-primary/50"
+          style={{
+            borderColor: trending ? C.blue : C.hairline,
+            boxShadow: trending
+              ? "0 0 0 1px rgba(46,159,230,.45), 0 0 20px -3px rgba(46,159,230,.5)"
+              : "0 12px 30px rgba(0,0,0,.16)",
+          }}
+        >
+          <LaunchTokenImage
+            p={p}
+            className="h-full w-full text-4xl transition duration-300 group-hover:scale-[1.025]"
+          />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10" />
+
+          <div className="absolute left-2.5 top-2.5">
+            <EngineBadge engine={p.launchEngine} />
           </div>
+
           <span
-            className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
-            style={{ background: "rgba(52,199,123,0.12)", color: C.green, border: `1px solid ${C.green}40` }}
+            className="absolute right-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.08em] backdrop-blur-md"
+            style={{ background: "rgba(4,12,11,0.72)", color: C.green, border: `1px solid ${C.green}40` }}
           >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: C.green }} />
             Live
           </span>
-        </div>
 
-        <div className="mt-3 flex items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <EngineBadge engine={p.launchEngine} />
-            <CreatorFeeChip engine={p.launchEngine} />
-          </div>
+        {trending && (
+          <span
+              className="absolute bottom-2.5 left-2.5 rounded-md px-2 py-1 text-[9px] font-semibold tracking-wide backdrop-blur-md"
+              style={{ background: "rgba(46,159,230,0.22)", color: C.blueH, border: `1px solid ${C.blue}55` }}
+          >
+              Trending
+          </span>
+        )}
           {p.progress != null && (
-            <span className="font-mono text-[10px] tabular-nums" style={{ color: C.blueH }}>
-              {p.progress.toFixed(1)}% bought
-            </span>
+            <div className="absolute inset-x-2.5 bottom-2.5">
+              <div className="mb-1 flex items-center justify-between font-mono text-[9px] text-white/75">
+                <span>Launch progress</span>
+                <span>{p.progress.toFixed(0)}%</span>
+              </div>
+              <CurveBar pct={p.progress} tone="#2AD4A6" />
+            </div>
           )}
         </div>
-        {p.progress != null && <div className="mt-2"><CurveBar pct={p.progress} tone="#2AD4A6" /></div>}
 
-        <span
-          className="mt-3 block rounded-md py-1.5 text-center text-[11px] font-semibold transition group-hover:brightness-110"
-          style={{ background: C.elevated, color: C.blueH, border: `1px solid ${C.blue}45` }}
-        >
-          {p.chainId === 988 ? "View on StableScan ↗" : "Open & trade →"}
-        </span>
-      </div>
+        <div className="px-0.5 pb-1 pt-3">
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-semibold text-pcs-text transition group-hover:text-pcs-primaryBright">
+                {p.baseToken.name}
+              </h3>
+              <p className="mt-0.5 truncate font-code text-[11px] text-pcs-textDim">${sym}</p>
+            </div>
+            <CreatorFeeChip engine={p.launchEngine} />
+          </div>
+
+          <dl className="mt-3 grid grid-cols-2 gap-2 border-y border-pcs-border/80 py-2.5">
+            <div className="min-w-0">
+              <dt className="text-[9px] uppercase tracking-[0.12em] text-pcs-textDim">Market cap</dt>
+              <dd className={`mt-1 truncate font-code text-xs font-semibold ${hasMarketCap ? "text-pcs-text" : "text-pcs-textDim"}`}>
+                {compactUsd(p.marketCapUsd)}
+              </dd>
+            </div>
+            <div className="min-w-0 border-l border-pcs-border/80 pl-2">
+              <dt className="text-[9px] uppercase tracking-[0.12em] text-pcs-textDim">Price</dt>
+              <dd className={`mt-1 truncate font-code text-xs font-semibold ${hasPrice ? "text-pcs-text" : "text-pcs-textDim"}`}>
+                {priceUsd(p.priceUsd)}
+              </dd>
+            </div>
+          </dl>
+
+          <div className="mt-2.5 flex items-center justify-between gap-2">
+            <span className="text-[10px] text-pcs-textDim">Deployed {ageOf(p.createdAt)} ago</span>
+            <span className="text-[10px] font-semibold text-pcs-primary transition group-hover:text-pcs-primaryBright">
+              {p.chainId === 988 ? "Explorer ↗" : "Open →"}
+            </span>
+          </div>
+        </div>
+      </article>
     </LaunchLink>
   );
 }
@@ -434,7 +476,7 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
           {pools.length === 0 ? "No launches yet — be the first." : "No launches match this filter."}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-4 xl:grid-cols-5">
           {shown.map((p) => (
             // `trending` stays false everywhere until a real market-velocity signal exists (kami 21204.1);
             // the neon styling in CoinCard remains dormant/ready.
