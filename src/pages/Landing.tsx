@@ -209,7 +209,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
             No launches indexed on {chainName} yet.
           </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,220px))] gap-x-4 gap-y-6">
             {marketRows.map((pool) => (
               <CoinCard key={`${pool.chainId}-${pool.address}`} p={pool} />
             ))}

@@ -476,7 +476,7 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
           {pools.length === 0 ? "No launches yet — be the first." : "No launches match this filter."}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,220px))] gap-x-4 gap-y-6">
           {shown.map((p) => (
             // `trending` stays false everywhere until a real market-velocity signal exists (kami 21204.1);
             // the neon styling in CoinCard remains dormant/ready.
