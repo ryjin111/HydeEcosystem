@@ -73,6 +73,7 @@ function fmtClaimable(wei: string | null | undefined, unit = "WETH"): string {
 /* ─── Pool card (Explore tab) ─────────────────────────────────────────────── */
 
 const CHAIN_LABELS: Record<number, string> = {
+  988: "Stable",
   4663: "Robinhood Chain",
   46630: "Robinhood Testnet",
 };
@@ -84,6 +85,7 @@ const CHAIN_LABELS: Record<number, string> = {
  *  and indexed; otherwise cards show the on-chain curve level when available — never a fake $. */
 export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void; showClaimable?: boolean; onClaimed?: () => void }) {
   const bt = pool.baseToken;
+  const externalViewOnly = pool.chainId === 988;
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
   const engineMeta = ENGINE_META[pool.launchEngine];
   const hasMcap = pool.marketCapUsd != null && pool.marketCapUsd > 0;
@@ -118,8 +120,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
 
   // Settled-fee claim (My Launches only). SAFE by construction: the button renders ONLY when the vault's
   // creatorClaimable read is > 0, and `claimCreator` reverts only NOTHING (0) — so it can't revert on gas
-  // (kami 23894). Collect/Settle stay non-interactive until gojo's live proof; a raw-but-unsettled balance
-  // isn't wired here yet (LILHOODIE reads all-zero today → "No settled fees yet").
+  // (kami 23894). Raw balances use the collect→settle→claim pipeline below rather than calling claim early.
   const { address: wallet } = useAccount();
   const publicClient = usePublicClient({ chainId: pool.chainId });
   const { data: walletClient } = useWalletClient({ chainId: pool.chainId });
@@ -170,8 +171,9 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
 
   // ── Collect & Claim harvest (HOODIE pairs) ─ accrued-but-unsettled creator fees. The pending figure is
   // the REAL collect-sim output (gojo 23899) — read on card mount; the button runs the permissionless
-  // collect→settle→claim pipeline as a resumable stepper. Only a user's own click/sign broadcasts; the app
-  // never fires it (kami 23913). LT-leg swap-settle is a follow-up (rawLT ~0 today).
+  // collect→settle→claim pipeline as one atomic Multicall3 transaction. Only a user's own click/sign
+  // broadcasts; the app never fires it (kami 23913). Both fee legs settle through the vault; the token-side
+  // swap remains protected by the vault's TWAP floor + spot-deviation gate.
   const isHoodieFeePair = showClaimable && pool.chainId === ROBINHOOD_CHAIN_ID && pool.quoteToken?.symbol === "HOODIE";
   const [feeState, setFeeState] = useState<FeeState | null>(null);
   const [feeError, setFeeError] = useState(false); // read failed → "Unavailable", NEVER fail-open to 0 (kami #3)
@@ -326,11 +328,11 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
               </span>
               <span
                 className="text-sm font-semibold tabular-nums"
-                style={{ color: feeDisp === "claim" || feeDisp === "awaiting" ? "#34C77B" : "#7A828E" }}
+                style={{ color: feeDisp === "claim" || feeDisp === "awaiting" || feeDisp === "lt-pending" ? "#34C77B" : "#7A828E" }}
               >
                 {/* claim = settled amount · awaiting = real collect-sim pending (~X, never "you earned
-                    nothing" — shiro 23890/gojo 23899) · lt-pending = token-side fees exist, LT settle is a
-                    follow-up (not "none") · none = settled-zero · unavailable = a failed read (never 0). */}
+                    nothing" — shiro 23890/gojo 23899) · lt-pending = token-side fees ready to settle
+                    (not "none") · none = settled-zero · unavailable = a failed read (never 0). */}
                 {feeLoading
                   ? "Checking…"
                   : feeDisp === "unavailable"
@@ -340,7 +342,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
                       : feeDisp === "awaiting"
                         ? `~${fmtHoodieAmt(pendingHoodie)} HOODIE`
                         : feeDisp === "lt-pending"
-                          ? "Settling"
+                          ? `${fmtHoodieAmt(rawLTPending)} ${bt.symbol}`
                           : "No settled fees yet"}
               </span>
             </div>
@@ -358,7 +360,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
               </button>
             )}
 
-            {!feeLoading && feeDisp === "awaiting" && (
+            {!feeLoading && (feeDisp === "awaiting" || feeDisp === "lt-pending") && (
               <div className="space-y-1.5">
                 {(harvesting || harvestFailed) && (
                   <div className="flex items-center justify-center gap-1.5 text-[10px] font-medium" data-testid="harvest-steps">
@@ -379,21 +381,19 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
                     className="relative z-20 w-full rounded-lg py-1.5 text-xs font-bold text-pcs-bg transition disabled:opacity-50"
                     style={{ background: "#34C77B" }}
                   >
-                    {harvestFailed ? resumeLabel : "Collect & Claim"}
+                    {harvestFailed
+                      ? resumeLabel
+                      : feeDisp === "lt-pending"
+                        ? "Settle & Claim · one confirmation"
+                        : "Collect & Claim · one confirmation"}
                   </button>
                 )}
                 {harvesting && (
-                  <p className="text-center text-[10px] text-pcs-textDim">Confirm each step in your wallet…</p>
+                  <p className="text-center text-[10px] text-pcs-textDim">Confirm the complete batch once in your wallet…</p>
                 )}
               </div>
             )}
 
-            {/* Token-side (LT) fees exist but the oracle-gated LT settle is a follow-up — honest, not "none". */}
-            {!feeLoading && feeDisp === "lt-pending" && (
-              <p className="text-[10px] leading-relaxed text-pcs-textDim">
-                Token-side trading fees are accruing and will be claimable once LT settlement ships.
-              </p>
-            )}
           </div>
         )}
 
@@ -424,7 +424,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
             className="pointer-events-none text-xs font-semibold px-4 py-2 rounded-lg flex-shrink-0 transition group-hover:brightness-125"
             style={{ background: "rgba(42,212,166,0.12)", color: "#4FE3BE" }}
           >
-            Trade →
+            {externalViewOnly ? "View ↗" : "Trade →"}
           </span>
         </div>
       </div>
@@ -434,7 +434,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
           the visible focus ring / hover-lift live on the wrapper above (kami 23788, shiro 23791). */}
       <button
         type="button"
-        aria-label={`Trade ${bt.name} ($${bt.symbol})`}
+        aria-label={`${externalViewOnly ? "View" : "Trade"} ${bt.name} ($${bt.symbol})`}
         onClick={trade}
         className="absolute inset-0 z-10 rounded-2xl outline-none"
       />
@@ -495,6 +495,10 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
 
   const handleTrade = (tokenAddress: string, poolChainId: number) => {
     if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
+    if (poolChainId === 988) {
+      window.open(`https://stablescan.xyz/address/${tokenAddress}`, "_blank", "noopener,noreferrer");
+      return;
+    }
     // Hyde launches live on Robinhood mainnet (4663) OR the testnet own-stack (46630) — allow both;
     // the swap page trades on whichever network is selected in the dropdown (matches the board).
     if (poolChainId !== ROBINHOOD_CHAIN_ID && poolChainId !== RH_TESTNET_ID) return;
@@ -646,7 +650,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
                   key={`${pool.chainId}-${pool.address}-${pool.baseToken.address}`}
                   pool={pool}
                   onTrade={handleTrade}
-                  showClaimable
+                  showClaimable={chainId !== 988}
                   onClaimed={refetch}
                 />
               ))}
@@ -655,7 +659,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         </div>
       )}
 
-      {/* Launch tab — engine-aware: chain toggle → V3/V4 selector → live V4 form or fail-closed coming panel */}
+      {/* Launch tab — engine-aware: live V4 form or evidence-gated Stable V3 form. */}
       {tab === "launch" && <EngineAwareLaunch defaultChainId={chainId} />}
     </div>
   );

@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { createPublicClient, http, defineChain, parseAbiItem } from "viem";
+import { createPublicClient, defineChain, parseAbiItem } from "viem";
 import type { TokenInfo } from "../utils/constants";
-import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, DOPPLER_CONTRACTS_BY_CHAIN, ROBINHOOD_TESTNET_VAULT, hydeVaultAbi } from "../utils/constants";
+import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, STABLE_MAINNET, DOPPLER_CONTRACTS_BY_CHAIN, ROBINHOOD_TESTNET_VAULT, hydeVaultAbi } from "../utils/constants";
 import type { DopplerPool } from "../utils/dopplerConfig";
+import { v3ChainRow } from "../utils/chainRegistry";
+import { rpcTransportForNetwork, rpcUrlsForNetwork } from "../utils/rpc";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 
@@ -44,10 +46,26 @@ const robinhoodChain = defineChain({
   id: ROBINHOOD_CHAIN_ID,
   name: ROBINHOOD_MAINNET.name,
   nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [ROBINHOOD_MAINNET.rpcUrl] } },
+  rpcUrls: { default: { http: rpcUrlsForNetwork(ROBINHOOD_MAINNET) } },
   contracts: { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } },
 });
-const client = createPublicClient({ chain: robinhoodChain, transport: http() });
+const client = createPublicClient({ chain: robinhoodChain, transport: rpcTransportForNetwork(ROBINHOOD_MAINNET) });
+
+// Stable V3 launch source. Scans begin at the HydeV3Pad deployment block, never block zero.
+const STABLE_CHAIN_ID = 988;
+const stableV3 = v3ChainRow(STABLE_CHAIN_ID)!;
+const STABLE_V3_PAD = stableV3.launchpad.pad as `0x${string}`;
+const STABLE_V3_DEPLOY_BLOCK = stableV3.launchpad.deploymentBlock;
+const STABLE_V3_LAUNCH_CREATED = parseAbiItem(
+  "event LaunchCreated(address indexed token, address indexed creator, address pool, uint256 tokenId, uint128 liquidity)"
+);
+const stableChain = defineChain({
+  id: STABLE_CHAIN_ID,
+  name: STABLE_MAINNET.name,
+  nativeCurrency: { name: "USDT0", symbol: "USDT0", decimals: 18 },
+  rpcUrls: { default: { http: rpcUrlsForNetwork(STABLE_MAINNET) } },
+});
+const stableClient = createPublicClient({ chain: stableChain, transport: rpcTransportForNetwork(STABLE_MAINNET) });
 
 // Bounded scan: with thousands of launches, block-0 / all-asset getLogs times
 // out in the browser. Scan the NEWEST launches backwards in fixed block chunks,
@@ -298,6 +316,79 @@ export async function isMainnetOwnStackLaunch(address: `0x${string}`): Promise<b
   return weth.length > 0 || hoodie.length > 0;
 }
 
+type StableLaunchLog = {
+  args: {
+    token: `0x${string}`;
+    creator: `0x${string}`;
+    pool: `0x${string}`;
+    tokenId: bigint;
+    liquidity: bigint;
+  };
+  blockNumber: bigint | null;
+};
+
+/** Stable V3 launches from HydeV3Pad. Metadata and timestamps come directly from Stable mainnet;
+ * price/liquidity remain null until a dedicated V3 market indexer exists—never fabricated. */
+async function fetchStableV3Pools(): Promise<DopplerPool[]> {
+  const latest = await stableClient.getBlockNumber();
+  const logs = await getLogsChunked(
+    (fromBlock, toBlock) => stableClient.getLogs({
+      address: STABLE_V3_PAD,
+      event: STABLE_V3_LAUNCH_CREATED,
+      fromBlock,
+      toBlock,
+    }) as unknown as Promise<StableLaunchLog[]>,
+    STABLE_V3_DEPLOY_BLOCK,
+    latest,
+  );
+  const newest = logs.slice(-MAX_SHOWN).reverse();
+  if (newest.length === 0) return [];
+
+  const blockNumbers = [...new Set(newest.map((log) => log.blockNumber ?? STABLE_V3_DEPLOY_BLOCK))];
+  const blocks = await Promise.all(blockNumbers.map((blockNumber) => stableClient.getBlock({ blockNumber })));
+  const blockTimes = new Map(blocks.map((block) => [block.number, Number(block.timestamp)]));
+
+  const rows = await Promise.all(newest.map(async (log): Promise<DopplerPool | null> => {
+    const token = log.args.token;
+    const [name, symbol] = await Promise.all([
+      stableClient.readContract({ address: token, abi: ERC20_META_ABI, functionName: "name" }).catch(() => null),
+      stableClient.readContract({ address: token, abi: ERC20_META_ABI, functionName: "symbol" }).catch(() => null),
+    ]);
+    if (!name || !symbol) return null;
+    const timestamp = blockTimes.get(log.blockNumber ?? STABLE_V3_DEPLOY_BLOCK) ?? 0;
+    return {
+      address: token,
+      chainId: STABLE_CHAIN_ID,
+      baseToken: { address: token, name, symbol, decimals: 18 },
+      quoteToken: {
+        address: stableV3.numeraire.address,
+        name: "USDT0",
+        symbol: "USDT0",
+        decimals: stableV3.numeraire.decimals,
+      },
+      launchEngine: "v3-single-sided",
+      type: "v3",
+      dollarLiquidity: null,
+      volumeUsd: null,
+      marketCapUsd: null,
+      priceUsd: null,
+      createdAt: new Date(timestamp * 1000).toISOString(),
+      progress: null,
+      creator: log.args.creator,
+      creatorClaimable: null,
+    };
+  }));
+
+  const seen = new Set<string>();
+  return rows.filter((pool): pool is DopplerPool => {
+    if (!pool) return false;
+    const key = pool.address.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Single-token read for launches outside the board page. Network-aware: mainnet reads the two live
  *  own-stack launch sources; testnet reads its own factory. Fails to null (honest not-found). */
 export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN_ID): {
@@ -364,10 +455,10 @@ const rhTestnetChain = defineChain({
   id: RH_TESTNET_ID,
   name: "Robinhood Testnet",
   nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [ROBINHOOD_TESTNET.rpcUrl] } },
+  rpcUrls: { default: { http: rpcUrlsForNetwork(ROBINHOOD_TESTNET) } },
   contracts: { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } },
 });
-const testnetClient = createPublicClient({ chain: rhTestnetChain, transport: http() });
+const testnetClient = createPublicClient({ chain: rhTestnetChain, transport: rpcTransportForNetwork(ROBINHOOD_TESTNET) });
 
 type LaunchLog = { args: { token: `0x${string}`; creator: `0x${string}` }; blockNumber: bigint | null };
 
@@ -705,13 +796,15 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     setLoading(true);
     setError(null);
 
-    // Only chains with a live Hyde deployment have launches. A "coming" chain (e.g. Stable/988) has none —
-    // return empty rather than falling back to the mainnet fetch (would leak Robinhood data onto Stable).
+    // Only chains with a live Hyde deployment have launches. Unknown chains return empty instead of
+    // falling back to Robinhood data (which would leak launches across chain contexts).
     const fetcher =
       chainId === RH_TESTNET_ID
         ? fetchHydeFactoryPools
         : chainId === ROBINHOOD_CHAIN_ID
           ? () => fetchMainnetOwnStackPools(tick > 0)
+          : chainId === STABLE_CHAIN_ID
+            ? fetchStableV3Pools
           : null;
     if (!fetcher) {
       setPools([]);

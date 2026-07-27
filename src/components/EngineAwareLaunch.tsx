@@ -2,10 +2,11 @@
 // No inner chain toggle, no V3/V4 choice grid. The chain (global selector, or a ?launchChain deep-link)
 // determines the single engine, and only that engine's launch UI renders:
 //   V4 chain (Robinhood) → the real V4 launch form.
-//   V3 chain (Stable)    → the fail-closed V3 "coming" panel (disabled until evidence.launch).
+//   V3 chain (Stable)    → the live V3 form only when deployment evidence passes; otherwise "coming".
 // Engine + copy are DERIVED from the registry (chainEngineCapabilities + ENGINE_META), never cross-mixed.
 import { useState } from "react";
 import { LaunchTokenForm } from "./LaunchTokenForm";
+import { StableV3LaunchForm } from "./StableV3LaunchForm";
 import { chainEngineCapabilities, ENGINE_META, type LaunchEngine } from "../utils/chainRegistry";
 import { Button, SectionLabel } from "./ui/kit";
 
@@ -48,10 +49,15 @@ function ComingLaunchBody({ chainId, chainName }: { chainId: number; chainName: 
   );
 }
 
-/** Render one engine's launch body. V3 today is always the fail-closed "coming" panel (until
- *  evidence.launch); V4 is the real launch form. */
+/** Render one engine's launch body. Stable V3 becomes executable only after its registry capability
+ *  passes the generated deployment/hash/binding evidence gate; otherwise the disabled panel remains. */
 function EngineBody({ engine, chainId, chainName }: { engine: LaunchEngine; chainId: number; chainName: string }) {
-  if (engine === "v3-single-sided") return <ComingLaunchBody chainId={chainId} chainName={chainName} />;
+  if (engine === "v3-single-sided") {
+    const capability = chainEngineCapabilities(chainId).find((item) => item.engine === engine);
+    return capability?.status === "live"
+      ? <StableV3LaunchForm chainId={chainId} chainName={chainName} />
+      : <ComingLaunchBody chainId={chainId} chainName={chainName} />;
+  }
   return (
     <div className="terminal-launch-form">
       <LaunchTokenForm chainId={chainId} />

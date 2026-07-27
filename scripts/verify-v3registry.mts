@@ -38,21 +38,26 @@ const infraFor = (row: typeof stableRow) => ({
   verifiedAtBlock: "32880344",
 });
 const signedLaunch = {
-  pad: "0x1111111111111111111111111111111111111111",
-  locker: "0x2222222222222222222222222222222222222222",
-  padCodeSize: 5000,
-  lockerCodeSize: 4000,
-  padLockerBinding: "0x2222222222222222222222222222222222222222",
-  lockerFactoryBinding: "0x1111111111111111111111111111111111111111",
+  implementation: stableRow.launchpad.implementation,
+  pad: stableRow.launchpad.pad,
+  locker: stableRow.launchpad.locker,
+  implementationCodeSize: 4650,
+  padCodeSize: 9264,
+  lockerCodeSize: 3140,
+  implementationCodeHash: stableRow.launchpad.implementationCodeHash,
+  padCodeHash: stableRow.launchpad.padCodeHash,
+  lockerCodeHash: stableRow.launchpad.lockerCodeHash,
+  padLockerBinding: stableRow.launchpad.locker,
+  lockerFactoryBinding: stableRow.launchpad.pad,
   deployTx: "0x" + "a".repeat(64),
   launchRoundTripFdv: "5000",
 };
 
-console.log("Real generated artifact (infra verified live, Hyde absent):");
+console.log("Real generated artifact (Stable deployment fully verified):");
 const stableCap = chainCapabilities().find((c) => c.id === 988)!;
 ok("Stable engine v3-single-sided, role launch (launch-only)", stableCap.engine === "v3-single-sided" && stableCap.role === "launch");
 ok("numeraire = USDT0 6-dec USD-pegged", stableCap.numeraire.symbol === "USDT0" && stableCap.numeraire.decimals === 6 && stableCap.numeraire.usdPegged === true);
-ok("canonical infra proven but Hyde NOT deployed → coming (kami #2)", stableCap.status === "coming");
+ok("canonical infra + Hyde deployment evidence → live", stableCap.status === "live");
 ok("launch-only ⇒ trade null (in-app Swap disabled, kami #5)", stableCap.trade === null);
 ok("V3 evidence EXPOSED (not discarded), infra present (kami #4)", !!stableCap.evidence && "infra" in stableCap.evidence && (stableCap.evidence as V3ChainEvidence).infra?.factory.tickSpacing === 200);
 
@@ -72,6 +77,8 @@ const noDeployTx: V3ChainEvidence = { ...liveEv, launch: { ...signedLaunch, depl
 ok("launch missing deploy-tx provenance → coming", deriveV3Capability(rowWithMeta, noDeployTx).status === "coming");
 const badBinding: V3ChainEvidence = { ...liveEv, launch: { ...signedLaunch, padLockerBinding: "0x3333333333333333333333333333333333333333" } };
 ok("launch pad↔locker cross-bind wrong → coming", deriveV3Capability(rowWithMeta, badBinding).status === "coming");
+const badPadHash: V3ChainEvidence = { ...liveEv, launch: { ...signedLaunch, padCodeHash: "0x" + "f".repeat(64) } };
+ok("launch pad runtime hash wrong → coming", deriveV3Capability(rowWithMeta, badPadHash).status === "coming");
 const rowWithoutExplorer = { ...stableRow, explorer: "" };
 ok("no metadata on row (explorer empty) → coming even if fully signed", deriveV3Capability(rowWithoutExplorer, liveEv).status === "coming");
 

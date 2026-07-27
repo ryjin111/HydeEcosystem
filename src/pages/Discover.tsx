@@ -1,6 +1,6 @@
 // Board — every launch is tagged with its contract engine at the adapter boundary. Market stage
 // (`type`) is intentionally not used for economics: V3 and V4 have different truthful fee splits.
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { TokenImage } from "../components/TokenImage";
@@ -24,6 +24,22 @@ const C = {
 
 type SortKey = "new" | "mcap";
 type Filter = "all" | LaunchEngine;
+
+function LaunchLink({ p, className, children }: { p: DopplerPool; className?: string; children: ReactNode }) {
+  if (p.chainId === 988) {
+    return (
+      <a
+        href={`https://stablescan.xyz/address/${p.address}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+      >
+        {children}
+      </a>
+    );
+  }
+  return <Link to={`/token/${p.address}`} className={className}>{children}</Link>;
+}
 
 function ageOf(iso: string): string {
   const t = new Date(iso).getTime();
@@ -102,7 +118,7 @@ function LaunchTokenImage({
 export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }) {
   const sym = p.baseToken.symbol || "?";
   return (
-    <Link to={`/token/${p.address}`} className="group relative block">
+    <LaunchLink p={p} className="group relative block">
       <div
         className="trench-market-card relative rounded-[13px] p-[14px] transition-colors"
         style={{
@@ -155,10 +171,10 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
           className="mt-3 block rounded-md py-1.5 text-center text-[11px] font-semibold transition group-hover:brightness-110"
           style={{ background: C.elevated, color: C.blueH, border: `1px solid ${C.blue}45` }}
         >
-          Open &amp; trade →
+          {p.chainId === 988 ? "View on StableScan ↗" : "Open & trade →"}
         </span>
       </div>
-    </Link>
+    </LaunchLink>
   );
 }
 
@@ -167,7 +183,7 @@ function LatestSignal({ p }: { p: DopplerPool }) {
   const sym = p.baseToken.symbol || "?";
   const meta = ENGINE_META[p.launchEngine];
   return (
-    <Link to={`/token/${p.address}`} className="block">
+    <LaunchLink p={p} className="block">
       <div
         className="trench-feature-card relative overflow-hidden rounded-[14px] p-5"
         style={{
@@ -195,7 +211,7 @@ function LatestSignal({ p }: { p: DopplerPool }) {
           {meta.subtitle} <span style={{ color: C.green }}>{meta.feeSplitLabel}.</span>
         </p>
       </div>
-    </Link>
+    </LaunchLink>
   );
 }
 
