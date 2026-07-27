@@ -37,5 +37,16 @@ check("46630 has no hoodieEngine", !cfg46630.hoodieEngine);
 check("46630 → HOODIE branch skipped → null",
   (await onchainCreator(cfg46630, TOKEN, mock(cfg46630, [], [{ args: { creator: HOODIE_CREATOR } }]))) === null);
 
+// (e) Stable V3 resolves the creator from HydeV3Pad.LaunchCreated, without a V4 factory.
+const cfg988 = OWNSTACK[988];
+const STABLE_CREATOR = getAddress("0x4444444444444444444444444444444444444444");
+check("988 config pins the Stable V3 pad", cfg988.v3Pad === "0xE79F17Fe61F9c76824D74C496f122f0AB483ec6A");
+check("988 V3 source → Stable creator",
+  (await onchainCreator(cfg988, TOKEN, {
+    getLogs: async ({ address }) => address.toLowerCase() === cfg988.v3Pad.toLowerCase()
+      ? [{ args: { creator: STABLE_CREATOR } }]
+      : [],
+  })) === STABLE_CREATOR);
+
 console.log(`\n${fail === 0 ? "ALL GREEN" : "FAILED"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

@@ -389,6 +389,51 @@ async function fetchStableV3Pools(): Promise<DopplerPool[]> {
   });
 }
 
+/** Single Stable V3 launch read for the shared /token/:address detail page. Attribution comes from the
+ * indexed HydeV3Pad launch event; arbitrary Stable ERC-20s are rejected. */
+async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
+  const created = await stableClient.getLogs({
+    address: STABLE_V3_PAD,
+    event: STABLE_V3_LAUNCH_CREATED,
+    args: { token: address },
+    fromBlock: STABLE_V3_DEPLOY_BLOCK,
+    toBlock: "latest",
+  }).catch(() => null) as StableLaunchLog[] | null;
+  const launch = created?.[0];
+  if (!launch) return null;
+
+  const [name, symbol, block] = await Promise.all([
+    stableClient.readContract({ address, abi: ERC20_META_ABI, functionName: "name" }).catch(() => null),
+    stableClient.readContract({ address, abi: ERC20_META_ABI, functionName: "symbol" }).catch(() => null),
+    launch.blockNumber != null
+      ? stableClient.getBlock({ blockNumber: launch.blockNumber }).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  if (!name || !symbol) return null;
+
+  return {
+    address,
+    chainId: STABLE_CHAIN_ID,
+    baseToken: { address, name, symbol, decimals: 18 },
+    quoteToken: {
+      address: stableV3.numeraire.address,
+      name: "USDT0",
+      symbol: "USDT0",
+      decimals: stableV3.numeraire.decimals,
+    },
+    launchEngine: "v3-single-sided",
+    type: "v3",
+    dollarLiquidity: null,
+    volumeUsd: null,
+    marketCapUsd: null,
+    priceUsd: null,
+    createdAt: block ? new Date(Number(block.timestamp) * 1000).toISOString() : new Date(0).toISOString(),
+    progress: null,
+    creator: launch.args.creator,
+    creatorClaimable: null,
+  };
+}
+
 /** Single-token read for launches outside the board page. Network-aware: mainnet reads the two live
  *  own-stack launch sources; testnet reads its own factory. Fails to null (honest not-found). */
 export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN_ID): {
@@ -415,6 +460,8 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
         ? fetchTestnetLaunchToken
         : chainId === ROBINHOOD_CHAIN_ID
           ? fetchMainnetLaunchToken
+          : chainId === STABLE_CHAIN_ID
+            ? fetchStableV3LaunchToken
           : null;
     if (!fetcher) {
       setLoading(false);

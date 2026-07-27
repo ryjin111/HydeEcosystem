@@ -3,6 +3,7 @@ import { formatUnits, toHex, type Address, type Hex, type PublicClient, type Wal
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
 import toast from "react-hot-toast";
 import { Badge, Button, SectionLabel } from "./ui/kit";
+import { TokenImage } from "./TokenImage";
 import {
   executeStableV3Launch,
   previewStableV3Launch,
@@ -10,6 +11,38 @@ import {
   type StableV3LaunchStep,
 } from "../utils/stableV3Launch";
 import { v3ChainRow } from "../utils/chainRegistry";
+import { AVATAR_SIZE, preCheckImageFile } from "../utils/imageValidation";
+import { saveLaunchMeta } from "../utils/launchMeta";
+
+/** Normalize a picked PNG/JPG into the same exact square avatar used by V4 before pinning it. */
+async function toAvatarBlob(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = AVATAR_SIZE;
+    canvas.height = AVATAR_SIZE;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("no 2d context");
+    const scale = Math.max(AVATAR_SIZE / bitmap.width, AVATAR_SIZE / bitmap.height);
+    const width = bitmap.width * scale;
+    const height = bitmap.height * scale;
+    context.drawImage(
+      bitmap,
+      (AVATAR_SIZE - width) / 2,
+      (AVATAR_SIZE - height) / 2,
+      width,
+      height,
+    );
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error("encode failed"))),
+        "image/png",
+      );
+    });
+  } finally {
+    bitmap.close?.();
+  }
+}
 
 const STEP_COPY: Record<StableV3LaunchStep, string> = {
   approve: "Approve 1 USDT0 in your wallet…",
@@ -35,6 +68,9 @@ export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; ch
 
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [description, setDescription] = useState("");
+  const [uploading, setUploading] = useState(false);
   const [salt, setSalt] = useState<Hex>(() => freshSalt());
   const [preview, setPreview] = useState<StableV3LaunchPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -42,18 +78,22 @@ export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; ch
   const [recipientConfirmed, setRecipientConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [activeStep, setActiveStep] = useState<StableV3LaunchStep | null>(null);
+  const [metaState, setMetaState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [metaError, setMetaError] = useState<string | null>(null);
   const [launched, setLaunched] = useState<{
     token: Address;
     pool: Address;
     tx: string;
     tokenId: bigint;
+    image: string;
+    description: string;
   } | null>(null);
 
   useEffect(() => {
     setPreview(null);
     setPreviewError(null);
     setRecipientConfirmed(false);
-  }, [name, symbol, address, chainId]);
+  }, [name, symbol, imageUrl, description, address, chainId]);
 
   if (!row) return null;
 
@@ -61,6 +101,67 @@ export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; ch
   const explorer = row.explorer.replace(/\/$/, "");
   const chainMismatch = isConnected && walletChainId !== chainId;
   const formValid = name.trim().length > 0 && /^[A-Z0-9]{1,10}$/.test(symbol);
+  const hasImage = imageUrl.startsWith("ipfs://");
+
+  const saveMetaFor = async (token: string, image: string, tokenDescription: string) => {
+    if (!walletClient || !address) {
+      setMetaState("error");
+      setMetaError("Wallet not connected — reconnect and retry.");
+      return;
+    }
+    setMetaState("saving");
+    setMetaError(null);
+    try {
+      await saveLaunchMeta(walletClient as WalletClient, address, {
+        chainId,
+        token,
+        image,
+        description: tokenDescription,
+      });
+      setMetaState("saved");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = /reject|denied|cancelled/i.test(message);
+      setMetaState("error");
+      setMetaError(cancelled ? "You cancelled the metadata signature." : message.slice(0, 160));
+    }
+  };
+
+  const handleImageFile = async (file: File | undefined) => {
+    if (!file) return;
+    const check = preCheckImageFile(file);
+    if (!check.ok) {
+      toast.error(check.error);
+      return;
+    }
+    setUploading(true);
+    const toastId = "stable-v3-pin";
+    toast.loading("Preparing & pinning image…", { id: toastId });
+    try {
+      const blob = await toAvatarBlob(file);
+      const response = await fetch("/api/pin-image", {
+        method: "POST",
+        headers: { "Content-Type": "image/png" },
+        body: blob,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(
+          response.status === 503
+            ? "Image uploads aren't available yet — you can launch without an image."
+            : (data?.error || "Image upload failed."),
+          { id: toastId, duration: 6000 },
+        );
+        return;
+      }
+      setImageUrl(data.uri as string);
+      toast.success("Image pinned to IPFS.", { id: toastId });
+    } catch {
+      toast.error("Couldn't upload that image — try a different PNG or JPG.", { id: toastId });
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handlePreview = async () => {
     if (!address || !publicClient || !formValid) return;
@@ -101,18 +202,27 @@ export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; ch
           toast.loading(STEP_COPY[step], { id: "stable-v3-launch" });
         },
       );
+      const savedImage = imageUrl;
+      const savedDescription = description;
       setLaunched({
         token: result.tokenAddress,
         pool: result.poolAddress,
         tx: result.transactionHash,
         tokenId: result.tokenId,
+        image: savedImage,
+        description: savedDescription,
       });
       toast.success("Token launched on Stable.", { id: "stable-v3-launch", duration: 8000 });
       setName("");
       setSymbol("");
+      setImageUrl("");
+      setDescription("");
       setSalt(freshSalt());
       setPreview(null);
       setRecipientConfirmed(false);
+      if (savedImage.startsWith("ipfs://") || savedDescription.trim()) {
+        void saveMetaFor(result.tokenAddress, savedImage, savedDescription);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const cancelled = /reject|denied|cancelled/i.test(message);
@@ -187,6 +297,59 @@ export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; ch
             </label>
           </div>
 
+          <div className="grid gap-3 rounded-xl border border-pcs-border bg-white/[0.015] p-3.5 sm:grid-cols-[150px,1fr]">
+            <div>
+              <SectionLabel>Token image</SectionLabel>
+              {!hasImage ? (
+                <label
+                  htmlFor="stable-v3-token-image"
+                  className={`mt-1.5 flex aspect-square items-center justify-center rounded-xl border border-dashed border-pcs-primary/35 bg-pcs-primary/[0.06] px-3 text-center text-xs font-semibold text-pcs-primaryBright transition ${
+                    uploading ? "cursor-wait opacity-60" : "cursor-pointer hover:border-pcs-primary/60 hover:bg-pcs-primary/[0.09]"
+                  }`}
+                >
+                  {uploading ? "Pinning…" : "Upload PNG or JPG"}
+                  <input
+                    id="stable-v3-token-image"
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={(event) => handleImageFile(event.target.files?.[0])}
+                  />
+                </label>
+              ) : (
+                <div className="relative mt-1.5 aspect-square overflow-hidden rounded-xl border border-pcs-border">
+                  <TokenImage src={imageUrl} symbol={symbol} className="h-full w-full rounded-xl text-3xl" />
+                  <button
+                    type="button"
+                    onClick={() => setImageUrl("")}
+                    className="absolute bottom-2 right-2 rounded-md border border-white/15 bg-black/70 px-2 py-1 text-[10px] font-semibold text-white/85 backdrop-blur transition hover:text-white"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+              <p className="mt-1.5 text-[9px] leading-4 text-pcs-textDim">
+                Auto-cropped to 500×500 and pinned to IPFS.
+              </p>
+            </div>
+
+            <label className="flex min-w-0 flex-col">
+              <SectionLabel>Description</SectionLabel>
+              <textarea
+                className="input mt-1.5 min-h-[116px] flex-1 resize-none"
+                placeholder="Tell people what this token is about."
+                value={description}
+                maxLength={280}
+                onChange={(event) => setDescription(event.target.value)}
+              />
+              <div className="mt-1.5 flex items-center justify-between gap-3 text-[9px] text-pcs-textDim">
+                <span>Optional · attached after launch with a free signature.</span>
+                <span className="font-mono">{description.length}/280</span>
+              </div>
+            </label>
+          </div>
+
           {previewError && (
             <div className="rounded-lg border border-pcs-warning/30 bg-pcs-warning/5 px-3.5 py-3">
               <p className="text-xs font-semibold text-pcs-warning">Pre-flight did not pass</p>
@@ -198,6 +361,25 @@ export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; ch
 
           {preview && address && (
             <div className="rounded-lg border border-pcs-primary/25 bg-pcs-primary/[0.04]">
+              <div className="flex items-center gap-3 border-b border-pcs-border px-3.5 py-3">
+                <TokenImage
+                  src={imageUrl}
+                  symbol={symbol}
+                  className="h-10 w-10 shrink-0 rounded-lg text-sm"
+                  style={{ border: "1px solid #22252D" }}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-pcs-text">
+                    {name.trim()} <span className="font-mono text-xs text-pcs-textSub">${symbol}</span>
+                  </p>
+                  <p className="mt-0.5 truncate text-[10px] text-pcs-textDim">
+                    {description.trim() || "No description added"}
+                  </p>
+                </div>
+                <span className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-pcs-primary">
+                  V3 preview
+                </span>
+              </div>
               <div className="grid grid-cols-2 divide-x divide-pcs-border border-b border-pcs-border">
                 <div className="px-3.5 py-3">
                   <p className="text-[10px] uppercase tracking-widest text-pcs-textDim">USDT0 balance</p>
@@ -282,6 +464,29 @@ export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; ch
         </div>
 
         <aside className="border-t border-pcs-border bg-white/[0.015] p-5 lg:border-l lg:border-t-0">
+          <SectionLabel>Token preview</SectionLabel>
+          <div className="mt-3 rounded-xl border border-pcs-border bg-black/10 p-3">
+            <div className="flex items-center gap-3">
+              <TokenImage
+                src={imageUrl}
+                symbol={symbol}
+                className="h-14 w-14 shrink-0 rounded-xl text-xl"
+                style={{ border: "1px solid #22252D" }}
+              />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-pcs-text">{name.trim() || "Your token"}</p>
+                <p className="mt-0.5 truncate font-mono text-[10px] text-pcs-textDim">
+                  ${symbol || "TICKER"}
+                </p>
+              </div>
+            </div>
+            <p className="mt-3 line-clamp-3 text-[10px] leading-relaxed text-pcs-textDim">
+              {description.trim() || "Your image will lead the card; your story will live on the token page."}
+            </p>
+          </div>
+
+          <div className="my-4 border-t border-pcs-border" />
+
           <SectionLabel>Launch profile</SectionLabel>
           <div className="mt-3 space-y-3">
             {[
@@ -345,6 +550,33 @@ export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; ch
               </a>
             </div>
           </div>
+          {(launched.image || launched.description.trim()) && (
+            <div className="mt-3 border-t border-pcs-success/20 pt-3 text-[11px]">
+              {metaState === "saving" && (
+                <p className="text-pcs-textSub">
+                  Confirm the free wallet signature to attach the image and description.
+                </p>
+              )}
+              {metaState === "saved" && (
+                <p className="font-semibold text-pcs-success">✓ Image and description attached.</p>
+              )}
+              {metaState === "error" && (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-pcs-warning">The token is live, but its metadata was not saved.</p>
+                    {metaError && <p className="mt-0.5 break-all text-pcs-textDim">{metaError}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => saveMetaFor(launched.token, launched.image, launched.description)}
+                    className="rounded-md border border-pcs-primary/30 bg-pcs-primary/10 px-3 py-1.5 text-xs font-semibold text-pcs-primaryBright transition hover:bg-pcs-primary/15"
+                  >
+                    Retry signature
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

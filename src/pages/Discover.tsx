@@ -26,19 +26,7 @@ type SortKey = "new" | "mcap";
 type Filter = "all" | LaunchEngine;
 
 function LaunchLink({ p, className, children }: { p: DopplerPool; className?: string; children: ReactNode }) {
-  if (p.chainId === 988) {
-    return (
-      <a
-        href={`https://stablescan.xyz/address/${p.address}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={className}
-      >
-        {children}
-      </a>
-    );
-  }
-  return <Link to={`/token/${p.address}`} className={className}>{children}</Link>;
+  return <Link to={`/token/${p.address}?network=${p.chainId}`} className={className}>{children}</Link>;
 }
 
 function ageOf(iso: string): string {
@@ -211,7 +199,7 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
           <div className="mt-2.5 flex items-center justify-between gap-2">
             <span className="text-[10px] text-pcs-textDim">Deployed {ageOf(p.createdAt)} ago</span>
             <span className="text-[10px] font-semibold text-pcs-primary transition group-hover:text-pcs-primaryBright">
-              {p.chainId === 988 ? "Explorer ↗" : "Open →"}
+              Open →
             </span>
           </div>
         </div>

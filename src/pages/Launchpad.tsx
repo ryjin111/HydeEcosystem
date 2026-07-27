@@ -85,7 +85,7 @@ const CHAIN_LABELS: Record<number, string> = {
  *  and indexed; otherwise cards show the on-chain curve level when available — never a fake $. */
 export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void; showClaimable?: boolean; onClaimed?: () => void }) {
   const bt = pool.baseToken;
-  const externalViewOnly = pool.chainId === 988;
+  const opensDetailOnly = pool.launchEngine === "v3-single-sided";
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
   const engineMeta = ENGINE_META[pool.launchEngine];
   const hasMcap = pool.marketCapUsd != null && pool.marketCapUsd > 0;
@@ -424,7 +424,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
             className="pointer-events-none text-xs font-semibold px-4 py-2 rounded-lg flex-shrink-0 transition group-hover:brightness-125"
             style={{ background: "rgba(42,212,166,0.12)", color: "#4FE3BE" }}
           >
-            {externalViewOnly ? "View ↗" : "Trade →"}
+            {opensDetailOnly ? "Open →" : "Trade →"}
           </span>
         </div>
       </div>
@@ -434,7 +434,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
           the visible focus ring / hover-lift live on the wrapper above (kami 23788, shiro 23791). */}
       <button
         type="button"
-        aria-label={`${externalViewOnly ? "View" : "Trade"} ${bt.name} ($${bt.symbol})`}
+        aria-label={`${opensDetailOnly ? "Open" : "Trade"} ${bt.name} ($${bt.symbol})`}
         onClick={trade}
         className="absolute inset-0 z-10 rounded-2xl outline-none"
       />
@@ -495,14 +495,11 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
 
   const handleTrade = (tokenAddress: string, poolChainId: number) => {
     if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
-    if (poolChainId === 988) {
-      window.open(`https://stablescan.xyz/address/${tokenAddress}`, "_blank", "noopener,noreferrer");
-      return;
-    }
     // Hyde launches live on Robinhood mainnet (4663) OR the testnet own-stack (46630) — allow both;
-    // the swap page trades on whichever network is selected in the dropdown (matches the board).
-    if (poolChainId !== ROBINHOOD_CHAIN_ID && poolChainId !== RH_TESTNET_ID) return;
-    navigate(`/token/${tokenAddress}`);
+    // Stable V3 uses the same token-detail design, with an honest external-routing notice instead of
+    // pretending the V4 swap widget supports it.
+    if (poolChainId !== ROBINHOOD_CHAIN_ID && poolChainId !== RH_TESTNET_ID && poolChainId !== 988) return;
+    navigate(`/token/${tokenAddress}?network=${poolChainId}`);
   };
 
   return (
