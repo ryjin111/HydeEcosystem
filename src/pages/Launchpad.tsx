@@ -1,12 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { LaunchTokenForm } from "../components/LaunchTokenForm";
 
 const ROBINHOOD_CHAIN_ID = 4663;
-
-/* ─── helpers ─────────────────────────────────────────────────────────────── */
 
 function fmtLiquidity(raw: string | null): string {
   const n = parseFloat(raw ?? "0");
@@ -25,8 +23,6 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/* ─── Pool card (Explore tab) ─────────────────────────────────────────────── */
-
 const CHAIN_LABELS: Record<number, string> = {
   4663: "Robinhood L2",
 };
@@ -34,164 +30,173 @@ const CHAIN_LABELS: Record<number, string> = {
 function PoolCard({ pool, onTrade }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void }) {
   const bt = pool.baseToken;
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
+
   return (
-    <div
-      className="rounded-2xl p-4 flex flex-col gap-3 border transition hover:border-pcs-primary/40"
-      style={{ background: "#121419", borderColor: "#22252D" }}
-    >
-      {/* Token identity */}
-      <div className="flex items-center gap-3">
-        <div
-          className="h-10 w-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-          style={{ background: "rgba(46,159,230,0.14)", color: "#54B4F0" }}
-        >
-          {bt.symbol.slice(0, 2).toUpperCase()}
-        </div>
+    <article className="trench-pool-card group">
+      <div className="pool-card-current" aria-hidden="true" />
+
+      <div className="relative flex items-center gap-3">
+        <div className="pool-token-mark">{bt.symbol.slice(0, 2).toUpperCase()}</div>
         <div className="min-w-0">
-          <p className="font-semibold text-pcs-text truncate">{bt.name}</p>
-          <p className="text-xs text-pcs-textDim">{bt.symbol}</p>
+          <p className="truncate font-display font-semibold text-pcs-text">{bt.name}</p>
+          <p className="font-code text-[11px] tracking-[0.16em] text-pcs-textDim">${bt.symbol}</p>
         </div>
-        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
-          <span
-            className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
-            style={{ background: "rgba(255,255,255,0.06)", color: "#9ca3af" }}
-          >
-            {chainLabel}
-          </span>
-          <span
-            className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
-            style={{
-              background: pool.type === "v4" ? "rgba(46,159,230,0.14)" : "rgba(52,199,123,0.12)",
-              color: pool.type === "v4" ? "#54B4F0" : "#34C77B",
-            }}
-          >
+        <div className="ml-auto flex flex-shrink-0 items-center gap-1.5">
+          <span className="depth-chip">{chainLabel}</span>
+          <span className={pool.type === "v4" ? "depth-chip depth-chip-live" : "depth-chip depth-chip-safe"}>
             {pool.type}
           </span>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
-          <p className="text-pcs-textDim mb-0.5">Liquidity</p>
-          <p className="font-semibold text-pcs-text">{fmtLiquidity(pool.dollarLiquidity)}</p>
+      <div className="relative grid grid-cols-2 gap-2 text-xs">
+        <div className="pool-stat">
+          <p className="pool-stat-label">Liquidity</p>
+          <p className="font-code font-semibold text-pcs-text">{fmtLiquidity(pool.dollarLiquidity)}</p>
         </div>
-        <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
-          <p className="text-pcs-textDim mb-0.5">Volume</p>
-          <p className="font-semibold text-pcs-text">{fmtLiquidity(pool.volumeUsd)}</p>
+        <div className="pool-stat">
+          <p className="pool-stat-label">Volume</p>
+          <p className="font-code font-semibold text-pcs-text">{fmtLiquidity(pool.volumeUsd)}</p>
         </div>
       </div>
 
-      {/* Curve progress — real % of the launch inventory sold, on-chain */}
       {pool.type !== "v2" && pool.progress !== null && (
-        <div>
-          <div className="flex justify-between text-[9px] text-pcs-textDim mb-1">
-            <span>Curve sold</span>
+        <div className="relative">
+          <div className="mb-1.5 flex justify-between text-[9px] uppercase tracking-[0.12em] text-pcs-textDim">
+            <span>Curve depth</span>
             <span>{pool.progress < 1 && pool.progress > 0 ? "<1" : Math.round(pool.progress)}%</span>
           </div>
-          <div className="h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+          <div className="curve-track">
             <div
-              className="h-full rounded-full"
-              style={{ width: `${Math.max(pool.progress, pool.progress > 0 ? 2 : 0)}%`, background: "#2E9FE6" }}
+              className="curve-fill"
+              style={{ width: `${Math.max(pool.progress, pool.progress > 0 ? 2 : 0)}%` }}
             />
           </div>
         </div>
       )}
 
-      {/* Footer */}
-      <div className="flex items-center justify-between">
+      <div className="relative flex items-center justify-between">
         <span className="text-xs text-pcs-textDim">{timeAgo(pool.createdAt)}</span>
-        <button
-          onClick={() => onTrade(bt.address, pool.chainId)}
-          className="text-xs font-semibold px-3 py-1.5 rounded-lg transition"
-          style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.20)")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(46,159,230,0.12)")}
-        >
-          Trade →
+        <button onClick={() => onTrade(bt.address, pool.chainId)} className="pool-trade-button">
+          Enter market <span aria-hidden="true">↗</span>
         </button>
       </div>
-    </div>
+    </article>
   );
 }
-
-/* ─── Page ────────────────────────────────────────────────────────────────── */
 
 export function LaunchpadPage() {
   const [tab, setTab] = useState<"explore" | "launch">("launch");
   const { pools, loading, refetch } = useHydeLaunches();
   const navigate = useNavigate();
+  const totalLiquidity = useMemo(
+    () => pools.reduce((sum, pool) => sum + (Number(pool.dollarLiquidity) || 0), 0),
+    [pools],
+  );
 
   const handleTrade = (tokenAddress: string, chainId: number) => {
     if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
-    // All Hyde launches are on Robinhood Chain (4663) — gate anything else
     if (chainId !== ROBINHOOD_CHAIN_ID) return;
     navigate(`/swap?out=${tokenAddress}`);
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 w-full">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="font-display text-2xl font-semibold text-pcs-text">Launchpad</h1>
-        <p className="text-sm text-pcs-textSub mt-1">
-          Instant token launches on Robinhood L2 — earn trading fees from day one.
-        </p>
-      </div>
+    <div className="launchpad-shell mx-auto w-full max-w-7xl px-4">
+      <section className="trench-hero">
+        <div className="trench-grid" aria-hidden="true" />
+        <div className="trench-bubbles" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid #1C1F26" }}>
-        {(["launch", "explore"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className="px-5 py-2 rounded-lg text-sm font-semibold transition"
-            style={
-              tab === t
-                ? { background: "rgba(46,159,230,0.14)", color: "#54B4F0" }
-                : { color: "#5D6470" }
-            }
-          >
-            {t === "explore" ? "Explore Launches" : "Launch a Token"}
-          </button>
-        ))}
-      </div>
+        <div className="relative z-10 max-w-2xl">
+          <div className="protocol-kicker">
+            <span className="live-ping" />
+            Hydeout protocol · depth 4,663
+          </div>
+          <h1 className="mt-5 font-display text-4xl font-semibold leading-[0.98] tracking-[-0.04em] text-pcs-text sm:text-5xl lg:text-6xl">
+            Launch from
+            <span className="block trench-title-accent">the deep.</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-sm leading-6 text-pcs-textSub sm:text-base">
+            Build quietly. Surface with impact. Launch a token on Robinhood Chain and earn fees from its first trade.
+          </p>
+          <div className="mt-7 flex flex-wrap gap-2">
+            <span className="hero-proof"><strong>1B</strong> fair-curve supply</span>
+            <span className="hero-proof"><strong>95%</strong> creator fees</span>
+            <span className="hero-proof"><strong>0%</strong> Hydeout fee</span>
+          </div>
+        </div>
 
-      {/* Explore tab */}
-      {tab === "explore" && (
+        <div className="trench-guardian" aria-hidden="true">
+          <div className="sonar-ring sonar-ring-one" />
+          <div className="sonar-ring sonar-ring-two" />
+          <div className="sonar-ring sonar-ring-three" />
+          <img src="/logo/lo.png" alt="" />
+          <div className="guardian-readout">
+            <span>Signal</span>
+            <strong>Protected</strong>
+          </div>
+        </div>
+      </section>
+
+      <div className="launchpad-commandbar">
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-pcs-textDim">
-              {loading ? "Loading…" : `${pools.length} token${pools.length !== 1 ? "s" : ""} launched on Robinhood L2`}
-            </p>
+          <p className="commandbar-label">Choose your route</p>
+          <p className="text-sm text-pcs-textSub">
+            Deploy a new asset or scan launches already moving through the current.
+          </p>
+        </div>
+        <div className="launch-tabs" role="tablist" aria-label="Launchpad views">
+          {(["launch", "explore"] as const).map((nextTab) => (
             <button
-              onClick={refetch}
-              className="text-xs text-pcs-primary hover:underline"
-              disabled={loading}
+              key={nextTab}
+              onClick={() => setTab(nextTab)}
+              className={`launch-tab ${tab === nextTab ? "launch-tab-active" : ""}`}
+              role="tab"
+              aria-selected={tab === nextTab}
             >
-              {loading ? "Refreshing…" : "Refresh"}
+              <span className="launch-tab-icon" aria-hidden="true">{nextTab === "launch" ? "↓" : "⌁"}</span>
+              {nextTab === "explore" ? "Scan launches" : "Enter the trench"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "explore" && (
+        <section className="explore-current">
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="commandbar-label">Live current</p>
+              <h2 className="mt-1 font-display text-2xl font-semibold text-pcs-text">Signals from below</h2>
+              <p className="mt-1 text-sm text-pcs-textDim">
+                {loading
+                  ? "Sounding the network…"
+                  : `${pools.length} token${pools.length !== 1 ? "s" : ""} · ${fmtLiquidity(String(totalLiquidity))} visible liquidity`}
+              </p>
+            </div>
+            <button onClick={refetch} className="sonar-refresh" disabled={loading}>
+              <span className={loading ? "refresh-orbit refresh-orbit-active" : "refresh-orbit"} aria-hidden="true" />
+              {loading ? "Scanning…" : "Run sonar"}
             </button>
           </div>
 
           {!loading && pools.length === 0 && (
-            <div
-              className="rounded-2xl p-10 text-center"
-              style={{ background: "#121419", border: "1px solid #22252D" }}
-            >
-              <p className="text-pcs-textDim text-sm">No launches found yet.</p>
-              <p className="text-pcs-textDim text-xs mt-1">
-                Be the first to launch a token on Robinhood L2!
+            <div className="empty-trench">
+              <div className="empty-sonar" aria-hidden="true"><span /></div>
+              <p className="font-display text-lg font-semibold text-pcs-text">The trench is quiet.</p>
+              <p className="mt-1 text-sm text-pcs-textDim">
+                No launches surfaced yet. Yours can be the first signal.
               </p>
-              <button
-                onClick={() => setTab("launch")}
-                className="btn-primary mt-4 px-5 py-2 text-sm"
-              >
-                Launch a Token
+              <button onClick={() => setTab("launch")} className="btn-primary mt-5 px-5 py-2 text-sm">
+                Enter the trench
               </button>
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {pools.map((pool) => (
               <PoolCard
                 key={`${pool.chainId}-${pool.address}-${pool.baseToken.address}`}
@@ -200,10 +205,9 @@ export function LaunchpadPage() {
               />
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Launch tab */}
       {tab === "launch" && <LaunchTokenForm />}
     </div>
   );

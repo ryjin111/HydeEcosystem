@@ -88,7 +88,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
   return (
     <>
       <header
-        className="sticky top-0 z-20 flex h-14 items-center justify-between px-4 backdrop-blur-md"
+        className="hyde-topbar sticky top-0 z-20 flex h-14 items-center justify-between px-4 backdrop-blur-md"
         style={{ background: 'rgba(11, 12, 15, 0.88)', borderBottom: '1px solid #1C1F26' }}
       >
         {/* Left: sidebar toggle */}
@@ -110,7 +110,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
           <select
             value={selectedNetwork.id}
             onChange={(e) => onNetworkChange(Number(e.target.value))}
-            className="rounded-xl bg-pcs-card px-3 py-1.5 text-xs font-medium text-pcs-textSub outline-none cursor-pointer"
+            className="hyde-network-select rounded-xl bg-pcs-card px-3 py-1.5 text-xs font-medium text-pcs-textSub outline-none cursor-pointer"
             style={{ border: '1px solid #22252D' }}
           >
             {networks.map((net) => (
@@ -121,7 +121,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks, onToggleSid
           </select>
 
           {!isConnected ? (
-            <button className="btn-primary px-4 py-1.5 text-xs" onClick={connectWallet} disabled={isPending}>
+            <button className="btn-primary hyde-connect-button px-4 py-1.5 text-xs" onClick={connectWallet} disabled={isPending}>
               {isPending ? "..." : "Connect"}
             </button>
           ) : (

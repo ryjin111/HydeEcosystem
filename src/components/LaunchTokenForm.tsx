@@ -108,15 +108,118 @@ export function LaunchTokenForm() {
   };
 
   const explorer = ROBINHOOD_MAINNET.explorerUrl;
+  const identityReady = !!name.trim() && !!symbol.trim();
+  const diveProgress = Math.min(
+    100,
+    8
+      + (name.trim() ? 14 : 0)
+      + (symbol.trim() ? 14 : 0)
+      + (imageUrl && imageUrlValid ? 8 : 0)
+      + (description.trim() ? 6 : 0)
+      + (isConnected ? 10 : 0)
+      + (preview ? 24 : 0)
+      + (recipientConfirmed ? 8 : 0)
+      + (launched ? 8 : 0),
+  );
+  const currentDepth = Math.round((4663 * diveProgress) / 100);
+  const diveStage = launched
+    ? "Signal surfaced"
+    : recipientConfirmed
+      ? "Release armed"
+      : preview
+        ? "Pre-flight clear"
+        : identityReady
+          ? "Identity locked"
+          : "Charting identity";
 
   return (
-    <div
-      className="w-full max-w-md mx-auto rounded-2xl p-6 flex flex-col gap-5 shadow-card"
-      style={{ background: "#121419", border: "1px solid #22252D" }}
-    >
+    <div className="launch-studio">
+      <aside className="launch-preview-panel">
+        <div className="preview-depth-copy">
+          <p className="commandbar-label">Live launch profile</p>
+          <p className="mt-1 text-xs text-pcs-textDim">Your signal builds as each launch check clears.</p>
+        </div>
+
+        <div className="token-sonar">
+          <span className="token-sonar-ring token-sonar-ring-one" aria-hidden="true" />
+          <span className="token-sonar-ring token-sonar-ring-two" aria-hidden="true" />
+          <span className="token-sonar-crosshair" aria-hidden="true" />
+          {imageUrl && imageUrlValid ? (
+            <TokenImage
+              src={imageUrl}
+              symbol={symbol}
+              className="token-sonar-image"
+            />
+          ) : (
+            <img src="/logo/lo.png" alt="" className="token-sonar-image token-sonar-shark" />
+          )}
+        </div>
+
+        <div className="token-preview-copy">
+          <p className="token-preview-stage">{diveStage}</p>
+          <h2 className="mt-2 break-words font-display text-3xl font-semibold tracking-[-0.035em] text-pcs-text">
+            {name.trim() || "Uncharted asset"}
+          </h2>
+          <p className="mt-2 font-code text-sm tracking-[0.18em] text-trench-aqua">
+            ${symbol.trim() || "TICKER"}
+          </p>
+          <p className="mt-4 line-clamp-3 min-h-[3.75rem] text-sm leading-5 text-pcs-textSub">
+            {description.trim() || "Give the market a reason to follow your signal."}
+          </p>
+        </div>
+
+        <div className="depth-progress-card">
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="commandbar-label">Dive sequence</p>
+              <p className="mt-1 font-code text-xl font-semibold text-pcs-text">
+                {currentDepth.toLocaleString()}<span className="ml-1 text-xs text-pcs-textDim">m</span>
+              </p>
+            </div>
+            <span className="font-code text-xs text-trench-aqua">{diveProgress}%</span>
+          </div>
+          <div className="depth-progress-track" aria-label={`${diveProgress}% launch readiness`}>
+            <div className="depth-progress-fill" style={{ width: `${diveProgress}%` }} />
+            <span className="depth-marker depth-marker-one">IDENTITY</span>
+            <span className="depth-marker depth-marker-two">SOUNDING</span>
+            <span className="depth-marker depth-marker-three">RELEASE</span>
+          </div>
+        </div>
+
+        <div className="launch-checks">
+          <div className={identityReady ? "launch-check launch-check-done" : "launch-check launch-check-active"}>
+            <span>01</span>
+            <div><strong>Identity</strong><small>Name and market symbol</small></div>
+          </div>
+          <div className={preview ? "launch-check launch-check-done" : identityReady ? "launch-check launch-check-active" : "launch-check"}>
+            <span>02</span>
+            <div><strong>Sounding</strong><small>On-chain simulation</small></div>
+          </div>
+          <div className={recipientConfirmed ? "launch-check launch-check-done" : preview ? "launch-check launch-check-active" : "launch-check"}>
+            <span>03</span>
+            <div><strong>Release</strong><small>Confirm recipient and launch</small></div>
+          </div>
+        </div>
+
+        <div className="trench-whisper">
+          <span aria-hidden="true">⌁</span>
+          <p><strong>Move in silence.</strong> Every critical claim is simulated before your wallet signs.</p>
+        </div>
+      </aside>
+
+      <section className="launch-console">
       {/* Header */}
-      <div>
-        <h2 className="font-display text-lg font-semibold text-pcs-text">Launch a Token</h2>
+      <div className="launch-console-header">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="commandbar-label">Launch console</p>
+            <h2 className="mt-2 font-display text-2xl font-semibold text-pcs-text">Shape your signal</h2>
+          </div>
+          <div className="console-chain-status">
+            <span className="live-ping" />
+            RH · 4663
+          </div>
+        </div>
         <p className="text-xs text-pcs-textSub mt-1">
           Price-discovery launch on Robinhood L2 — fees stream to you from the first trade.
         </p>
@@ -163,8 +266,9 @@ export function LaunchTokenForm() {
 
       {/* Name */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-pcs-textSub">Token Name</label>
+        <label htmlFor="token-name" className="text-xs font-medium text-pcs-textSub">Token Name</label>
         <input
+          id="token-name"
           className="input"
           placeholder="e.g. HydeToken"
           value={name}
@@ -175,8 +279,9 @@ export function LaunchTokenForm() {
 
       {/* Symbol */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-pcs-textSub">Token Symbol</label>
+        <label htmlFor="token-symbol" className="text-xs font-medium text-pcs-textSub">Token Symbol</label>
         <input
+          id="token-symbol"
           className="input font-code"
           placeholder="e.g. HYDE"
           value={symbol}
@@ -187,9 +292,10 @@ export function LaunchTokenForm() {
 
       {/* Token image — optional; URL or a small file embedded permanently on-chain */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-pcs-textSub">Token Image <span className="text-pcs-textDim font-normal">(optional)</span></label>
+        <label htmlFor="token-image-url" className="text-xs font-medium text-pcs-textSub">Token Image <span className="text-pcs-textDim font-normal">(optional)</span></label>
         <div className="flex items-center gap-2">
           <input
+            id="token-image-url"
             className="input flex-1 font-code"
             placeholder="https:// or ipfs:// image URL"
             value={imageUrl.startsWith("data:") ? "" : imageUrl}
@@ -197,11 +303,13 @@ export function LaunchTokenForm() {
             disabled={imageUrl.startsWith("data:")}
           />
           <label
+            htmlFor="token-image-upload"
             className="text-xs font-semibold px-3 py-2 rounded-xl cursor-pointer transition flex-shrink-0"
             style={{ background: "rgba(46,159,230,0.12)", color: "#54B4F0" }}
           >
             Upload
             <input
+              id="token-image-upload"
               type="file"
               accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
               className="hidden"
@@ -238,8 +346,9 @@ export function LaunchTokenForm() {
 
       {/* Description — optional, goes into the on-chain metadata */}
       <div className="flex flex-col gap-1.5">
-        <label className="text-xs font-medium text-pcs-textSub">Description <span className="text-pcs-textDim font-normal">(optional)</span></label>
+        <label htmlFor="token-description" className="text-xs font-medium text-pcs-textSub">Description <span className="text-pcs-textDim font-normal">(optional)</span></label>
         <textarea
+          id="token-description"
           className="input resize-none"
           rows={2}
           placeholder="One or two lines about the token"
@@ -410,6 +519,7 @@ export function LaunchTokenForm() {
           </a>
         </div>
       )}
+      </section>
     </div>
   );
 }

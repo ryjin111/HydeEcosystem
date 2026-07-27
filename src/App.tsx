@@ -83,16 +83,16 @@ function App() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed top-0 left-0 z-30 h-full w-56 flex flex-col transition-transform duration-200 ${
+        className={`hyde-sidebar fixed top-0 left-0 z-30 h-full w-56 flex flex-col transition-transform duration-200 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         style={{ background: '#0F1114', borderRight: '1px solid #1C1F26' }}
       >
         {/* Sidebar header */}
         <div className="flex h-14 items-center gap-2.5 px-4" style={{ borderBottom: '1px solid #1C1F26' }}>
-          <img src="/logo/lo.png" alt="Hyde" className="h-7 w-7 rounded-md object-contain" />
-          <span className="font-display text-lg font-semibold tracking-tight text-pcs-text">
-            Hyde
+          <img src="/logo/lo.png" alt="Hydeout" className="hyde-brand-mark h-7 w-7 rounded-md object-contain" />
+          <span className="font-display text-base font-semibold tracking-[0.04em] text-pcs-text">
+            HYDEOUT
           </span>
         </div>
 
@@ -154,7 +154,7 @@ function App() {
           sidebarOpen={sidebarOpen}
         />
 
-        <main className="flex-1 flex flex-col items-center px-4 pt-8 pb-16">
+        <main className="hyde-main flex-1 flex flex-col items-center px-4 pt-8 pb-16">
           {/* Card area */}
           <div className="w-full">
             <Routes>

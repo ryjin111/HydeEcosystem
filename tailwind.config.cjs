@@ -28,6 +28,12 @@ module.exports = {
           yellow: "#E8A33D",
           blue: "#2E9FE6"
         },
+        trench: {
+          ink: "#05090D",
+          deep: "#07131A",
+          aqua: "#43E6C2",
+          blue: "#2E9FE6",
+        },
       },
       boxShadow: {
         card: "0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.25)",
