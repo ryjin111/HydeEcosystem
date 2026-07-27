@@ -17,6 +17,7 @@ import { HoodieSwapCard } from "../components/HoodieSwapCard";
 import { YourPositionCard } from "../components/YourPositionCard";
 import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta, type LaunchMeta } from "../utils/launchMeta";
+import { ENGINE_META } from "../utils/chainRegistry";
 import { Card, Button, Stat, SectionLabel } from "../components/ui/kit";
 
 type Props = { network: NetworkConfig; tokens: TokenInfo[]; onAddCustomToken: (t: { address: `0x${string}`; symbol: string; name: string; decimals: number }) => void };
@@ -147,34 +148,46 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const { isConnected } = useAccount();
   const { position, error: positionError } = useTokenPosition(pool?.address ?? "", network.id, isHoodiePair);
 
-  if (tokenLoading && !boardPool) return <div className="py-20 text-center text-pcs-textSub">Loading token…</div>;
+  if (tokenLoading && !boardPool) {
+    return (
+      <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
+        <div className="py-12 text-center text-pcs-textSub">Loading token…</div>
+      </div>
+    );
+  }
   if (tokenError && !boardPool) {
     return (
-      <Card variant="panel" className="mx-auto max-w-lg text-center">
-        <p className="py-6 text-pcs-textSub">Token data is temporarily unavailable.</p>
-        <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
-      </Card>
+      <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
+        <Card variant="panel" className="mx-auto max-w-lg text-center">
+          <p className="py-5 text-pcs-textSub">Token data is temporarily unavailable.</p>
+          <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+        </Card>
+      </div>
     );
   }
   if (!pool) {
     return (
-      <Card variant="panel" className="mx-auto max-w-lg text-center">
-        <p className="py-6 text-pcs-textSub">This isn’t a Hydeout launch token.</p>
-        <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
-      </Card>
+      <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
+        <Card variant="panel" className="mx-auto max-w-lg text-center">
+          <p className="py-5 text-pcs-textSub">This isn’t a Hydeout launch token.</p>
+          <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+        </Card>
+      </div>
     );
   }
 
   const sym = pool.baseToken.symbol || "?";
+  const engineMeta = ENGINE_META[pool.launchEngine];
+  const isV4Launch = pool.launchEngine === "v4-hook";
   // WETH-only containment (kami 24019): a non-HOODIE (WETH-paired) token while WETH_CONTAINMENT is active.
   // Its chart/Trades empty-states must NOT claim "trading is live on-chain" (contradicts the amber pause card),
   // and the green LIVE badge is swapped for a paused one. HOODIE pages keep the live copy unchanged.
-  const wethContained = !isHoodiePair && WETH_CONTAINMENT.active;
+  const wethContained = isV4Launch && !isHoodiePair && WETH_CONTAINMENT.active;
   const creatorAddr = (pool as { creator?: string }).creator;
   const launchedAgo = timeAgo(pool.createdAt);
 
   return (
-    <div className="mx-auto w-full max-w-[1200px]">
+    <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
       {/* Breadcrumb (coin-mockup) */}
       <nav className="mb-3 flex items-center gap-1.5 text-xs text-pcs-textDim">
         <Link to="/discover" className="transition hover:text-pcs-textSub">Board</Link>
@@ -182,9 +195,9 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
         <span className="truncate text-pcs-textSub">{pool.baseToken.name}</span>
       </nav>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr,380px]">
+      <div className="grid gap-4 lg:grid-cols-[1fr,380px]">
         {/* ---------- main ---------- */}
-        <div className="min-w-0 space-y-5">
+        <div className="min-w-0 space-y-4">
           {/* Header — image · name · by creator · time · address · right-aligned price (coin-mockup) */}
           <Card>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -201,6 +214,9 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                     {creatorAddr && <span>by {short(creatorAddr)}</span>}
                     {launchedAgo && <span>· {launchedAgo}</span>}
                     <button type="button" onClick={() => { navigator.clipboard?.writeText(pool.address); setCopied(true); setTimeout(() => setCopied(false), 1200); }} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono transition hover:text-pcs-textSub" style={{ border: "1px solid #22252D" }}>{copied ? "Copied" : short(pool.address)} ⧉</button>
+                    <span className="rounded-md border border-pcs-primary/25 bg-pcs-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-pcs-primaryBright">
+                      {engineMeta.title}
+                    </span>
                     <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>LIVE</span>
                   </div>
                 </div>
@@ -230,7 +246,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             ))}
           </div>
           <div
-            className="relative flex h-[300px] flex-col items-center justify-center gap-4 px-6 text-center"
+            className="relative flex h-[250px] flex-col items-center justify-center gap-3 px-6 text-center"
             style={{ background: "radial-gradient(120% 90% at 50% 0%, rgba(46,159,230,0.05), transparent 60%), #0E1013" }}
           >
             <div
@@ -259,7 +275,11 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
           {/* Curve/liquidity label — own-stack launches straight into a locked-liquidity pool (no graduation). */}
           <div className="flex items-center gap-2 border-t px-4 py-2.5" style={{ borderColor: "#1C1F26" }}>
             <span className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: "#34C77B" }} />
-            <p className="font-mono text-[11px] text-pcs-textDim">Liquidity locked · single-sided seed, auto-compounding as it earns fees.</p>
+            <p className="font-mono text-[11px] text-pcs-textDim">
+              {isV4Launch
+                ? "V4 hook liquidity locked · 5% of fees auto-compounds into locked LP."
+                : "V3 single-sided liquidity · principal permanently locked."}
+            </p>
           </div>
         </Card>
 
@@ -292,17 +312,17 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
       </div>
 
       {/* ---------- right rail ---------- */}
-      <div className="min-w-0 space-y-5">
+      <div className="min-w-0 space-y-4">
         {/* Rail-aware trade widget (§3.2). When the router genuinely goes live, the reused
            V4SwapCard executes; otherwise the primary action routes to the live pair and the
            in-app Buy/Sell is shown REFERENCE-ONLY (dimmed, non-interactive) — never implying
            Hyde submits/pre-fills an order it can't carry. Graduation is NEVER cited as a reason. */}
-        {isHoodiePair ? (
+        {isV4Launch && isHoodiePair ? (
           <HoodieSwapCard
             network={network}
             token={{ address: pool.address as `0x${string}`, symbol: sym, name: pool.baseToken.name, decimals: pool.baseToken.decimals }}
           />
-        ) : isGatewayLive(network.id) && !WETH_CONTAINMENT.active ? (
+        ) : isV4Launch && isGatewayLive(network.id) && !WETH_CONTAINMENT.active ? (
           <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} forceTokenOut={pool.address.toLowerCase()} />
         ) : (
           <Card variant="panel">
@@ -310,11 +330,11 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             {/* WETH CONTAINMENT (kami 24005/24008): this branch is the non-HOODIE (WETH-paired) path — its preset
                 seeded the ~$1.9T pool. No audited in-app sell → the whole external trade link is removed (routing
                 users to the broken pool is the same harm); price/FDV stays truthful. HOODIE pairs never reach here. */}
-            {WETH_CONTAINMENT.active ? (
+            {isV4Launch && WETH_CONTAINMENT.active ? (
               <p className="mt-3 rounded-lg px-2.5 py-2 text-center text-sm leading-relaxed" style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.28)", color: "#E0A32E" }}>
                 {WETH_CONTAINMENT.noSell}
               </p>
-            ) : pair ? (
+            ) : isV4Launch && pair ? (
               <>
                 <a
                   href={`https://dexscreener.com/robinhood/${pair}`}
@@ -328,7 +348,11 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <p className="mt-2 text-xs text-pcs-textSub">Trading is live on this token’s pair.</p>
               </>
             ) : (
-              <p className="mt-2 text-sm text-pcs-textSub">In-app swap for this token is coming shortly. It trades live now on its locked-liquidity pool, on-chain.</p>
+              <p className="mt-2 text-sm text-pcs-textSub">
+                {isV4Launch
+                  ? "In-app swap for this token is coming shortly. It trades live now on its locked-liquidity pool, on-chain."
+                  : "This V3 launch uses a permanently locked single-sided position. In-app V3 routing is not enabled yet."}
+              </p>
             )}
             {/* Disabled Buy/Sell preview removed (kami 23517) — it read as a working swap; the live-pair
                 link above is the single trade action until the native swap actually executes. */}
@@ -365,11 +389,13 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             <div className="flex items-center gap-2">
               <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>HYDE STACK · LIVE</span>
             </div>
-            <p className="font-mono text-[11px] text-pcs-text">90% creator · 5% Hyde · 5% locked liquidity</p>
-            <p className="text-[11px] leading-relaxed text-pcs-textSub">Liquidity is custody-locked and auto-compounds as fees accrue.</p>
-            <p className="text-[11px] leading-relaxed text-pcs-textDim">
-              <span className="font-semibold text-pcs-textSub">Launch protection:</span> swap fee decays 3%→1% over 5 minutes; 1% max-wallet for 5 minutes. Selling remains unrestricted.
-            </p>
+            <p className="font-mono text-[11px] text-pcs-text">{engineMeta.feeSplitLabel}</p>
+            <p className="text-[11px] leading-relaxed text-pcs-textSub">{engineMeta.trustLine}</p>
+            {isV4Launch && (
+              <p className="text-[11px] leading-relaxed text-pcs-textDim">
+                <span className="font-semibold text-pcs-textSub">Launch protection:</span> swap fee decays 3%→1% over 5 minutes; 1% max-wallet for 5 minutes. Selling remains unrestricted.
+              </p>
+            )}
           </div>
         </Card>
 

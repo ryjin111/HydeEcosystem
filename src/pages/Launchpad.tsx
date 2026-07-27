@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { EngineAwareLaunch } from "../components/EngineAwareLaunch";
-import { chainEngineCapabilities } from "../utils/chainRegistry";
+import { chainEngineCapabilities, ENGINE_META } from "../utils/chainRegistry";
 import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import { hydeVaultAbi, MAINNET_HOODIE_FEE_VAULT, MAINNET_WETH_FEE_VAULT, ROBINHOOD_TESTNET_VAULT } from "../utils/constants";
@@ -81,11 +81,11 @@ const CHAIN_LABELS: Record<number, string> = {
  *  with MCAP shown large. The per-card "ROBINHOOD CHAIN" pill is dropped — every launch is on the
  *  same chain (stated in the page/footer), and repeating it was what squeezed the name column.
  *  Metrics are honesty-gated: MCAP/Liquidity render ONLY when the DEXScreener pair is real
- *  (graduated + indexed); curve-stage tokens show the on-chain curve % instead — never a fake $. */
+ *  and indexed; otherwise cards show the on-chain curve level when available — never a fake $. */
 export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void; showClaimable?: boolean; onClaimed?: () => void }) {
   const bt = pool.baseToken;
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
-  const graduated = pool.type === "v2";
+  const engineMeta = ENGINE_META[pool.launchEngine];
   const hasMcap = pool.marketCapUsd != null && pool.marketCapUsd > 0;
   const hasPrice = pool.priceUsd != null && pool.priceUsd > 0;
   const hasVol = pool.volumeUsd != null && parseFloat(pool.volumeUsd) > 0;
@@ -247,9 +247,9 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
         <TokenImage src={image} symbol={bt.symbol} className="h-40 w-full text-4xl" style={{ borderRadius: 0, borderWidth: 0 }} />
         <span
           className="absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
-          style={{ background: graduated ? "rgba(52,199,123,0.92)" : "rgba(42,212,166,0.92)", color: "#0B0D10" }}
+          style={{ background: "rgba(42,212,166,0.92)", color: "#0B0D10" }}
         >
-          {graduated ? "Graduated" : "Live"}
+          Live
         </span>
       </div>
 
@@ -258,6 +258,14 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
         <div className="min-w-0">
           <p className="font-display text-[15px] font-semibold text-pcs-text truncate leading-tight">{bt.name}</p>
           <p className="text-xs text-pcs-textDim mt-0.5">${bt.symbol}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <span className="rounded-md border border-pcs-primary/25 bg-pcs-primary/10 px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wide text-pcs-primaryBright">
+              {engineMeta.title}
+            </span>
+            <span className="rounded-md border border-white/10 px-1.5 py-0.5 font-code text-[9px] text-pcs-textSub">
+              {engineMeta.creatorShare}% creator
+            </span>
+          </div>
         </div>
 
         {/* Contract address — truncated + one-tap copy (clint). Real keyboard-focusable button, a
@@ -389,9 +397,9 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
           </div>
         )}
 
-        {/* Curve progress — real % of the launch inventory BOUGHT, on-chain (non-graduated). Tooltip
+        {/* Curve progress — real % of the launch inventory BOUGHT, on-chain. Tooltip
             flags it's a live two-way level (rises on net buys, dips on net sells) — shiro 21736. */}
-        {!graduated && pool.progress !== null && (
+        {pool.progress !== null && (
           <div title="% of the launch curve bought so far — rises on net buys, dips on net sells (a live level, not a one-way counter)">
             <div className="flex justify-between text-[10px] text-pcs-textDim mb-1">
               <span>Curve bought</span>
@@ -451,6 +459,17 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   const { pools, loading, refetch } = useHydeLaunches(chainId);
   const navigate = useNavigate();
   const { address } = useAccount();
+  const engineCapabilities = chainEngineCapabilities(chainId);
+  const engineLabels = engineCapabilities.map((capability) => ENGINE_META[capability.engine]);
+  const creatorShares = [...new Set(engineLabels.map((meta) => meta.creatorShare))].sort((a, b) => a - b);
+  const creatorShareLabel = creatorShares.length === 0
+    ? "—"
+    : creatorShares.length === 1
+      ? `${creatorShares[0]}%`
+      : `${creatorShares[0]}–${creatorShares[creatorShares.length - 1]}%`;
+  const routeLabel = engineCapabilities.length === 1
+    ? (engineCapabilities[0].engine === "v4-hook" ? "V4 hook" : "V3 single")
+    : `${engineCapabilities.length} engines`;
 
   // My Launches = the connected wallet's own-stack launches (creator/creatorClaimable are null on the
   // Doppler mainnet rail, so it's empty there). Sorted by claimable fees (desc) or market cap.
@@ -498,16 +517,16 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             <span className="live-ping" />
             Hydeout protocol · depth {chainId.toLocaleString()}
           </div>
-          <h1 className="mt-5 font-display text-4xl font-semibold leading-[0.98] tracking-[-0.04em] text-[var(--term-text)] sm:text-5xl lg:text-6xl">
+          <h1 className="mt-3 font-display text-4xl font-semibold leading-[0.98] tracking-[-0.04em] text-[var(--term-text)] sm:text-5xl lg:text-6xl">
             Launch from
             <span className="block trench-title-accent">the deep.</span>
           </h1>
-          <p className="mt-5 max-w-xl text-sm leading-6 text-[var(--term-sub)] sm:text-base">
+          <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--term-sub)] sm:text-base">
             Build quietly. Surface with impact. Shape a token, verify its route, and release it through Hydeout.
           </p>
-          <div className="mt-7 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             <span className="hero-proof"><strong>1B</strong> single-sided supply</span>
-            <span className="hero-proof"><strong>90%</strong> creator fees</span>
+            <span className="hero-proof"><strong>{creatorShareLabel}</strong> creator fees</span>
             <span className="hero-proof"><strong>∞</strong> locked liquidity</span>
           </div>
         </div>
@@ -519,7 +538,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
           <img src="/logo/trademark-shark-light.png" alt="" />
           <div className="guardian-readout">
             <span>Route</span>
-            <strong>{isTestnet ? "Sandbox" : "Protected"}</strong>
+            <strong>{isTestnet ? "V4 sandbox" : routeLabel}</strong>
           </div>
         </div>
       </section>
@@ -544,9 +563,9 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         <p className="mt-1 text-sm text-[var(--term-sub)]">
           {isTestnet
             ? "Live launches on Robinhood Testnet — custody-locked liquidity."
-            : chainEngineCapabilities(chainId)[0]?.engine === "v3-single-sided"
-              ? `Single-sided launches on ${chainEngineCapabilities(chainId)[0]?.name ?? "this chain"} — liquidity permanently locked.`
-              : `Live token launches on ${chainEngineCapabilities(chainId)[0]?.name ?? "Robinhood Chain"}.`}
+            : engineCapabilities[0]?.engine === "v3-single-sided"
+              ? `Single-sided launches on ${engineCapabilities[0]?.name ?? "this chain"} — liquidity permanently locked.`
+              : `Live token launches on ${engineCapabilities[0]?.name ?? "Robinhood Chain"}.`}
         </p>
       </div>
 

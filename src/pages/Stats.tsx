@@ -1,13 +1,14 @@
 import { useNavigate } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
+import { chainEngineCapabilities, ENGINE_META } from "../utils/chainRegistry";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div className="rounded-2xl p-5" style={{ background: "#121419", border: "1px solid #22252D" }}>
+    <div className="sonar-metric rounded-2xl p-4" style={{ background: "#121419", border: "1px solid #22252D" }}>
       <p className="text-xs text-pcs-textDim">{label}</p>
-      <p className="mt-2 font-display text-4xl font-bold text-pcs-text tabular-nums">{value}</p>
+      <p className="mt-1.5 font-display text-3xl font-bold text-pcs-text tabular-nums">{value}</p>
       <p className="mt-2 text-[11px] leading-relaxed text-pcs-textDim">{detail}</p>
     </div>
   );
@@ -27,11 +28,18 @@ function timeAgo(iso: string): string {
 
 export function StatsPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
   if (chainId !== ROBINHOOD_CHAIN_ID) {
+    const capability = chainEngineCapabilities(chainId)[0];
+    const meta = capability ? ENGINE_META[capability.engine] : null;
     return (
-      <div className="mx-auto w-full max-w-6xl px-4">
+      <div className="hyde-page hyde-stats mx-auto w-full max-w-6xl px-4" data-depth-label="Protocol sonar · live reads">
         <h1 className="font-display text-2xl font-semibold text-pcs-text">Hydeout Stats</h1>
-        <div className="mt-6 rounded-2xl p-8 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
-          <p className="text-sm text-pcs-textSub">Own-stack production stats are available on Robinhood Chain 4663.</p>
+        <div className="mt-4 rounded-2xl p-6 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
+          <p className="text-sm font-semibold text-pcs-text">{meta?.title ?? "Unsupported launch route"}</p>
+          <p className="mt-2 text-sm text-pcs-textSub">
+            {meta
+              ? `${meta.feeSplitLabel}. Chain-scoped launch statistics will appear when its indexed event reader is live.`
+              : "This chain has no configured Hydeout launcher."}
+          </p>
         </div>
       </div>
     );
@@ -45,10 +53,11 @@ function MainnetStats() {
   const { pools, loading, error, refetch } = useHydeLaunches(ROBINHOOD_CHAIN_ID);
   const wethPaired = pools.filter((p) => p.quoteToken.symbol.toUpperCase() === "WETH").length;
   const hoodiePaired = pools.filter((p) => p.quoteToken.symbol.toUpperCase() === "HOODIE").length;
+  const v4Launches = pools.filter((p) => p.launchEngine === "v4-hook").length;
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4">
-      <div className="mb-8">
+    <div className="hyde-page hyde-stats mx-auto w-full max-w-6xl px-4" data-depth-label="Protocol sonar · live reads">
+      <div className="mb-5">
         <h1 className="font-display text-2xl font-semibold text-pcs-text">Hydeout Stats</h1>
         <p className="mt-1 text-sm text-pcs-textSub">
           Live own-stack launch activity on Robinhood Chain. Doppler tokens are excluded.
@@ -60,32 +69,37 @@ function MainnetStats() {
         Live · WETH factory + HOODIE engine
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
           label="Tracked own-stack launches"
           value={loading || error ? "—" : pools.length.toLocaleString("en-US")}
           detail="Recent on-chain launch events loaded from Hydeout's two production stacks."
         />
         <Metric
-          label="WETH-paired"
-          value={loading || error ? "—" : wethPaired.toLocaleString("en-US")}
-          detail="Tokens emitted by the live WETH HydeTokenFactory."
+          label="V4 hook launches"
+          value={loading || error ? "—" : v4Launches.toLocaleString("en-US")}
+          detail="90% creator · 5% Hyde · 5% auto-compounding locked LP."
         />
         <Metric
-          label="HOODIE-paired"
+          label="WETH-paired V4"
+          value={loading || error ? "—" : wethPaired.toLocaleString("en-US")}
+          detail="V4 launches paired against wrapped ETH."
+        />
+        <Metric
+          label="HOODIE-paired V4"
           value={loading || error ? "—" : hoodiePaired.toLocaleString("en-US")}
-          detail="Tokens emitted by the live HOODIE launcher engine."
+          detail="V4 launches paired against the HOODIE numeraire."
         />
       </div>
 
-      <div className="mb-3 mt-10 flex items-center justify-between">
+      <div className="mb-3 mt-7 flex items-center justify-between">
         <h2 className="text-[11px] font-semibold uppercase tracking-wide text-pcs-textDim">Recent own-stack launches</h2>
         <p className="text-[11px] text-pcs-textDim">on-chain events · newest first</p>
       </div>
 
       <div className="overflow-hidden rounded-2xl" style={{ background: "#121419", border: "1px solid #22252D" }}>
         {error ? (
-          <div className="px-4 py-10 text-center">
+          <div className="px-4 py-8 text-center">
             <p className="text-sm font-medium text-pcs-textSub">Stats data is temporarily unavailable.</p>
             <p className="mt-1 text-xs text-pcs-textDim">No launch totals are shown until the indexed source responds.</p>
             <button type="button" onClick={refetch} className="mt-4 rounded-md border border-pcs-border px-3 py-1.5 text-xs font-semibold text-pcs-primary">
@@ -93,9 +107,9 @@ function MainnetStats() {
             </button>
           </div>
         ) : loading ? (
-          <div className="px-4 py-10 text-center text-sm text-pcs-textDim">Loading on-chain launches…</div>
+          <div className="px-4 py-8 text-center text-sm text-pcs-textDim">Loading on-chain launches…</div>
         ) : pools.length === 0 ? (
-          <div className="px-4 py-10 text-center">
+          <div className="px-4 py-8 text-center">
             <p className="text-sm font-medium text-pcs-textSub">No own-stack launches yet.</p>
             <p className="mt-1 text-xs text-pcs-textDim">The first WETH or HOODIE launch will appear here from its on-chain event.</p>
           </div>
@@ -111,7 +125,9 @@ function MainnetStats() {
                 <span className="block truncate text-sm font-medium text-pcs-text">{pool.baseToken.name}</span>
                 <span className="block truncate font-mono text-[11px] text-pcs-textDim">${pool.baseToken.symbol}</span>
               </span>
-              <span className="text-right text-xs font-semibold text-pcs-textSub">/{pool.quoteToken.symbol}</span>
+              <span className="text-right text-[11px] font-semibold text-pcs-textSub">
+                {ENGINE_META[pool.launchEngine].title.split(" · ")[0]} · /{pool.quoteToken.symbol}
+              </span>
               <span className="text-right text-xs text-pcs-textDim">{timeAgo(pool.createdAt)}</span>
             </button>
           ))
@@ -120,7 +136,7 @@ function MainnetStats() {
 
       <p className="mt-6 text-[11px] leading-relaxed text-pcs-textDim">
         Only metrics directly supported by the current own-stack event reader are shown. Creator payouts,
-        auto-compounded LP, protocol revenue, and all-time volume remain hidden until dedicated on-chain
+        V4 auto-compounded LP, protocol revenue, and all-time volume remain hidden until dedicated on-chain
         aggregators are deployed; this page does not estimate them.
       </p>
     </div>

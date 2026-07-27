@@ -289,7 +289,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   return (
     <div className="launch-studio">
       <aside className="launch-preview-panel">
-        <div>
+        <div className="launch-preview-intro">
           <p className="commandbar-label">Live launch profile</p>
           <p className="mt-1 text-xs text-[var(--term-dim)]">Your signal builds as each launch check clears.</p>
         </div>
@@ -313,7 +313,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
           <p className="mt-2 font-code text-sm tracking-[0.18em] text-[var(--term-teal)]">
             ${symbol.trim() || "TICKER"} · {isHoodie ? "HOODIE" : "WETH"}
           </p>
-          <p className="mt-4 line-clamp-3 min-h-[3.75rem] text-sm leading-5 text-[var(--term-sub)]">
+          <p className="mt-3 line-clamp-2 min-h-[2.5rem] text-sm leading-5 text-[var(--term-sub)]">
             {description.trim() || "Give the market a reason to follow your signal."}
           </p>
         </div>

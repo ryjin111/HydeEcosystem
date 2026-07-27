@@ -98,7 +98,7 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
 
   if (isV3Chain) {
     return (
-      <div className="pt-8">
+      <div className="hyde-page hyde-profile mx-auto w-full max-w-[900px] pt-4" data-depth-label="Hideout · wallet depth">
         <ComingChainNotice chainName={network.name} feature="Portfolio" />
       </div>
     );
@@ -106,16 +106,18 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
 
   if (!address) {
     return (
-      <Card variant="panel" className="mx-auto max-w-lg text-center">
-        <p className="py-6 text-pcs-textSub">Connect a wallet, or open a profile at /profile/&lt;address&gt;.</p>
-      </Card>
+      <div className="hyde-page hyde-profile mx-auto w-full max-w-[900px]" data-depth-label="Hideout · wallet depth">
+        <Card variant="panel" className="trench-profile-hero mx-auto max-w-lg text-center">
+          <p className="py-5 text-pcs-textSub">Connect a wallet, or open a profile at /profile/&lt;address&gt;.</p>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-[900px] space-y-5">
-      <Card variant="hero">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+    <div className="hyde-page hyde-profile mx-auto w-full max-w-[900px] space-y-4" data-depth-label="Hideout · wallet depth">
+      <Card variant="hero" className="trench-profile-hero">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="h-14 w-14 shrink-0 rounded-2xl bg-gradient-to-br from-pcs-primary/50 to-pcs-cardLight" />
           <div className="min-w-0 flex-1">
             <p className="font-mono text-lg text-pcs-text">{short(address)}</p>
@@ -131,9 +133,9 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
       <div>
         <SectionLabel>Token Holdings</SectionLabel>
         {loading ? (
-          <p className="py-10 text-center text-pcs-textSub">Loading holdings…</p>
+          <p className="py-8 text-center text-pcs-textSub">Loading holdings…</p>
         ) : holdings.length === 0 ? (
-          <Card variant="panel"><p className="py-6 text-center text-pcs-textSub">No Hydeout launch tokens held by this wallet.</p></Card>
+          <Card variant="panel"><p className="py-5 text-center text-pcs-textSub">No Hydeout launch tokens held by this wallet.</p></Card>
         ) : (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">{holdings.map((h) => <HoldingRow key={h.address} h={h} />)}</div>
         )}

@@ -267,6 +267,7 @@ export async function fetchLaunchToken(address: `0x${string}`): Promise<DopplerP
     address, chainId: ROBINHOOD_CHAIN_ID,
     baseToken: { address, name, symbol, decimals: 18 },
     quoteToken: { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    launchEngine: "v4-hook",
     // type refined by the Token page from the DEXScreener pair (has pool = graduated)
     type: "v4", dollarLiquidity: null, volumeUsd: null, marketCapUsd: null, priceUsd: null,
     createdAt: new Date(0).toISOString(), // exact create time is unindexed; omitted honestly
@@ -444,6 +445,7 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
       chainId: RH_TESTNET_ID,
       baseToken: { address: token, name, symbol, decimals: 18 },
       quoteToken: { address: ROBINHOOD_TESTNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+      launchEngine: "v4-hook",
       type: "v4",
       dollarLiquidity: null,
       volumeUsd: null,
@@ -494,6 +496,7 @@ export async function fetchTestnetLaunchToken(address: `0x${string}`): Promise<D
     address, chainId: RH_TESTNET_ID,
     baseToken: { address, name, symbol, decimals: 18 },
     quoteToken: { address: ROBINHOOD_TESTNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    launchEngine: "v4-hook",
     type: "v4", dollarLiquidity: null, volumeUsd: null, marketCapUsd: null, priceUsd: null,
     createdAt: new Date(0).toISOString(), // exact create time unindexed on the single-read path
     progress: null,
@@ -533,6 +536,7 @@ async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerP
     quoteToken: isHoodiePair
       ? { address: MAINNET_HOODIE, name: "Hoodie", symbol: "HOODIE", decimals: 18 }
       : { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    launchEngine: "v4-hook",
     type: "v4",
     dollarLiquidity: null,
     volumeUsd: null,
@@ -600,6 +604,7 @@ async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
         quoteToken: row.isHoodiePair
           ? { address: MAINNET_HOODIE, name: "Hoodie", symbol: "HOODIE", decimals: 18 }
           : { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+        launchEngine: "v4-hook",
         type: "v4",
         dollarLiquidity: null,
         volumeUsd: null,
@@ -630,7 +635,7 @@ async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
   });
 }
 
-const MAINNET_LAUNCH_CACHE_KEY = "hyde_mainnet_launches_v2";
+const MAINNET_LAUNCH_CACHE_KEY = "hyde_mainnet_launches_v3";
 const MAINNET_LAUNCH_CACHE_TTL = 5 * 60 * 1000;
 let mainnetLaunchMemoryCache: { at: number; pools: DopplerPool[] } | null = null;
 let mainnetLaunchInFlight: Promise<DopplerPool[]> | null = null;

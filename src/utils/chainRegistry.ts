@@ -315,6 +315,9 @@ export interface EngineMeta {
   subtitle: string;
   feeSplitLabel: string;
   trustLine: string;
+  creatorShare: number;
+  hydeShare: number;
+  lockedLpShare: number;
 }
 export const ENGINE_META: Record<LaunchEngine, EngineMeta> = {
   "v3-single-sided": {
@@ -322,12 +325,18 @@ export const ENGINE_META: Record<LaunchEngine, EngineMeta> = {
     subtitle: "Concentrated single-sided LP, permanently locked.",
     feeSplitLabel: "95% creator • 5% Hyde", // kami 24242 — matches _split BPS exactly
     trustLine: "Liquidity permanently locked; principal cannot be removed.",
+    creatorShare: 95,
+    hydeShare: 5,
+    lockedLpShare: 0,
   },
   "v4-hook": {
     title: "V4 · Hook pool",
     subtitle: "Dynamic-fee hook + auto-compound.",
     feeSplitLabel: "90% creator • 5% Hyde • 5% locked LP",
     trustLine: "Liquidity locked; 5% of every fee auto-compounds into locked LP.",
+    creatorShare: 90,
+    hydeShare: 5,
+    lockedLpShare: 5,
   },
 };
 

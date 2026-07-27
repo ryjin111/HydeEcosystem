@@ -59,26 +59,44 @@ function EngineBody({ engine, chainId, chainName }: { engine: LaunchEngine; chai
   );
 }
 
+function EngineRouteBanner({ engine }: { engine: LaunchEngine }) {
+  const meta = ENGINE_META[engine];
+  return (
+    <div className="engine-identity-bar">
+      <div>
+        <p className="commandbar-label">Detected launcher</p>
+        <p className="mt-1 font-display text-sm font-semibold text-pcs-text">{meta.title}</p>
+      </div>
+      <div className="min-w-0 sm:text-right">
+        <p className="font-code text-[11px] text-pcs-primaryBright">{meta.feeSplitLabel}</p>
+        <p className="mt-1 text-[10px] leading-4 text-pcs-textDim">{meta.trustLine}</p>
+      </div>
+    </div>
+  );
+}
+
 /** 2+ live engines on one chain (none today): a minimal engine-mode selector over the registry-derived
  *  engines. Kept so the render rule holds if a chain (e.g. Robinhood) ever passes a second engine row. */
 function MultiEngineLaunch({ engines, chainId, chainName }: { engines: LaunchEngine[]; chainId: number; chainName: string }) {
   const [picked, setPicked] = useState<LaunchEngine>(engines[0]);
   return (
-    <div className="mx-auto flex w-full max-w-[680px] flex-col gap-3">
-      <div className="grid grid-cols-2 gap-1 rounded-lg border border-pcs-border bg-pcs-input p-1">
+    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3">
+      <div className="grid grid-cols-1 gap-2 rounded-xl border border-pcs-border bg-pcs-input p-2 sm:grid-cols-2">
         {engines.map((e) => (
           <button
             key={e}
             onClick={() => setPicked(e)}
             className={cx(
-              "rounded-md py-2 text-xs font-semibold transition",
+              "engine-route-button rounded-lg p-3 text-left text-xs transition",
               picked === e ? "border border-pcs-primary/40 bg-pcs-primary/15 text-pcs-primaryBright" : "border border-transparent text-pcs-textSub hover:text-pcs-text",
             )}
           >
-            {ENGINE_META[e].title}
+            <span className="block font-semibold">{ENGINE_META[e].title}</span>
+            <span className="mt-1 block font-code text-[10px]">{ENGINE_META[e].feeSplitLabel}</span>
           </button>
         ))}
       </div>
+      <EngineRouteBanner engine={picked} />
       <EngineBody engine={picked} chainId={chainId} chainName={chainName} />
     </div>
   );
@@ -105,7 +123,12 @@ export function EngineAwareLaunch({ defaultChainId = 4663 }: { defaultChainId?: 
   }
 
   if (engines.length === 1) {
-    return <EngineBody engine={engines[0].engine} chainId={chainId} chainName={chainName} />;
+    return (
+      <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3">
+        <EngineRouteBanner engine={engines[0].engine} />
+        <EngineBody engine={engines[0].engine} chainId={chainId} chainName={chainName} />
+      </div>
+    );
   }
 
   // 2+ live engines (none today) — engine-mode selector over the registry-derived engines.

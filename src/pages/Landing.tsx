@@ -10,12 +10,12 @@ import { CoinCard } from "./Discover";
 const ROBINHOOD_CHAIN_ID = 4663;
 const MARKET_ROW_COUNT = 6;
 
-type MarketSort = "trending" | "new" | "graduating" | "mcap";
+type MarketSort = "volume" | "new" | "liquidity" | "mcap";
 
 const MARKET_TABS: { id: MarketSort; label: string }[] = [
-  { id: "trending", label: "Trending" },
+  { id: "volume", label: "24h Volume" },
   { id: "new", label: "New" },
-  { id: "graduating", label: "Graduating" },
+  { id: "liquidity", label: "Top Liquidity" },
   { id: "mcap", label: "Top MCap" },
 ];
 
@@ -38,19 +38,13 @@ function formatUsd(value: number | null, compact = false): string {
   return `$${value.toLocaleString("en-US", { maximumFractionDigits: value < 1 ? 6 : 2 })}`;
 }
 
-function graduation(pool: DopplerPool): number | null {
-  if (pool.type === "v2") return 100;
-  const progress = numeric(pool.progress);
-  return progress == null ? null : Math.max(0, Math.min(100, progress));
-}
-
 function sortMarket(pools: DopplerPool[], sort: MarketSort): DopplerPool[] {
   return [...pools].sort((a, b) => {
     if (sort === "new") {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     }
-    if (sort === "graduating") {
-      return (graduation(b) ?? -1) - (graduation(a) ?? -1);
+    if (sort === "liquidity") {
+      return (numeric(b.dollarLiquidity) ?? -1) - (numeric(a.dollarLiquidity) ?? -1);
     }
     if (sort === "mcap") {
       return (numeric(b.marketCapUsd) ?? -1) - (numeric(a.marketCapUsd) ?? -1);
@@ -69,14 +63,16 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   const { pools, loading, error, refetch } = useHydeLaunches(chainId);
   const { address, isConnected } = useAccount();
   const { connectAsync, connectors, isPending } = useConnect();
-  const [marketSort, setMarketSort] = useState<MarketSort>("trending");
+  const [marketSort, setMarketSort] = useState<MarketSort>("volume");
 
-  const capability = chainEngineCapabilities(chainId)[0];
+  const capabilities = chainEngineCapabilities(chainId);
+  const capability = capabilities[0];
   const chainName = capability?.name ?? "Robinhood Chain";
   const v3Capability = chainV3Capability(chainId);
-  // Preserve the already-audited Robinhood behavior; Stable V3 is fail-closed from its evidence status.
-  const launchLive = !v3Capability || v3Capability.status === "live";
-  const isStableV3 = capability?.engine === "v3-single-sided";
+  // A coming V3 row must not hide a live V4 launcher on the same chain.
+  const launchLive = capabilities.some((item) => item.engine === "v4-hook")
+    || v3Capability?.status === "live";
+  const isStableV3 = capabilities.length > 0 && capabilities.every((item) => item.engine === "v3-single-sided");
 
   const marketRows = useMemo(
     () => sortMarket(pools, marketSort).slice(0, MARKET_ROW_COUNT),
@@ -100,7 +96,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   };
 
   return (
-    <div className="w-full">
+    <div className="hyde-page hyde-home w-full" data-depth-label="Hydeout surface · live protocol">
       {/* Four-stat protocol bar. Unknown aggregates render as em dashes, never fabricated zeroes. */}
       <section className="term-panel mb-4 grid overflow-hidden rounded-lg grid-cols-2 lg:grid-cols-4">
         <ProtocolStat
@@ -113,8 +109,8 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
       </section>
 
       {/* Reference hero band: copy on the left, protocol-volume stage on the right. */}
-      <section className="term-panel mb-8 grid overflow-hidden rounded-lg lg:grid-cols-[1.08fr,0.92fr]">
-        <div className="px-6 py-8 sm:px-8 sm:py-10">
+      <section className="surface-hero term-panel mb-6 grid overflow-hidden rounded-lg lg:grid-cols-[1.08fr,0.92fr]">
+        <div className="relative z-[1] px-5 py-6 sm:px-7 sm:py-8">
           <p className="term-label mb-3">{launchLive ? "Live launch protocol" : "Launch rail coming soon"}</p>
           <h1 className="font-display text-[34px] font-bold leading-[1.03] text-[var(--term-text)] sm:text-[44px]">
             Launch a token.
@@ -123,7 +119,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               {isStableV3 ? "Liquidity will lock forever." : "Liquidity locked forever."}
             </span>
           </h1>
-          <p className="mt-5 max-w-[610px] text-sm leading-6 text-[var(--term-sub)]">
+          <p className="mt-4 max-w-[610px] text-sm leading-6 text-[var(--term-sub)]">
             {isStableV3 ? (
               <>
                 <strong className="font-semibold text-[var(--term-text)]">Coming soon on {chainName}.</strong>{" "}
@@ -133,33 +129,33 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
             ) : (
               <>
                 <strong className="font-semibold text-[var(--term-text)]">Live on Robinhood Chain.</strong>{" "}
-                Creators keep 90% of fees; 5% locks into LP nobody can pull, auto-compounding. Proven in
-                code, not promised.
+                V4 routes 90% of fees to creators, 5% to Hyde, and 5% into locked auto-compounding LP.
+                Proven in code, not promised.
               </>
             )}
           </p>
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="mt-5 flex flex-wrap gap-2.5">
             {launchLive ? (
-              <NavLink to="/launchpad?tab=launch" className="btn-terminal px-6 py-3">
+              <NavLink to="/launchpad?tab=launch" className="btn-terminal px-5 py-2.5">
                 Launch a Token
               </NavLink>
             ) : (
-              <button type="button" className="btn-terminal px-6 py-3" disabled>
+              <button type="button" className="btn-terminal px-5 py-2.5" disabled>
                 Launch — Coming soon
               </button>
             )}
-            <a href="#live-market" className="btn-ghost-term px-6 py-3">
+            <a href="#live-market" className="btn-ghost-term px-5 py-2.5">
               Browse market
             </a>
           </div>
         </div>
 
         <div
-          className="flex min-h-[220px] flex-col justify-center px-6 py-8 sm:px-8 lg:border-l"
+          className="relative z-[1] flex min-h-[180px] flex-col justify-center px-5 py-6 sm:px-7 lg:border-l"
           style={{ borderColor: "var(--term-border)" }}
         >
           <p className="term-label">Protocol volume · 30d</p>
-          <div className="relative mt-5 h-28 overflow-hidden rounded-md border border-dashed border-[var(--term-border)] bg-[var(--term-panel-2)]">
+          <div className="relative mt-4 h-24 overflow-hidden rounded-md border border-dashed border-[var(--term-border)] bg-[var(--term-panel-2)]">
             <div className="absolute inset-x-0 top-1/3 border-t border-[var(--term-border-soft)]" />
             <div className="absolute inset-x-0 top-2/3 border-t border-[var(--term-border-soft)]" />
             <div className="absolute inset-0 flex items-center justify-center">
@@ -175,7 +171,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
       </section>
 
       {/* Card-first discovery mirrors the token-first launchpad flow: pick a token, then trade on its page. */}
-      <section id="live-market" className="mb-9 scroll-mt-28">
+      <section id="live-market" className="mb-7 scroll-mt-28">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <h2 className="mr-3 font-display text-sm font-bold uppercase tracking-[0.14em] text-[var(--term-sub)]">
             Live market
@@ -213,7 +209,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
             No launches indexed on {chainName} yet.
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {marketRows.map((pool) => (
               <CoinCard key={`${pool.chainId}-${pool.address}`} p={pool} />
             ))}
@@ -225,11 +221,11 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
         <h2 className="mb-3 font-display text-sm font-bold uppercase tracking-[0.14em] text-[var(--term-sub)]">
           Your positions
         </h2>
-        <div className="rounded-lg border border-dashed border-[var(--term-border)] bg-[var(--term-panel-2)] px-5 py-12 text-center sm:py-14">
+        <div className="rounded-lg border border-dashed border-[var(--term-border)] bg-[var(--term-panel-2)] px-5 py-8 text-center sm:py-10">
           <TerminalArch />
           {isConnected && address ? (
             <>
-              <h3 className="mt-5 font-display text-lg font-bold uppercase text-[var(--term-text)]">
+              <h3 className="mt-4 font-display text-lg font-bold uppercase text-[var(--term-text)]">
                 Wallet connected
               </h3>
               <p className="mx-auto mt-2 max-w-md text-sm text-[var(--term-sub)]">
@@ -238,13 +234,13 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               <p className="mx-auto mt-4 w-fit rounded-md border border-[var(--term-border)] px-3 py-2 font-code text-[11px] text-[var(--term-dim)]">
                 {address.slice(0, 8)}…{address.slice(-6)}
               </p>
-              <NavLink to="/profile" className="btn-terminal mt-5 inline-flex px-6 py-3">
+              <NavLink to="/profile" className="btn-terminal mt-4 inline-flex px-5 py-2.5">
                 Open portfolio
               </NavLink>
             </>
           ) : (
             <>
-              <h3 className="mt-5 font-display text-lg font-bold uppercase text-[var(--term-text)]">
+              <h3 className="mt-4 font-display text-lg font-bold uppercase text-[var(--term-text)]">
                 No wallet connected
               </h3>
               <p className="mx-auto mt-2 max-w-md text-sm text-[var(--term-sub)]">
@@ -255,7 +251,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               </p>
               <button
                 type="button"
-                className="btn-terminal mt-5 px-6 py-3"
+                className="btn-terminal mt-4 px-5 py-2.5"
                 onClick={connectWallet}
                 disabled={isPending}
               >

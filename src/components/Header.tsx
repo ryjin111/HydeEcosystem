@@ -5,7 +5,7 @@ import { useAccount, useBalance, useConnect, useDisconnect, useSwitchChain } fro
 import { ConnectorAlreadyConnectedError } from "wagmi";
 import type { NetworkConfig } from "../utils/constants";
 import { shortenAddress } from "../utils/format";
-import { chainV3Capability } from "../utils/chainRegistry";
+import { chainEngineCapabilities } from "../utils/chainRegistry";
 
 type HeaderProps = {
   selectedNetwork: NetworkConfig;
@@ -19,10 +19,17 @@ type EthereumProvider = {
 
 // Discovery is the card board; trading lives on each token page.
 const NAV: { label: string; to: string; match: (p: string, s: string) => boolean }[] = [
+  { label: "Home", to: "/", match: (p) => p === "/" },
   { label: "Launch", to: "/launchpad?tab=launch", match: (p) => p.startsWith("/launchpad") },
-  { label: "Discover", to: "/discover", match: (p) => p === "/" || p.startsWith("/discover") || p.startsWith("/token/") },
+  { label: "Discover", to: "/discover", match: (p) => p.startsWith("/discover") || p.startsWith("/token/") },
   { label: "Stats", to: "/stats", match: (p) => p.startsWith("/stats") },
 ];
+
+function launchRouteComing(chainId: number): boolean {
+  const capabilities = chainEngineCapabilities(chainId);
+  return capabilities.length > 0
+    && capabilities.every((capability) => capability.engine === "v3-single-sided" && capability.status !== "live");
+}
 
 export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderProps) {
   const { address, isConnected, chainId } = useAccount();
@@ -30,8 +37,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
   const { disconnect } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const loc = useLocation();
-  const v3Capability = chainV3Capability(selectedNetwork.id);
-  const selectedNetworkComing = Boolean(v3Capability && v3Capability.status !== "live");
+  const selectedNetworkComing = launchRouteComing(selectedNetwork.id);
 
   const { data: nativeBalance } = useBalance({ address, chainId: selectedNetwork.id });
 
@@ -134,7 +140,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
           </NavLink>
 
           {/* Desktop nav */}
-          <nav className="ml-2 hidden items-center gap-1 md:flex">
+          <nav className="ml-2 hidden items-center gap-1 md:flex xl:hidden">
             {NAV.map((n) => (
               <NavLink key={n.label} to={n.to} className={navCls(n.match(loc.pathname, loc.search))}>
                 {n.label}
@@ -161,7 +167,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
               {networks.map((net) => (
                 <option key={net.id} value={net.id} style={{ background: "#0e1114" }}>
                   {net.name} · {net.id}
-                  {chainV3Capability(net.id) && chainV3Capability(net.id)?.status !== "live" ? " · Coming" : ""}
+                  {launchRouteComing(net.id) ? " · Coming" : ""}
                 </option>
               ))}
             </select>
@@ -193,7 +199,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
 
         {/* Mobile navigation keeps the reference hierarchy without forcing the chain control off-screen. */}
         <nav
-          className="grid grid-cols-3 gap-1 px-3 pb-2 md:hidden"
+          className="grid grid-cols-4 gap-1 px-3 pb-2 md:hidden"
           style={{ borderTop: "1px solid var(--term-border-soft)" }}
         >
           {NAV.map((n) => (
@@ -220,7 +226,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
             {networks.map((net) => (
               <option key={net.id} value={net.id} style={{ background: "#0e1114" }}>
                 {net.name} · {net.id}
-                {chainV3Capability(net.id) && chainV3Capability(net.id)?.status !== "live" ? " · Coming" : ""}
+                {launchRouteComing(net.id) ? " · Coming" : ""}
               </option>
             ))}
           </select>
