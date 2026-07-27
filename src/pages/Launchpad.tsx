@@ -483,7 +483,46 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   };
 
   return (
-    <div className="w-full">
+    <div className="trench-launchpad w-full">
+      <section className="trench-hero">
+        <div className="trench-grid" aria-hidden="true" />
+        <div className="trench-bubbles" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
+
+        <div className="relative z-10 max-w-2xl">
+          <div className="protocol-kicker">
+            <span className="live-ping" />
+            Hydeout protocol · depth {chainId.toLocaleString()}
+          </div>
+          <h1 className="mt-5 font-display text-4xl font-semibold leading-[0.98] tracking-[-0.04em] text-[var(--term-text)] sm:text-5xl lg:text-6xl">
+            Launch from
+            <span className="block trench-title-accent">the deep.</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-sm leading-6 text-[var(--term-sub)] sm:text-base">
+            Build quietly. Surface with impact. Shape a token, verify its route, and release it through Hydeout.
+          </p>
+          <div className="mt-7 flex flex-wrap gap-2">
+            <span className="hero-proof"><strong>1B</strong> single-sided supply</span>
+            <span className="hero-proof"><strong>90%</strong> creator fees</span>
+            <span className="hero-proof"><strong>∞</strong> locked liquidity</span>
+          </div>
+        </div>
+
+        <div className="trench-guardian" aria-hidden="true">
+          <div className="sonar-ring sonar-ring-one" />
+          <div className="sonar-ring sonar-ring-two" />
+          <div className="sonar-ring sonar-ring-three" />
+          <img src="/logo/trademark-shark-light.png" alt="" />
+          <div className="guardian-readout">
+            <span>Route</span>
+            <strong>{isTestnet ? "Sandbox" : "Protected"}</strong>
+          </div>
+        </div>
+      </section>
       {/* Testnet indicator — unmistakable; nothing can read as mainnet/real money (shiro #1). */}
       {isTestnet && (
         <div
@@ -499,7 +538,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       )}
 
       {/* Header */}
-      <div className="mb-6 border-b border-[var(--term-border)] pb-5">
+      <div className="launchpad-legacy-heading mb-6 border-b border-[var(--term-border)] pb-5">
         <p className="term-label mb-2">Hydeout protocol</p>
         <h1 className="font-display text-2xl font-semibold text-[var(--term-text)]">Launchpad</h1>
         <p className="mt-1 text-sm text-[var(--term-sub)]">
@@ -513,7 +552,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
 
       {/* Tabs */}
       <div
-        className="mb-6 flex w-fit gap-1 rounded-lg p-1"
+        className="trench-route-tabs mb-6 flex w-fit gap-1 rounded-lg p-1"
         style={{ background: "var(--term-panel-2)", border: "1px solid var(--term-border)" }}
       >
         {(["launch", "mine"] as const).map((t) => (
