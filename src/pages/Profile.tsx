@@ -5,7 +5,19 @@
 // honest roadmap line. Balances fail neutral, never block the page. No block-0 scans.
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useAccount } from "wagmi";
+import toast from "react-hot-toast";
+import { ConnectorAlreadyConnectedError, useAccount, useConnect } from "wagmi";
+import {
+  ArrowTopRightOnSquareIcon,
+  BanknotesIcon,
+  ChartBarSquareIcon,
+  CheckIcon,
+  CircleStackIcon,
+  ClipboardDocumentIcon,
+  RocketLaunchIcon,
+  ShieldCheckIcon,
+  WalletIcon,
+} from "@heroicons/react/24/outline";
 import { isMainnetOwnStackLaunch } from "../hooks/useDopplerTokens";
 import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { ROBINHOOD_MAINNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
@@ -89,12 +101,26 @@ function HoldingRow({ h }: { h: Holding }) {
 export function ProfilePage({ network }: { network: NetworkConfig }) {
   const { address: routeAddr } = useParams();
   const { address: connected } = useAccount();
+  const { connectAsync, connectors, isPending } = useConnect();
   const address = (routeAddr || connected || "").toLowerCase();
   const [copied, setCopied] = useState(false);
   // Stable-specific: a single-sided V3 chain has no chain-scoped holdings source (the query is Robinhood-
   // scoped). Disable the request AND fail the render closed (kami 24334 / 24323 #4). Robinhood untouched.
   const isV3Chain = !!chainV3Capability(network.id);
   const { holdings, loading } = useHydeHoldings(address, !isV3Chain);
+  const connectWallet = async () => {
+    const connector = connectors[0];
+    if (!connector) {
+      toast.error("Wallet connector not found");
+      return;
+    }
+    try {
+      await connectAsync({ connector });
+    } catch (error) {
+      if (error instanceof ConnectorAlreadyConnectedError) return;
+      toast.error("Wallet connection failed");
+    }
+  };
 
   if (isV3Chain) {
     return (
@@ -106,45 +132,145 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
 
   if (!address) {
     return (
-      <div className="hyde-page hyde-profile mx-auto w-full max-w-[900px]" data-depth-label="Hideout · wallet depth">
-        <Card variant="panel" className="trench-profile-hero mx-auto max-w-lg text-center">
-          <p className="py-5 text-pcs-textSub">Connect a wallet, or open a profile at /profile/&lt;address&gt;.</p>
-        </Card>
+      <div className="hyde-page hyde-profile mx-auto w-full max-w-[1040px] space-y-4" data-depth-label="Hideout · wallet depth">
+        <section className="profile-vault-empty">
+          <div className="profile-vault-copy">
+            <div className="inline-flex items-center gap-2 rounded-full border border-pcs-primary/20 bg-pcs-primary/[0.06] px-3 py-1.5">
+              <span className="hyde-pulse h-1.5 w-1.5 rounded-full bg-pcs-primary" />
+              <span className="font-code text-[10px] uppercase tracking-[0.16em] text-pcs-primary">Private wallet depth</span>
+            </div>
+            <h1 className="mt-5 max-w-xl font-display text-3xl font-bold leading-tight text-pcs-text sm:text-[40px]">
+              Your launches, positions, and fees—one layer down.
+            </h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-pcs-textSub">
+              Connect your wallet to reveal the Hydeout assets tied to it. Portfolio data is read from
+              the selected chain and stays hidden until you connect.
+            </p>
+            <button
+              type="button"
+              className="btn-terminal mt-6 inline-flex items-center gap-2 px-5 py-2.5"
+              onClick={connectWallet}
+              disabled={isPending}
+            >
+              <WalletIcon className="h-4 w-4" />
+              {isPending ? "Opening wallet…" : "Connect wallet"}
+            </button>
+            <p className="mt-3 flex items-center gap-1.5 text-[11px] text-pcs-textDim">
+              <ShieldCheckIcon className="h-3.5 w-3.5 text-pcs-primary" />
+              Read-only until you choose to sign a transaction.
+            </p>
+          </div>
+
+          <div className="profile-vault-sonar" aria-hidden="true">
+            <span className="profile-sonar-ring profile-sonar-ring-1" />
+            <span className="profile-sonar-ring profile-sonar-ring-2" />
+            <span className="profile-sonar-ring profile-sonar-ring-3" />
+            <div className="profile-sonar-core">
+              <WalletIcon className="h-8 w-8" />
+            </div>
+          </div>
+        </section>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            { label: "My launches", detail: "Creator deployments", icon: RocketLaunchIcon },
+            { label: "Token positions", detail: "Verified Hyde holdings", icon: CircleStackIcon },
+            { label: "Claimable fees", detail: "Chain-scoped rewards", icon: BanknotesIcon },
+          ].map(({ label, detail, icon: Icon }) => (
+            <div key={label} className="profile-preview-card">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-pcs-primary/20 bg-pcs-primary/[0.07] text-pcs-primary">
+                <Icon className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-pcs-text">{label}</p>
+                <p className="mt-0.5 text-[11px] text-pcs-textDim">{detail}</p>
+              </div>
+              <span className="ml-auto font-code text-[10px] uppercase tracking-wider text-pcs-textDim">Locked</span>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="hyde-page hyde-profile mx-auto w-full max-w-[900px] space-y-4" data-depth-label="Hideout · wallet depth">
+    <div className="hyde-page hyde-profile mx-auto w-full max-w-[1040px] space-y-4" data-depth-label="Hideout · wallet depth">
       <Card variant="hero" className="trench-profile-hero">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="h-14 w-14 shrink-0 rounded-2xl bg-gradient-to-br from-pcs-primary/50 to-pcs-cardLight" />
+        <div className="relative z-[1] flex flex-col gap-4 sm:flex-row sm:items-center">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-pcs-primary/25 bg-pcs-primary/[0.08] text-pcs-primary">
+            <WalletIcon className="h-6 w-6" />
+          </div>
           <div className="min-w-0 flex-1">
-            <p className="font-mono text-lg text-pcs-text">{short(address)}</p>
-            <div className="mt-1 flex flex-wrap gap-2">
-              <Button variant="ghost" size="sm" onClick={() => { navigator.clipboard?.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 1200); }}>{copied ? "Copied" : "Copy address"}</Button>
-              <a href={`${EXPLORER}/address/${address}`} target="_blank" rel="noreferrer"><Button variant="ghost" size="sm">Explorer ↗</Button></a>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-mono text-lg text-pcs-text">{short(address)}</p>
+              <span className="rounded-full border border-pcs-primary/20 bg-pcs-primary/[0.07] px-2 py-0.5 font-code text-[9px] uppercase tracking-wider text-pcs-primary">
+                {routeAddr ? "Public view" : "Connected"}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-pcs-textDim">{network.name} · on-chain portfolio</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              <Button variant="ghost" size="sm" onClick={() => { navigator.clipboard?.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 1200); }}>
+                {copied ? <CheckIcon className="h-4 w-4" /> : <ClipboardDocumentIcon className="h-4 w-4" />}
+                {copied ? "Copied" : "Copy address"}
+              </Button>
+              <a
+                href={`${EXPLORER}/address/${address}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-pcs-textSub transition hover:bg-white/[0.04] hover:text-pcs-text"
+              >
+                Explorer <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+              </a>
             </div>
           </div>
-          <Stat label="Hyde Tokens Held" value={loading ? "—" : holdings.length} />
+          <div className="grid grid-cols-2 gap-2 sm:min-w-[280px]">
+            <div className="sonar-metric rounded-xl border border-pcs-border bg-black/10 p-3">
+              <Stat label="Hyde tokens" value={loading ? "—" : holdings.length} />
+            </div>
+            <div className="sonar-metric rounded-xl border border-pcs-border bg-black/10 p-3">
+              <Stat label="Index status" value={loading ? "Syncing" : "Live"} />
+            </div>
+          </div>
         </div>
       </Card>
 
-      <div>
-        <SectionLabel>Token Holdings</SectionLabel>
+      <div className="rounded-2xl border border-pcs-border bg-pcs-cardLight p-4 sm:p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <SectionLabel>Token holdings</SectionLabel>
+            <p className="mt-1 text-xs text-pcs-textDim">Hydeout launches detected in this wallet.</p>
+          </div>
+          <ChartBarSquareIcon className="h-5 w-5 text-pcs-primary" />
+        </div>
         {loading ? (
-          <p className="py-8 text-center text-pcs-textSub">Loading holdings…</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {[0, 1].map((item) => <div key={item} className="h-[74px] animate-pulse rounded-xl border border-pcs-border bg-white/[0.02]" />)}
+          </div>
         ) : holdings.length === 0 ? (
-          <Card variant="panel"><p className="py-5 text-center text-pcs-textSub">No Hydeout launch tokens held by this wallet.</p></Card>
+          <div className="mt-4 flex flex-col items-center rounded-xl border border-dashed border-pcs-border bg-black/10 px-5 py-7 text-center">
+            <CircleStackIcon className="h-6 w-6 text-pcs-textDim" />
+            <p className="mt-3 text-sm font-semibold text-pcs-text">No Hydeout tokens detected</p>
+            <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
+              Tokens from verified Hyde launches will surface here automatically.
+            </p>
+            <Link to="/discover" className="btn-ghost-term mt-4 inline-flex items-center gap-1.5 px-4 py-2 text-xs">
+              Explore launches <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+            </Link>
+          </div>
         ) : (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">{holdings.map((h) => <HoldingRow key={h.address} h={h} />)}</div>
         )}
       </div>
 
-      <Card variant="panel">
-        <SectionLabel>Launch history & portfolio value</SectionLabel>
-        <p className="mt-2 text-sm text-pcs-textSub">Full launch history and portfolio value arrive with Hyde factory launches — including on-chain creator attribution and token pricing.</p>
-      </Card>
+      <div className="flex items-start gap-3 rounded-xl border border-pcs-border bg-pcs-card px-4 py-3.5">
+        <ShieldCheckIcon className="mt-0.5 h-5 w-5 shrink-0 text-pcs-primary" />
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-pcs-textSub">Portfolio coverage</p>
+          <p className="mt-1 text-xs leading-5 text-pcs-textDim">
+            Holdings are attributed on-chain. Creator history and priced portfolio value appear only when their verified data sources are available.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

@@ -7,6 +7,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAccount } from "wagmi";
+import { formatUnits } from "viem";
+import {
+  ArrowTopRightOnSquareIcon,
+  ArrowsRightLeftIcon,
+  SignalIcon,
+  UserGroupIcon,
+} from "@heroicons/react/24/outline";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import { WETH_CONTAINMENT } from "../utils/containment";
@@ -98,6 +105,18 @@ function useTopHolders(address?: string, chainId?: number): { holders: Holder[];
 
 const short = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
 
+function fmtTokenAmount(value: string, decimals: number): string {
+  try {
+    const amount = Number(formatUnits(BigInt(value), decimals));
+    if (!Number.isFinite(amount)) return "—";
+    if (amount >= 1_000_000) return `${(amount / 1_000_000).toFixed(amount >= 10_000_000 ? 1 : 2)}M`;
+    if (amount >= 1_000) return `${(amount / 1_000).toFixed(amount >= 100_000 ? 1 : 2)}K`;
+    return amount.toLocaleString("en-US", { maximumFractionDigits: amount < 1 ? 4 : 2 });
+  } catch {
+    return "—";
+  }
+}
+
 function timeAgo(iso: string): string | null {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t) || new Date(iso).getUTCFullYear() <= 2020) return null; // unindexed create time → omit
@@ -120,7 +139,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   // own-stack launch sources — never cross-chain data.
   const { pools } = useHydeLaunches(network.id);
   const { pair } = useDexPair(address, network.id);
-  const { holders } = useTopHolders(address, network.id);
+  const { holders, loading: holdersLoading } = useTopHolders(address, network.id);
   const [copied, setCopied] = useState(false);
   const [feedTab, setFeedTab] = useState<"trades" | "holders">("trades"); // coin-mockup: Trades/Holders tabs
   // Off-chain metadata (own-stack tokens store no tokenURI) — fetched by (chain, address); fail-neutral.
@@ -283,28 +302,110 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
           </div>
         </Card>
 
-        {/* Trades / Holders tabs (coin-mockup) — Trades tape is an honest empty state until swaps index. */}
-        <Card className="p-0 overflow-hidden">
-          <div className="flex items-center gap-5 border-b px-4" style={{ borderColor: "#1C1F26" }}>
-            {(["trades", "holders"] as const).map((t) => (
-              <button key={t} type="button" onClick={() => setFeedTab(t)} className="relative py-3 text-sm font-semibold transition" style={{ color: feedTab === t ? "#E8ECF1" : "#5D6470" }}>
-                {t === "trades" ? "Trades" : `Holders${holders.length ? ` ${holders.length}` : ""}`}
-                {feedTab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: "#2E9FE6" }} />}
-              </button>
-            ))}
+        {/* Honest activity surface: the trade tape remains explicit about indexing, while holders are a
+            Blockscout snapshot rather than an implied total holder count. */}
+        <Card className="token-activity-panel overflow-hidden p-0">
+          <div className="flex flex-col gap-3 border-b border-pcs-border px-4 pb-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <SignalIcon className="h-4 w-4 text-pcs-primary" />
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-pcs-textSub">On-chain activity</p>
+              </div>
+              <p className="mt-1 text-[11px] text-pcs-textDim">Live pool context and indexed wallet distribution.</p>
+            </div>
+            <div className="token-feed-tabs" role="tablist" aria-label="Token activity">
+              {(["trades", "holders"] as const).map((tab) => {
+                const active = feedTab === tab;
+                const Icon = tab === "trades" ? ArrowsRightLeftIcon : UserGroupIcon;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setFeedTab(tab)}
+                    className={`token-feed-tab ${active ? "token-feed-tab-active" : ""}`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {tab === "trades" ? "Trades" : "Top holders"}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="p-4">
+
+          <div className="min-h-[178px] p-4">
             {feedTab === "trades" ? (
-              <p className="py-6 text-center text-sm text-pcs-textDim">{wethContained ? "Trading is paused — launch price under review." : "No trades indexed yet — trading is live on-chain; the tape begins with on-chain swaps."}</p>
+              <div className="token-feed-empty">
+                <div className="token-feed-radar" aria-hidden="true">
+                  <ArrowsRightLeftIcon className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-pcs-text">
+                    {wethContained ? "Trade feed paused" : "Trade tape warming up"}
+                  </p>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
+                    {wethContained
+                      ? "Activity is hidden while this pool’s launch price is under review."
+                      : "Swaps are live on-chain. Indexed activity will appear here when the trade feed is connected."}
+                  </p>
+                </div>
+                {!wethContained && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-pcs-primary/20 bg-pcs-primary/[0.06] px-2.5 py-1 font-code text-[9px] uppercase tracking-wider text-pcs-primary">
+                    <span className="hyde-pulse h-1.5 w-1.5 rounded-full bg-pcs-primary" />
+                    Pool live
+                  </span>
+                )}
+              </div>
+            ) : holdersLoading ? (
+              <div className="space-y-2">
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className="h-[46px] animate-pulse rounded-lg border border-pcs-border bg-white/[0.02]" />
+                ))}
+              </div>
             ) : holders.length === 0 ? (
-              <p className="py-6 text-center text-sm text-pcs-textDim">Holder data unavailable right now.</p>
+              <div className="token-feed-empty">
+                <div className="token-feed-radar" aria-hidden="true">
+                  <UserGroupIcon className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-pcs-text">Holder snapshot unavailable</p>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
+                    No holder rows were returned by the selected chain’s explorer.
+                  </p>
+                </div>
+              </div>
             ) : (
-              <div className="space-y-1.5">
-                {holders.map((h, i) => (
-                  <a key={h.address + i} href={`${network.explorerUrl}/address/${h.address}`} target="_blank" rel="noreferrer" className="flex items-center justify-between text-xs text-pcs-textSub transition hover:text-pcs-text">
-                    <span className="font-mono">#{i + 1} {short(h.address)}</span>
+              <div className="space-y-2">
+                {holders.map((holder, index) => (
+                  <a
+                    key={holder.address + index}
+                    href={`${network.explorerUrl}/address/${holder.address}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="token-holder-row group"
+                  >
+                    <span className={`token-holder-rank ${index < 3 ? "token-holder-rank-top" : ""}`}>
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-code text-xs text-pcs-text">{short(holder.address)}</span>
+                      <span className="mt-0.5 block text-[10px] uppercase tracking-wider text-pcs-textDim">
+                        Wallet on {network.name}
+                      </span>
+                    </span>
+                    <span className="text-right">
+                      <span className="block font-code text-xs font-semibold tabular-nums text-pcs-text">
+                        {fmtTokenAmount(holder.value, pool.baseToken.decimals)}
+                      </span>
+                      <span className="mt-0.5 block font-code text-[9px] uppercase tracking-wider text-pcs-textDim">{sym}</span>
+                    </span>
+                    <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 text-pcs-textDim transition group-hover:text-pcs-primary" />
                   </a>
                 ))}
+                <p className="pt-1 text-right font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
+                  Snapshot via chain explorer
+                </p>
               </div>
             )}
           </div>

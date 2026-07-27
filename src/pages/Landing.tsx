@@ -246,9 +246,6 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               <p className="mx-auto mt-2 max-w-md text-sm text-[var(--term-sub)]">
                 Connect to view your launches, LP positions, and claimable fees.
               </p>
-              <p className="mx-auto mt-4 w-fit rounded-md border border-[var(--term-border)] px-3 py-2 font-code text-[11px] text-[var(--term-dim)]">
-                /profile/&lt;address&gt;
-              </p>
               <button
                 type="button"
                 className="btn-terminal mt-4 px-5 py-2.5"
@@ -277,7 +274,7 @@ function ProtocolStat({
   note?: string;
 }) {
   return (
-    <div className="protocol-stat min-h-[88px] px-5 py-4">
+    <div className="protocol-stat min-h-[88px] cursor-default select-none px-5 py-4" aria-label={`${label}: ${value}${note ? `, ${note}` : ""}`}>
       <p className="term-label">{label}</p>
       <div className="mt-2 flex items-baseline gap-2">
         <span className={`font-code text-xl font-semibold ${accent ? "text-[var(--term-teal)]" : "text-[var(--term-text)]"}`}>
