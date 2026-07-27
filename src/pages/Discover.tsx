@@ -4,7 +4,7 @@
 // source-true. Trending-only Hyde-blue neon (clint 21135) stays
 // DORMANT (no card flagged, no "Sort: Trending") until the adapter exposes a real market-velocity
 // signal — the CSS is kept ready (kami 21204.1/21210). Fee copy = 95% creator (LIVE rail, §3.9).
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { TokenImage } from "../components/TokenImage";
@@ -27,6 +27,22 @@ const C = {
 
 type SortKey = "new" | "top";
 type Filter = "new" | "almost" | "graduated";
+
+function LaunchLink({ p, className, children }: { p: DopplerPool; className?: string; children: ReactNode }) {
+  if (p.chainId === 988) {
+    return (
+      <a
+        href={`https://stablescan.xyz/address/${p.address}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+      >
+        {children}
+      </a>
+    );
+  }
+  return <Link to={`/token/${p.address}`} className={className}>{children}</Link>;
+}
 
 function ageOf(iso: string): string {
   const t = new Date(iso).getTime();
@@ -92,7 +108,7 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
   const graduated = p.type === "v2";
   const sym = p.baseToken.symbol || "?";
   return (
-    <Link to={`/token/${p.address}`} className="group relative block">
+    <LaunchLink p={p} className="group relative block">
       <div
         className="relative rounded-[13px] p-[14px] transition-colors"
         style={{
@@ -146,10 +162,10 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
           className="mt-3 block rounded-md py-1.5 text-center text-[11px] font-semibold transition group-hover:brightness-110"
           style={{ background: C.elevated, color: C.blueH, border: `1px solid ${C.blue}45` }}
         >
-          Open &amp; trade →
+          {p.chainId === 988 ? "View on StableScan ↗" : "Open & trade →"}
         </span>
       </div>
-    </Link>
+    </LaunchLink>
   );
 }
 
@@ -157,7 +173,7 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
 function ClosestToGraduation({ p }: { p: DopplerPool }) {
   const sym = p.baseToken.symbol || "?";
   return (
-    <Link to={`/token/${p.address}`} className="block">
+    <LaunchLink p={p} className="block">
       <div
         className="relative overflow-hidden rounded-[14px] p-5"
         style={{
@@ -191,7 +207,7 @@ function ClosestToGraduation({ p }: { p: DopplerPool }) {
           </div>
         )}
       </div>
-    </Link>
+    </LaunchLink>
   );
 }
 
@@ -207,14 +223,14 @@ function AlmostGraduated({ pools, unavailable = false }: { pools: DopplerPool[];
       ) : (
         <div className="space-y-3">
           {pools.map((p) => (
-            <Link key={p.address} to={`/token/${p.address}`} className="block">
+            <LaunchLink key={p.address} p={p} className="block">
               <div className="flex items-center gap-2">
                 <LaunchTokenImage p={p} className="h-7 w-7 shrink-0 rounded-lg text-[10px]" />
                 <span className="min-w-0 flex-1 truncate text-xs" style={{ color: C.text }}>${p.baseToken.symbol}</span>
                 <span className="font-mono text-[11px] tabular-nums" style={{ color: C.blueH }}>{(p.progress ?? 0).toFixed(0)}%</span>
               </div>
               <div className="mt-1.5"><CurveBar pct={p.progress ?? 0} /></div>
-            </Link>
+            </LaunchLink>
           ))}
         </div>
       )}

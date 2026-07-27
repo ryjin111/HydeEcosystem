@@ -117,10 +117,9 @@ export const ROBINHOOD_MAINNET: NetworkConfig = {
   tokens: ROBINHOOD_MAINNET_TOKENS,
 };
 
-// Stable (988) — the V3 reach-line target. Selectable in the global switcher so the WHOLE app derives its
-// chain context from one place (subtitle/ticker/sidebar/launch all follow). "Coming" until Hyde's V3
-// launchpad deploys → the launch page shows the fail-closed V3 coming panel. The V2/V4-shaped fields are
-// placeholders (the V3 line doesn't use them). TODO(gojo chainverify): confirm explorer + native symbol.
+// Stable (988) — live V3 reach-line deployment. Selectable in the global switcher so the WHOLE app derives
+// its chain context from one place (subtitle/ticker/sidebar/launch all follow). Runtime readiness remains
+// fail-closed through generated chainEvidenceV3; the V2/V4-shaped fields below are unused placeholders.
 export const STABLE_MAINNET: NetworkConfig = {
   id: 988,
   name: "Stable",
@@ -234,8 +233,7 @@ export const OPTIMISM_MAINNET: NetworkConfig = {
 
 export const NETWORKS: NetworkConfig[] = [
   ROBINHOOD_MAINNET,
-  STABLE_MAINNET,       // V3 reach line (988) — "coming"; global-selectable so the app derives chain context
-  ROBINHOOD_TESTNET,    // LIVE own-stack sandbox (46630) — board reads our factory's LaunchCreated
+  STABLE_MAINNET,       // LIVE V3 reach line (988); readiness is generated-evidence gated
   // OPTIMISM_MAINNET,  // legacy lane retired 2026-07-03 — Hydeout is Robinhood-only
   // INK_MAINNET,       // hidden — multichain later
   // UNICHAIN_MAINNET,  // dropped

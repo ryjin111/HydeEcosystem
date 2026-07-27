@@ -207,6 +207,15 @@ export interface V3ChainRow {
   positionManager: string;
   numeraire: NumeraireInfo;
   feeTier: number;
+  launchpad: {
+    implementation: string;
+    pad: string;
+    locker: string;
+    implementationCodeHash: string;
+    padCodeHash: string;
+    lockerCodeHash: string;
+    deploymentBlock: bigint;
+  };
   role: ChainRole;
 }
 
@@ -234,12 +243,24 @@ function v3InfraProven(row: V3ChainRow, ev: V3ChainEvidence | undefined): boolea
 
 /** Hyde's OWN launchpad deployed + gojo's signed cross-bind/round-trip — the LAUNCH-enabled gate (kami #2).
  *  Canonical Uniswap infra alone is NOT enough: no deployed pad ⇒ not available. */
-function v3LaunchProven(ev: V3ChainEvidence | undefined): boolean {
+function v3LaunchProven(row: V3ChainRow, ev: V3ChainEvidence | undefined): boolean {
   const l = ev?.launch;
+  const configured = row.launchpad;
   return (
     !!l &&
     isRealAddress(l.pad) &&
     isRealAddress(l.locker) &&
+    !!l.implementation &&
+    l.implementation.toLowerCase() === configured.implementation.toLowerCase() &&
+    l.pad.toLowerCase() === configured.pad.toLowerCase() &&
+    l.locker.toLowerCase() === configured.locker.toLowerCase() &&
+    !!l.implementationCodeHash &&
+    l.implementationCodeHash.toLowerCase() === configured.implementationCodeHash.toLowerCase() &&
+    !!l.padCodeHash &&
+    l.padCodeHash.toLowerCase() === configured.padCodeHash.toLowerCase() &&
+    !!l.lockerCodeHash &&
+    l.lockerCodeHash.toLowerCase() === configured.lockerCodeHash.toLowerCase() &&
+    (l.implementationCodeSize ?? 0) > 0 &&
     l.padCodeSize > 0 &&
     l.lockerCodeSize > 0 &&
     // gojo's sign-off: cross-binding + deploy provenance + on-chain launch round-trip (~$5k FDV)
@@ -262,7 +283,7 @@ export function deriveV3Capability(
   const metadataReady = row.explorer.length > 0 && row.nativeSymbol.length > 0;
   const readSmoke = !!ev?.readSmoke && ev.chainId === row.id;
   // LIVE requires: canonical infra (derived vs row) AND Hyde deployed+signed AND metadata AND read smoke.
-  const launchEnabled = v3InfraProven(row, ev) && v3LaunchProven(ev) && metadataReady && readSmoke;
+  const launchEnabled = v3InfraProven(row, ev) && v3LaunchProven(row, ev) && metadataReady && readSmoke;
   const status: ChainStatus = launchEnabled ? "live" : "coming";
   return {
     id: row.id,
@@ -282,8 +303,8 @@ export function deriveV3Capability(
   };
 }
 
-/** V3-only chains (canonical Uniswap V3, no V4). Addresses gojo-verified on 988; status is still gated by
- *  CHAIN_EVIDENCE_V3 (currently empty ⇒ 'coming'). Exported for evidence-injection tests. */
+/** V3-only chains (canonical Uniswap V3, no V4). Stable's deployment addresses and runtime hashes are
+ *  registry-pinned; live status still derives from generated on-chain evidence, never this row alone. */
 export const V3_CANDIDATES: V3ChainRow[] = [
   {
     id: 988,
@@ -302,9 +323,22 @@ export const V3_CANDIDATES: V3ChainRow[] = [
       usdPegged: true,
     },
     feeTier: 10000,
+    launchpad: {
+      implementation: "0xCA5C4C7cc97C9aA3ea56B5F3a5c50Eb1c086615b",
+      pad: "0xE79F17Fe61F9c76824D74C496f122f0AB483ec6A",
+      locker: "0xE43314319675eF26724a7d4381D95ac31c246d90",
+      implementationCodeHash: "0xce745b5eba4a683f85e250477ced81eb3f04e5ba9a7ed705ef117e2acad6f012",
+      padCodeHash: "0x26aa0599221e51251bb88b58d911f07905411f85690da2ea87fd0b505c5310dc",
+      lockerCodeHash: "0xc45c37ee53500e275f9a166b07d3a44d5df088e6a0ca1a4af71c6c86b768c12e",
+      deploymentBlock: 33271478n,
+    },
     role: "launch", // launch-only reach line — tokens trade on canonical Uniswap; in-app Swap disabled
   },
 ];
+
+export function v3ChainRow(chainId: number): V3ChainRow | undefined {
+  return V3_CANDIDATES.find((row) => row.id === chainId);
+}
 
 // ------------------------------------------------------------ engine copy --
 // The ONLY source of engine-specific launch copy. Components read ENGINE_META[capability.engine], so V4

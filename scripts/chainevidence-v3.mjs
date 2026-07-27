@@ -17,7 +17,7 @@ const ROWS = [
     chainId: 988,
     name: "Stable",
     rpcUrl: "https://rpc.stable.xyz",
-    verifyBlock: 32879997n, // gojo's pinned verify block (24266)
+    verifyBlock: 33271706n, // post-deploy verification block; still retained by Stable's pruned public RPC
     numeraire: {
       address: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
       expectDecimals: 6,
@@ -31,7 +31,17 @@ const ROWS = [
     feeTier: 10000,
     expectTickSpacing: 200,
     // Hyde's own launchpad on this chain — empty until deployed (then the generator reads + gojo signs).
-    hyde: { pad: "", locker: "" },
+    hyde: {
+      implementation: "0xCA5C4C7cc97C9aA3ea56B5F3a5c50Eb1c086615b",
+      pad: "0xE79F17Fe61F9c76824D74C496f122f0AB483ec6A",
+      locker: "0xE43314319675eF26724a7d4381D95ac31c246d90",
+      verifyBlock: 33271706n,
+      deployTx: "0x8876d45e5a0c15b2e3781d410bd0db223a4c52b9752084110b1c4484965719f8",
+      expectImplementationCodeHash: "0xce745b5eba4a683f85e250477ced81eb3f04e5ba9a7ed705ef117e2acad6f012",
+      expectPadCodeHash: "0x26aa0599221e51251bb88b58d911f07905411f85690da2ea87fd0b505c5310dc",
+      expectLockerCodeHash: "0xc45c37ee53500e275f9a166b07d3a44d5df088e6a0ca1a4af71c6c86b768c12e",
+      launchRoundTripFdv: "4995.430232 USDT0 (Stable mainnet fork E2E)",
+    },
   },
 ];
 
@@ -44,6 +54,25 @@ const FACTORY = [
 ];
 const NPM = [
   { name: "factory", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+];
+const PAD = [
+  { name: "IMPL", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "LOCKER", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "V3_FACTORY", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "POSITION_MANAGER", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "NUMERAIRE", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "NUMERAIRE_DECIMALS", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
+  { name: "FEE_TIER", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint24" }] },
+  { name: "LAUNCH_FEE_ASSET", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "LAUNCH_FEE_AMOUNT", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { name: "LAUNCH_FEE_NATIVE", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+  { name: "MAX_WALLET_BPS", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { name: "MAX_WALLET_WINDOW_SECS", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint64" }] },
+];
+const LOCKER = [
+  { name: "FACTORY", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "POSITION_MANAGER", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "HYDE_BPS", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ];
 
 function must(cond, msg) {
@@ -89,22 +118,79 @@ async function proveRow(row) {
   must(u.codeHash.toLowerCase() === row.numeraire.expectCodeHash.toLowerCase(), `USDT0 codeHash == ${row.numeraire.expectCodeHash}`);
   const block = at.toString();
 
-  // Hyde's OWN launchpad — the LAUNCH gate. Absent on Stable ⇒ launch:null ⇒ 'coming', launch-only.
+  // Hyde's OWN launchpad — the LAUNCH gate. Runtime hashes, immutables and both cross-bindings are read
+  // at the pinned post-deploy block. Any drift aborts before evidence is written.
   let launch = null;
   if (row.hyde.pad && row.hyde.locker) {
-    const pf = await codeFacts(client, row.hyde.pad);
-    const lf = await codeFacts(client, row.hyde.locker);
-    // NB: pad.LOCKER()/locker.FACTORY() cross-bind + launch round-trip are gojo's signed proofs, filled in
-    // when he verifies the deploy; the generator records code presence, gojo attaches the round-trip FDV.
-    launch = { pad: row.hyde.pad, locker: row.hyde.locker, padCodeSize: pf.codeSize, lockerCodeSize: lf.codeSize };
-    console.log(`  • Hyde launchpad code present (pad ${pf.codeSize}B / locker ${lf.codeSize}B) — awaiting gojo's round-trip sign-off`);
+    const hv = row.hyde.verifyBlock;
+    const [imf, pf, lf] = await Promise.all([
+      codeFacts(client, row.hyde.implementation, hv),
+      codeFacts(client, row.hyde.pad, hv),
+      codeFacts(client, row.hyde.locker, hv),
+    ]);
+    must(imf.codeHash.toLowerCase() === row.hyde.expectImplementationCodeHash.toLowerCase(), "Hyde implementation runtime hash matches deploy artifact");
+    must(pf.codeHash.toLowerCase() === row.hyde.expectPadCodeHash.toLowerCase(), "Hyde V3 pad runtime hash matches deploy artifact");
+    must(lf.codeHash.toLowerCase() === row.hyde.expectLockerCodeHash.toLowerCase(), "Hyde V3 locker runtime hash matches deploy artifact");
+
+    const read = (address, abi, functionName) =>
+      client.readContract({ address, abi, functionName, blockNumber: hv });
+    const [
+      padImpl, padLocker, padFactory, padNpm, padNumeraire, padDecimals, padFeeTier,
+      launchFeeAsset, launchFeeAmount, launchFeeNative, maxWalletBps, maxWalletWindow,
+      lockerFactory, lockerNpm, hydeBps,
+    ] = await Promise.all([
+      read(row.hyde.pad, PAD, "IMPL"),
+      read(row.hyde.pad, PAD, "LOCKER"),
+      read(row.hyde.pad, PAD, "V3_FACTORY"),
+      read(row.hyde.pad, PAD, "POSITION_MANAGER"),
+      read(row.hyde.pad, PAD, "NUMERAIRE"),
+      read(row.hyde.pad, PAD, "NUMERAIRE_DECIMALS"),
+      read(row.hyde.pad, PAD, "FEE_TIER"),
+      read(row.hyde.pad, PAD, "LAUNCH_FEE_ASSET"),
+      read(row.hyde.pad, PAD, "LAUNCH_FEE_AMOUNT"),
+      read(row.hyde.pad, PAD, "LAUNCH_FEE_NATIVE"),
+      read(row.hyde.pad, PAD, "MAX_WALLET_BPS"),
+      read(row.hyde.pad, PAD, "MAX_WALLET_WINDOW_SECS"),
+      read(row.hyde.locker, LOCKER, "FACTORY"),
+      read(row.hyde.locker, LOCKER, "POSITION_MANAGER"),
+      read(row.hyde.locker, LOCKER, "HYDE_BPS"),
+    ]);
+    must(padImpl.toLowerCase() === row.hyde.implementation.toLowerCase(), "pad.IMPL() matches deployed implementation");
+    must(padLocker.toLowerCase() === row.hyde.locker.toLowerCase(), "pad.LOCKER() matches deployed locker");
+    must(lockerFactory.toLowerCase() === row.hyde.pad.toLowerCase(), "locker.FACTORY() matches deployed pad");
+    must(padFactory.toLowerCase() === row.v3Factory.toLowerCase(), "pad.V3_FACTORY() matches canonical V3 factory");
+    must(padNpm.toLowerCase() === row.positionManager.toLowerCase() && lockerNpm.toLowerCase() === row.positionManager.toLowerCase(), "pad + locker position-manager bindings match");
+    must(padNumeraire.toLowerCase() === row.numeraire.address.toLowerCase(), "pad numeraire matches configured USDT0");
+    must(Number(padDecimals) === row.numeraire.expectDecimals, "pad numeraire decimals match config");
+    must(Number(padFeeTier) === row.feeTier, "pad fee tier matches config");
+    must(launchFeeAsset.toLowerCase() === row.numeraire.address.toLowerCase() && launchFeeAmount === 1_000_000n && launchFeeNative === false, "launch fee is exactly 1 ERC-20 USDT0");
+    must(maxWalletBps === 200n && maxWalletWindow === 600n, "anti-snipe is 2% max wallet for 10 minutes");
+    must(hydeBps === 500n, "locker split is 95% creator / 5% Hyde");
+
+    launch = {
+      implementation: row.hyde.implementation,
+      pad: row.hyde.pad,
+      locker: row.hyde.locker,
+      implementationCodeSize: imf.codeSize,
+      padCodeSize: pf.codeSize,
+      lockerCodeSize: lf.codeSize,
+      implementationCodeHash: imf.codeHash,
+      padCodeHash: pf.codeHash,
+      lockerCodeHash: lf.codeHash,
+      padLockerBinding: padLocker,
+      lockerFactoryBinding: lockerFactory,
+      deployTx: row.hyde.deployTx,
+      launchRoundTripFdv: row.hyde.launchRoundTripFdv,
+      verifiedAtBlock: hv.toString(),
+    };
+    console.log(`  • Hyde launchpad verified (impl ${imf.codeSize}B / pad ${pf.codeSize}B / locker ${lf.codeSize}B)`);
   } else {
     console.log("  • Hyde launchpad NOT deployed → launch:null → chain stays 'coming' (launch-only, Swap disabled)");
   }
 
   return {
     chainId: row.chainId,
-    generatedAtBlock: block,
+    generatedAtBlock: row.hyde.verifyBlock?.toString() ?? block,
     rpcUrl: row.rpcUrl,
     infra: {
       chainId: row.chainId,
@@ -116,7 +202,7 @@ async function proveRow(row) {
     },
     launch, // null until Hyde deployed + gojo's round-trip sign-off
     trade: null, // null until gojo verifies SwapRouter02 + QuoterV2 + funded smoke (launch-only otherwise)
-    readSmoke: null,
+    readSmoke: launch ? { verifiedAtBlock: row.hyde.verifyBlock.toString() } : null,
   };
 }
 
@@ -143,10 +229,15 @@ export interface V3InfraEvidence {
 }
 /** Hyde's OWN deployed launchpad — the LAUNCH-enabled gate (gojo signs after deploy + round-trip). */
 export interface V3LaunchEvidence {
+  implementation?: string;
   pad: string;
   locker: string;
+  implementationCodeSize?: number;
   padCodeSize: number;
   lockerCodeSize: number;
+  implementationCodeHash?: string;
+  padCodeHash?: string;
+  lockerCodeHash?: string;
   padLockerBinding?: string;   // pad.LOCKER() (== locker) — gojo sign-off
   lockerFactoryBinding?: string; // locker.FACTORY() (== pad) — gojo sign-off
   deployTx?: string;

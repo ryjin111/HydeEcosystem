@@ -1,7 +1,8 @@
-import { createConfig, http } from "wagmi";
+import { createConfig } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { type Chain, defineChain, type Transport } from "viem";
 import { NETWORKS } from "./constants";
+import { rpcTransportForNetwork, rpcUrlsForNetwork } from "./rpc";
 
 if (NETWORKS.length === 0) {
   throw new Error("NETWORKS array is empty — at least one network must be configured");
@@ -14,7 +15,7 @@ const chains = NETWORKS.map((net) =>
     id: net.id,
     name: net.name,
     nativeCurrency: { name: net.currencySymbol, symbol: net.currencySymbol, decimals: 18 },
-    rpcUrls: { default: { http: [net.rpcUrl] } },
+    rpcUrls: { default: { http: rpcUrlsForNetwork(net) } },
     blockExplorers: { default: { name: "Explorer", url: net.explorerUrl } },
     testnet: !MAINNET_CHAIN_IDS.has(net.id),
   })
@@ -23,7 +24,7 @@ const chains = NETWORKS.map((net) =>
 export const supportedChains = chains as unknown as [Chain, ...Chain[]];
 
 const transports = Object.fromEntries(
-  chains.map((c) => [c.id, http(c.rpcUrls.default.http[0])])
+  NETWORKS.map((network) => [network.id, rpcTransportForNetwork(network)])
 ) as Record<number, Transport>;
 
 export const wagmiConfig = createConfig({

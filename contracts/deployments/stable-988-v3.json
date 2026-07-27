@@ -1,0 +1,72 @@
+{
+  "network": "Stable Mainnet",
+  "chainId": 988,
+  "rpcUrl": "https://rpc.stable.xyz",
+  "explorerUrl": "https://stablescan.xyz",
+  "deployer": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "treasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "contracts": {
+    "implementation": {
+      "name": "HydeERC20",
+      "address": "0xCA5C4C7cc97C9aA3ea56B5F3a5c50Eb1c086615b",
+      "deploymentTransaction": "0x91ed2bef960ea7fe6007c98b8cf01c80b5dcf0b9de20f4984ba18eecf8e69d67",
+      "deploymentBlock": 33271476,
+      "runtimeCodeBytes": 4650,
+      "runtimeCodeHash": "0xce745b5eba4a683f85e250477ced81eb3f04e5ba9a7ed705ef117e2acad6f012"
+    },
+    "launchpad": {
+      "name": "HydeV3Pad",
+      "address": "0xE79F17Fe61F9c76824D74C496f122f0AB483ec6A",
+      "deploymentTransaction": "0x8876d45e5a0c15b2e3781d410bd0db223a4c52b9752084110b1c4484965719f8",
+      "deploymentBlock": 33271478,
+      "runtimeCodeBytes": 9264,
+      "runtimeCodeHash": "0x26aa0599221e51251bb88b58d911f07905411f85690da2ea87fd0b505c5310dc"
+    },
+    "feeLocker": {
+      "name": "HydeV3FeeLocker",
+      "address": "0xE43314319675eF26724a7d4381D95ac31c246d90",
+      "deploymentTransaction": "0x8876d45e5a0c15b2e3781d410bd0db223a4c52b9752084110b1c4484965719f8",
+      "deploymentBlock": 33271478,
+      "runtimeCodeBytes": 3140,
+      "runtimeCodeHash": "0xc45c37ee53500e275f9a166b07d3a44d5df088e6a0ca1a4af71c6c86b768c12e"
+    }
+  },
+  "dependencies": {
+    "numeraire": {
+      "symbol": "USDT0",
+      "address": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      "decimals": 6
+    },
+    "v3Factory": "0x88F0a512eF09175D456bc9547f914f48C013E4aA",
+    "positionManager": "0x3BdC3437405f7D801b6036532713fc1F179136a6",
+    "swapRouter02": "0x32eaf9B5d5F2CD7361c5012890C943D7de84C22a",
+    "quoterV2": "0xb070179E7032CdA868b53e6C1742F80c9e940d1A"
+  },
+  "configuration": {
+    "v3FeeTier": 10000,
+    "tickSpacing": 200,
+    "tickFloor": -398400,
+    "tickCeil": -375400,
+    "targetStartFdvUsd": 5000,
+    "targetTopFdvUsd": 50000,
+    "realizedStartFdvRaw": "4995430232",
+    "realizedTopFdvRaw": "49819603381",
+    "launchFeeRaw": "1000000",
+    "launchFeeDisplay": "1 USDT0",
+    "creatorFeeBps": 9500,
+    "hydeFeeBps": 500,
+    "maxWalletBps": 200,
+    "maxWalletWindowSeconds": 600,
+    "graduationThresholdRaw": "500000000"
+  },
+  "verification": {
+    "verifiedAtBlock": 33271706,
+    "receiptStatuses": [1, 1],
+    "deployerNonceAfter": 2,
+    "immutableChecksPassed": 21,
+    "runtimeCodeHashesMatched": 3,
+    "testsPassed": 12,
+    "testsFailed": 0,
+    "tokenLaunchPerformed": false
+  }
+}
