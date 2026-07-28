@@ -23,6 +23,7 @@ import { V4SwapCard } from "../components/V4SwapCard";
 import { HoodieSwapCard } from "../components/HoodieSwapCard";
 import { YourPositionCard } from "../components/YourPositionCard";
 import { TokenImage } from "../components/TokenImage";
+import { LaunchMetadataEditor } from "../components/LaunchMetadataEditor";
 import { fetchLaunchMeta, type LaunchMeta } from "../utils/launchMeta";
 import { ENGINE_META } from "../utils/chainRegistry";
 import { Card, Button, Stat, SectionLabel } from "../components/ui/kit";
@@ -164,7 +165,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   // returns so hook order stays stable; `pool?` guards the still-loading case.
   const hoodieNumeraire = V4_CONTRACTS_BY_CHAIN[network.id]?.hoodieNumeraire;
   const isHoodiePair = !!hoodieNumeraire && pool?.quoteToken?.address?.toLowerCase() === hoodieNumeraire.toLowerCase();
-  const { isConnected } = useAccount();
+  const { address: walletAddress, isConnected } = useAccount();
   const { position, error: positionError } = useTokenPosition(pool?.address ?? "", network.id, isHoodiePair);
 
   if (tokenLoading && !boardPool) {
@@ -249,6 +250,17 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
               <p className="mt-3 text-xs text-pcs-textSub leading-relaxed">{meta.description}</p>
             )}
           </Card>
+
+          {!isV4Launch && creatorAddr && walletAddress?.toLowerCase() === creatorAddr.toLowerCase() && (
+            <LaunchMetadataEditor
+              chainId={network.id}
+              token={pool.address}
+              symbol={sym}
+              creator={creatorAddr}
+              initialMeta={meta}
+              onSaved={setMeta}
+            />
+          )}
 
         {/* Chart — self-hosted price history (candles from on-chain PoolManager Swap events) is a
             separate post-swap task (gojo/kami 23826-23829); no GeckoTerminal dependency/ETA on 4663.
