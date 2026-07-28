@@ -3,11 +3,6 @@ import type { PublicClient, WalletClient } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
 import toast from "react-hot-toast";
 import { WETH_CONTAINMENT } from "../utils/containment";
-import {
-  ROBINHOOD_CHAIN_ID,
-  simulateRobinhoodLaunch,
-  executeRobinhoodLaunch,
-} from "../utils/dopplerLaunch";
 import { simulateHydeLaunch, executeHydeLaunch, type HydeLaunchStep } from "../utils/hydeLaunch";
 import { simulateHoodieLaunch, executeHoodieLaunch, type HoodieLaunchStep } from "../utils/hoodieLaunch";
 import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
@@ -18,6 +13,7 @@ import { TokenImage } from "./TokenImage";
 /* ─── component ────────────────────────────────────────────────────────────── */
 
 const RH_TESTNET_ID = ROBINHOOD_TESTNET.id;
+const ROBINHOOD_CHAIN_ID = ROBINHOOD_MAINNET.id;
 
 /**
  * Resize/center-crop any picked image to an exact AVATAR_SIZE² PNG (kami locked spec).
@@ -185,10 +181,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         const sim = await simulateHydeLaunch(publicClient as PublicClient, chainId, { name, symbol, creator: address });
         setPreview({ tokenAddress: sim.tokenAddress });
       } else {
-        const sim = await simulateRobinhoodLaunch(publicClient as PublicClient, {
-          name, symbol, imageUrl: imageUrl || undefined, description: description || undefined, creator: address,
-        });
-        setPreview({ tokenAddress: sim.tokenAddress });
+        throw new Error("No verified Hyde launch engine is configured for this chain.");
       }
       toast.success("Pre-flight passed — review and confirm below.", { id: toastId });
     } catch (err) {
@@ -230,11 +223,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
         );
       } else {
         toast.loading("Confirm in wallet…", { id: toastId });
-        result = await executeRobinhoodLaunch(
-          publicClient as PublicClient,
-          walletClient as WalletClient,
-          { name, symbol, imageUrl: imageUrl || undefined, description: description || undefined, creator: address }
-        );
+        throw new Error("No verified Hyde launch engine is configured for this chain.");
       }
       toast.success("Token launched!", { id: toastId, duration: 8000 });
       const savedImage = imageUrl;

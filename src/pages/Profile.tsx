@@ -25,6 +25,7 @@ import type { NetworkConfig } from "../utils/constants";
 import { chainV3Capability } from "../utils/chainRegistry";
 import { Card, Button, Stat, VerifiedBadge, SectionLabel } from "../components/ui/kit";
 import { TokenImage } from "../components/TokenImage";
+import { StableV3FeeCollector } from "../components/StableV3FeeCollector";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
@@ -321,7 +322,13 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
           </div>
         ) : (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {myLaunches.map((pool) => <ProfileLaunchRow key={`${pool.chainId}-${pool.address}`} pool={pool} />)}
+            {myLaunches.map((pool) => (
+              <ProfileLaunchRow
+                key={`${pool.chainId}-${pool.address}`}
+                pool={pool}
+                network={network}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -411,7 +418,7 @@ function StableHoldingRow({ h }: { h: Holding }) {
   );
 }
 
-function ProfileLaunchRow({ pool }: { pool: DopplerPool }) {
+function ProfileLaunchRow({ pool, network }: { pool: DopplerPool; network: NetworkConfig }) {
   const [image, setImage] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -422,8 +429,11 @@ function ProfileLaunchRow({ pool }: { pool: DopplerPool }) {
   }, [pool.address, pool.chainId]);
 
   return (
-    <Link to={`/token/${pool.address}?network=${pool.chainId}`} className="block">
-      <Card variant="token" interactive>
+    <Card variant="token">
+      <Link
+        to={`/token/${pool.address}?network=${pool.chainId}`}
+        className="block rounded-xl transition hover:bg-white/[0.02]"
+      >
         <div className="flex items-center gap-3">
           <TokenImage
             src={image}
@@ -443,7 +453,18 @@ function ProfileLaunchRow({ pool }: { pool: DopplerPool }) {
             Live
           </span>
         </div>
-      </Card>
-    </Link>
+      </Link>
+      {pool.launchEngine === "v3-single-sided" && (
+        <StableV3FeeCollector
+          network={network}
+          token={{
+            address: pool.address as `0x${string}`,
+            symbol: pool.baseToken.symbol,
+            decimals: pool.baseToken.decimals,
+          }}
+          compact
+        />
+      )}
+    </Card>
   );
 }

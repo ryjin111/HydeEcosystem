@@ -1,17 +1,18 @@
 import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { Header } from "./components/Header";
 import { SideRail } from "./components/SideRail";
-import { AddLiquidityPage } from "./pages/AddLiquidity";
-import { LaunchpadPage } from "./pages/Launchpad";
-import { LandingPage } from "./pages/Landing";
-import { DiscoverPage } from "./pages/Discover";
-import { StatsPage } from "./pages/Stats";
-import { TokenPage } from "./pages/Token";
-import { ProfilePage } from "./pages/Profile";
 import { NETWORKS } from "./utils/constants";
 import { useTokenList } from "./hooks/useTokenList";
 import { useHydeTokens } from "./hooks/useDopplerTokens";
+
+const AddLiquidityPage = lazy(() => import("./pages/AddLiquidity").then((module) => ({ default: module.AddLiquidityPage })));
+const LaunchpadPage = lazy(() => import("./pages/Launchpad").then((module) => ({ default: module.LaunchpadPage })));
+const LandingPage = lazy(() => import("./pages/Landing").then((module) => ({ default: module.LandingPage })));
+const DiscoverPage = lazy(() => import("./pages/Discover").then((module) => ({ default: module.DiscoverPage })));
+const StatsPage = lazy(() => import("./pages/Stats").then((module) => ({ default: module.StatsPage })));
+const TokenPage = lazy(() => import("./pages/Token").then((module) => ({ default: module.TokenPage })));
+const ProfilePage = lazy(() => import("./pages/Profile").then((module) => ({ default: module.ProfilePage })));
 
 /** Preserve old /swap links while keeping discovery → token page → embedded trade canonical. */
 function LegacySwapRedirect() {
@@ -63,6 +64,13 @@ function App() {
       <div className="mx-auto flex w-full max-w-[1920px]">
         <SideRail />
         <main className="hyde-content min-w-0 flex-1 px-4 pb-10 pt-4 sm:px-8 md:px-10">
+        <Suspense
+          fallback={(
+            <div className="term-panel rounded-xl px-5 py-12 text-center font-code text-xs uppercase tracking-widest text-pcs-textDim">
+              Loading Hydeout surface…
+            </div>
+          )}
+        >
         <Routes>
           <Route path="/swap" element={<LegacySwapRedirect />} />
           <Route
@@ -89,6 +97,7 @@ function App() {
           <Route path="/remove-liquidity" element={<Navigate to="/add-liquidity" replace />} />
           <Route path="*" element={<Navigate to="/launchpad" replace />} />
         </Routes>
+        </Suspense>
         </main>
       </div>
     </div>

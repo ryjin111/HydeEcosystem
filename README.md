@@ -1,14 +1,15 @@
 # Hyde Ecosystem
 
-**A token launchpad built on Uniswap V4.**
+**A mainnet token launchpad with Uniswap V4 and single-sided Uniswap V3 engines.**
 
-Hyde lets anyone launch an ERC-20 whose entire supply is seeded into a single, permanently custody-locked V4 liquidity position. There is no team allocation, no pre-mint, no mint/burn/pause, and no path for anyone — including the creator or the protocol — to pull the liquidity. Trading fees are split **90% creator / 5% Hyde / 5% permanently auto-compounded back into the locked position**, so the liquidity floor only ever grows.
+Hyde lets anyone launch an ERC-20 whose entire supply is seeded into permanently locked liquidity. Robinhood Chain uses the V4 hook engine (**90% creator / 5% Hyde / 5% auto-compounded locked LP**). Stable uses the V3 single-sided engine (**95% creator / 5% Hyde**, paid in both pool assets). There is no team allocation, post-launch mint, burn, pause, or liquidity-withdrawal path.
 
 The protocol contracts, the launchpad frontend, and the security audit in this repository were designed, built, and adversarially reviewed by an autonomous team of AI agents (see [AI-Agent Audit](#ai-agent-audit)).
 
 - **Frontend:** live on Vercel (Vite + React + wagmi/viem).
-- **Own-stack launchpad:** live on **Robinhood Testnet (chain 46630)** — the factory/hook/vault/collector are deployed there and the board reads real `LaunchCreated` events.
-- **Mainnet (Robinhood Chain 4663):** contracts built + internally audited (~55 Foundry tests against real Uniswap V4). **Not yet deployed with mainnet value** — deploy is gated behind an external audit.
+- **Robinhood Chain mainnet (4663):** V4 launch, in-app swap, and creator-fee settlement are live.
+- **Stable mainnet (988):** V3 single-sided launch, in-app swap, permanently locked LP, and direct 95/5 fee collection are live.
+- **Security status:** internally reviewed and covered by deterministic/fork/live evidence, but **not externally audited**.
 
 ---
 
@@ -30,7 +31,7 @@ The protocol contracts, the launchpad frontend, and the security audit in this r
 ## What We Built
 
 ### Smart contracts (`contracts/`) — own Uniswap V4 stack
-Five core contracts with **56 Foundry test/invariant functions** (55 pass · 1 skipped). They run against **real Uniswap V4 core + periphery deployed in a local Foundry harness** (via v4-core's `Deployers`) — **not a chain fork**. A single *optional* smoke test (`TestnetForkSmoke`) forks a live testnet when `TESTNET_RPC` is set, and skips cleanly otherwise.
+The repository contains the V4 own-stack contracts plus the Stable V3 reach-line contracts and their Foundry tests/invariants. V4 tests run against real Uniswap V4 core + periphery deployed in a local Foundry harness; optional fork/live evidence is kept separate from deterministic tests.
 
 | Contract | Role |
 |---|---|
@@ -42,7 +43,7 @@ Five core contracts with **56 Foundry test/invariant functions** (55 pass · 1 s
 | `libraries/OracleLib.sol`, `TickMath.sol` | TWAP quote + tick math (binary-searched oracle ring). |
 
 ### Launchpad frontend (`src/`) — Vite + React
-- **Launchpad** — permissionless launch form; network-aware, writes to the live own-stack factory on 46630.
+- **Launchpad** — permissionless, engine-aware launch forms for live Robinhood V4 and Stable V3 mainnets.
 - **Discover / Launches / Stats** — on-chain aggregates and trending, read straight from factory events.
 - **Swap** — V4 own-stack routing plus Stable V3 SwapRouter02/QuoterV2 Buy/Sell with live preflight and slippage protection.
 - **Add / Remove Liquidity** — V4 Position Manager multicall flows.
@@ -55,6 +56,8 @@ Five core contracts with **56 Foundry test/invariant functions** (55 pass · 1 s
 
 ## How It Works
 
+### Robinhood V4 engine
+
 1. **Launch.** A creator calls `factory.launch()` and pays a flat **0.0004 ETH** fee — native ETH sent as `msg.value` in the single payable launch transaction (no ERC-20 approval, no faucet). The factory CREATE2-clones a `HydeERC20`, mints the fixed 1e9 supply, and seeds **100%** of it single-sided into one Uniswap V4 position. **Zero** goes to the team or the creator's wallet.
 2. **Lock.** That position NFT is transferred to `HydeFeeCollector`, which has **no** decrease/transfer/burn/sweep selector in its bytecode. The liquidity is locked by code, provable by codehash — not by a custodian who could change their mind.
 3. **Trade.** Swaps accrue fees inside the V4 pool. The hook applies an anti-snipe dynamic fee at launch and feeds a real-tick TWAP oracle every swap.
@@ -62,6 +65,14 @@ Five core contracts with **56 Foundry test/invariant functions** (55 pass · 1 s
 5. **Auto-compound.** The remaining **5%** is carved in-kind at `collect()` and added back into the locked position via `compound()` — permissionless, add-only, TWAP-gated. The liquidity floor is monotonically non-decreasing.
 
 Full economic model and invariant matrix: [`CONTRACT_SPEC_L3.md`](CONTRACT_SPEC_L3.md).
+
+### Stable V3 engine
+
+1. The creator approves and pays the fixed **1 ERC-20 USDT0** launch fee.
+2. `HydeV3Pad` creates the fixed-supply token and seeds its canonical single-sided Uniswap V3 pool.
+3. The position NFT is minted directly to `HydeV3FeeLocker`; the locker has no liquidity-decrease or NFT-transfer path.
+4. Anyone may call `collect(token)`. Both pool-asset fee legs are pushed immediately: **95% to the immutable creator / 5% to Hyde**. There is no separate V3 claim escrow.
+5. In-app Buy/Sell uses the registry-pinned SwapRouter02 and QuoterV2 with live codehash, binding, quote, slippage, and transaction preflight checks.
 
 ---
 
@@ -146,7 +157,7 @@ This project was built and audited end-to-end by an autonomous multi-agent team,
 
 The review was adversarial by design (each finding had to be *refuted or confirmed* by an independent pass, not just re-found), and it ran the contracts against **real Uniswap V4 core + periphery deployed in a local Foundry harness** — not mocks, and not a chain fork. The output is the finding set above plus an external-audit handoff package.
 
-> **Honesty note:** this is an *internal* AI-agent review, not a substitute for a professional external audit. An independent external audit is the explicit gate before any mainnet value is deployed.
+> **Honesty note:** this is an *internal* AI-agent review, not a substitute for a professional external audit. The deployments are live; an independent audit remains strongly recommended before treating them as production-safe.
 
 ---
 
@@ -164,7 +175,7 @@ The review was adversarial by design (each finding had to be *refuted or confirm
 - Deployed on **Vercel** (Node 24 runtime); serverless `api/` routes for IPFS pinning + rate limiting
 
 **Chains**
-- Robinhood Chain mainnet (`4663`) · Robinhood Testnet (`46630`, live own-stack) · Tempo Moderato · Pharos Atlantic testnets
+- Robinhood Chain mainnet (`4663`, V4 launch/trade) · Stable mainnet (`988`, V3 launch/trade) · Robinhood Testnet (`46630`, retained for development)
 
 ---
 
@@ -192,7 +203,7 @@ npm ci          # installs the exact locked dependencies from package-lock.json 
 npm run dev     # starts the local dev server
 ```
 
-Then open the URL it prints (usually **http://localhost:5173**) in your browser. You should see the Hyde launchpad. It's already wired to the **live own-stack factory on Robinhood Testnet (chain 46630)** — connect a wallet on that network and you can launch/trade against real testnet contracts, no config needed.
+Then open the URL it prints (usually **http://localhost:5173**) in your browser. The default surface is wired to the live Robinhood Chain mainnet deployment; choose Stable in the header for the live V3 launch/trade path.
 
 To make a production build instead:
 
@@ -201,17 +212,16 @@ npm run build    # type-checks, then builds to dist/
 npm run preview  # serves that production build locally to verify it
 ```
 
-**Where the config lives:** chains, RPC URLs, and contract addresses are all in `src/utils/constants.ts` (`SUPPORTED_CHAINS`, `V4_CONTRACTS_BY_CHAIN`). Change nothing to use the defaults.
+**Where the config lives:** network shell values are in `src/utils/constants.ts`; engine capability, deployment addresses, and codehash gates are in `src/utils/chainRegistry.ts`. Paid RPC selection and public fallbacks are in `src/utils/rpc.ts`.
 
 ### 3. (Optional) Run the smart-contract tests
 
 ```bash
-cd contracts
-forge install    # fetches contract dependencies (one time)
-forge test       # runs the full suite (56 test/invariant fns) against real V4 deployed locally
+npm run contracts:deps  # installs the exact pinned OpenZeppelin + V4 periphery revisions
+npm run contracts:test  # installs missing deps, then runs the complete Foundry suite
 ```
 
-> ⚠️ **Run plain `forge test`** (no `--match` filter). A `--match*` filter sparse-prunes `ForceCompile.sol` and breaks `vm.getCode` at setUp. Fork tests are gated behind an RPC env var and skip cleanly if it's unset — a clean run is ~55 pass / 1 skip.
+> ⚠️ **Run the complete suite** (no `--match` filter). A `--match*` filter can sparse-prune `ForceCompile.sol` and break `vm.getCode` at setUp. Fork tests are gated behind their RPC environment variables and skip cleanly when unset.
 
 ### 4. Environment variables
 
@@ -220,9 +230,12 @@ forge test       # runs the full suite (56 test/invariant fns) against real V4 d
 | Variable | Used by | Required? | Purpose |
 |---|---|---|---|
 | `VITE_IPFS_GATEWAY` | frontend | Optional | IPFS read gateway for token art. Defaults to `https://ipfs.io/ipfs/`. |
+| `VITE_ALCHEMY_API_KEY` | frontend | Prod recommended | Public/domain-restricted Alchemy client key for Robinhood + Stable. The chain-owned RPC remains the fallback. |
+| `VITE_ROBINHOOD_MAINNET_RPC_URL` / `VITE_STABLE_MAINNET_RPC_URL` | frontend | Optional | Full paid endpoint overrides; each takes precedence over the shared Alchemy key. |
+| `ROBINHOOD_RPC_URL` / `STABLE_RPC_URL` | Vercel serverless | Prod recommended | Secret server-side RPCs for creator-signed metadata verification. Never prefix the secret values with `VITE_`. |
 | `TESTNET_RPC` | contract fork tests | Optional | RPC URL for the on-chain fork tests. Unset → those tests skip cleanly. |
-| `FILEBASE_KEY` / `FILEBASE_SECRET` / `FILEBASE_BUCKET` | Vercel serverless (`api/pin-image`) | Prod only | Server-side IPFS pinning secrets. **Never** prefix with `VITE_` (that would leak them into public client JS). Set in Vercel, not in the repo. |
-| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Vercel serverless (`api/_ratelimit`) | Prod only | Vercel KV / Upstash-compatible REST credentials that back the per-IP pin **rate limiter**. If unset, the credentialed pin endpoint **fails closed** (refuses to pin) — this is deliberate so the paid Filebase key can't be abused. Set in Vercel. |
+| `PINATA_JWT` / `PINATA_PIN_ENDPOINT` | Vercel serverless (`api/pin-image`) | Prod only / optional endpoint | Scoped Pinata pinning JWT and optional upload endpoint. Never prefix the JWT with `VITE_`. |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Vercel serverless metadata/pinning | Prod only | Upstash-compatible REST credentials for metadata records and per-IP pin rate limiting. Both write endpoints fail closed when unset. |
 | `PIN_RATE_LIMIT` / `PIN_RATE_WINDOW_SEC` | Vercel serverless (`api/_ratelimit`) | Optional | Pin requests allowed per window / window length in seconds. Have safe defaults (**20** requests per **3600s**); bounds are validated so a bad value can't defeat the limiter. |
 
 > This table covers the vars the code actually reads. For local development you need **none** of them (the frontend runs on public defaults); the server-only vars matter solely for the deployed Vercel pin/rate-limit flow.
@@ -231,36 +244,33 @@ forge test       # runs the full suite (56 test/invariant fns) against real V4 d
 
 - `npm run dev` → prints something like `VITE vX.Y.Z ready` and `➜ Local: http://localhost:5173/`. Open that URL and the launchpad loads.
 - `npm run build` → ends with `✓ built in …` and a `dist/` folder appears. No red TypeScript errors.
-- `forge test` → ends with a summary like `Suite result: ok. ~55 passed; 0 failed; 1 skipped`.
+- `npm run contracts:test` → ends with Foundry suite summaries and zero failed tests.
 
 ### 6. Common errors & fixes
 
 - **`vm.getCode: no matching artifact`** on `forge test` → you used a `--match` filter. Run **plain `forge test`**.
 - **`Port 5173 is in use`** → another dev server is running; stop it, or Vite will offer the next free port.
-- **Wallet shows nothing / can't launch** → make sure your wallet is on **Robinhood Testnet (chain 46630)**; the live own-stack factory lives there.
+- **Wallet shows nothing / can't launch** → select the intended live mainnet in the header: Robinhood Chain (4663, V4) or Stable (988, V3), then switch the wallet to match.
 - **`command not found: forge`** → Foundry isn't installed. See [Foundry install](https://book.getfoundry.sh/getting-started/installation).
 - **`npm ci` fails** → check `node -v` is ≥ 20, then remove `node_modules/` and re-run `npm ci`. **Don't delete `package-lock.json`** — `npm ci` needs it for a reproducible install. (Only if the lockfile is genuinely out of sync should you run `npm install` to regenerate it.)
 
-> ⚠️ **Mainnet safety warning.** These contracts are **internally reviewed but NOT externally audited**, and are **not deployed with real value on Robinhood Chain mainnet (4663)**. Do **not** deploy or point this at mainnet with real funds until the external-audit gate is cleared. Testnet (46630) only.
-
-**Deploying to mainnet** (Robinhood Chain 4663) is a separate, owner-authorized step — see the deploy sequence in [`AUDIT_HANDOFF.md`](AUDIT_HANDOFF.md) §9–§10 and `contracts/script/DeployHydeStack.s.sol`.
+> ⚠️ **Mainnet safety warning.** Robinhood Chain (4663) and Stable (988) deployments are live, but the contracts are **internally reviewed and NOT externally audited**. Verify the registry-pinned addresses/codehashes and understand the risk before launching, trading, or paying gas to collect fees.
 
 ---
 
 ## Repository Layout
 
 ```
-contracts/            # Foundry project — the own-stack V4 contracts
+contracts/            # Foundry project — own-stack V4 + Stable V3 contracts
   src/                #   HydeTokenFactory, HydeERC20, HydeFeeCollector,
-                      #   HydeFeeVault, HydeHook + interfaces/ + libraries/
-  test/               #   56 test/invariant fns vs real V4 deployed locally (Compound, HookExternalLP,
-                      #   AntiRug, Factory, Lifecycle, VaultInvariant, ...)
+                      #   HydeFeeVault, HydeHook, v3/ + interfaces/ + libraries/
+  test/               #   V4 + V3 unit, invariant, lifecycle, and optional fork coverage
   script/             #   DeployHydeStack.s.sol, LaunchSmoke.s.sol
 src/                  # Vite + React frontend
   pages/              #   Launchpad, Swap, Discover, Stats, Trust, Token, ...
   components/         #   LaunchTokenForm, V4SwapCard, V4LiquidityCard, ...
   utils/constants.ts  #   chains + V4 contract addresses per network
-api/                  # Vercel serverless routes (IPFS pin, rate limit)
+api/                  # Vercel routes (metadata, IPFS pinning, cached launch index)
 ```
 
 ## Deep-Dive Docs
@@ -274,6 +284,6 @@ api/                  # Vercel serverless routes (IPFS pin, rate limit)
 
 ## Status & Disclaimers
 
-- Contracts are **built and internally audited**, not externally audited and **not deployed with mainnet value**. Do not treat this as production-safe until the external audit gate is cleared.
+- Contracts are deployed on Robinhood Chain mainnet (V4) and Stable mainnet (V3), internally reviewed, and **not externally audited**. Live deployment does not remove smart-contract, chain, RPC, or market risk.
 - WETH on Robinhood Chain 4663 is an upgradeable proxy — an external trust assumption, disclosed. (USDG is no longer a dependency — the launch fee is native ETH.)
 - Nothing here is financial advice. Launching or trading tokens carries risk.
