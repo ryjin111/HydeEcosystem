@@ -6,16 +6,16 @@
 // SIGNATURE, never a bare address claim:
 //   • Signed message = fixed purpose/version prefix + chainId + token + image + issuedAt + description
 //     (domain-separated so a signature from any OTHER Hyde flow — SIWE etc. — can't be lifted/replayed).
-//   • Server recovers the signer and verifies it equals the token's ON-CHAIN launch creator, read from
-//     the factory's LaunchCreated event ON THE RPC FOR THE SAME chainId in the payload (chainId-bound),
-//     bounded from the factory deploy block (never fromBlock:0). No LaunchCreated ⇒ reject.
+//   • Server recovers the signer and verifies it equals the token's ON-CHAIN launch creator on the RPC
+//     FOR THE SAME chainId (chainId-bound). V4 uses deployment-bounded launch events; Stable V3 requires
+//     canonical pad membership plus the locker's immutable registered creator. No verified launch ⇒ reject.
 //   • Replay/rollback guard is ATOMIC: a single Lua compare-and-write enforces per-(chainId,token)
 //     strictly-increasing issuedAt + creator-immutability in one server-side op (no read→compare→write
 //     race). Any KV failure ⇒ 502 (never "treat as create"). Plus a bounded issuedAt freshness window.
 //   • Strict input validation (real CID shape, 64/65-byte signature, size cap even for pre-parsed
 //     bodies, trimmed description), rate-limited, fails CLOSED when KV / abuse-control is unconfigured.
 // A metadata failure NEVER affects the already-confirmed launch — the client surfaces an explicit retry.
-import { createPublicClient, http, parseAbiItem, recoverMessageAddress, isAddress, getAddress } from "viem";
+import { createPublicClient, http, parseAbi, parseAbiItem, recoverMessageAddress, isAddress, getAddress } from "viem";
 import { OWNSTACK } from "./_ownstack.js";
 import { kvConfigured, kvHGetAll, kvEval } from "./_kv.js";
 import { abuseControlConfigured, checkRateLimit, clientIp } from "./_ratelimit.js";
@@ -34,10 +34,14 @@ const LAUNCH_CREATED = parseAbiItem(
 const HOODIE_LAUNCH_CREATED = parseAbiItem(
   "event HoodieLaunchCreated(address indexed launcher, address indexed creator, address indexed token, bytes32 poolId, uint256 tokenId)"
 );
-// Stable V3 launches use the same HydeERC20 implementation but a V3-specific pad/event shape.
-const STABLE_V3_LAUNCH_CREATED = parseAbiItem(
-  "event LaunchCreated(address indexed token, address indexed creator, address pool, uint256 tokenId, uint128 liquidity)"
-);
+// Stable records launch membership on the pad and the immutable creator on its canonical fee locker.
+// These direct state reads avoid Stable public RPC's hard 500-block eth_getLogs limit.
+const STABLE_V3_PAD_READ_ABI = parseAbi([
+  "function isHydeToken(address token) view returns (bool)",
+]);
+const STABLE_V3_LOCKER_READ_ABI = parseAbi([
+  "function positionOf(address token) view returns (address creator, address token0, address token1, address numeraire, uint256 tokenId, uint24 feeTier, uint256 cumulativeNumeraireFees, bool graduated, bool registered)",
+]);
 
 const MAX_DESC = 280;
 const MAX_BODY = 16 * 1024;
@@ -76,8 +80,8 @@ function canonicalMessage({ chainId, token, image, description, issuedAt }) {
   ].join("\n");
 }
 
-/** Authoritative creator for a token, read from LaunchCreated on the RPC for THIS chainId, bounded
- *  from the factory deploy block (never fromBlock:0 — kami B-blocker #2 / gojo LOW-1). */
+/** Authoritative creator for a token on the RPC for THIS chainId. V4 event scans are bounded from the
+ *  configured deployment block; Stable V3 uses direct canonical pad + locker state. */
 export async function onchainCreator(cfg, token, client = createPublicClient({ transport: http(cfg.rpc) })) {
   // Primary source: the WETH HydeTokenFactory's LaunchCreated.
   if (cfg.factory) {
@@ -96,13 +100,27 @@ export async function onchainCreator(cfg, token, client = createPublicClient({ t
     });
     if (hoodieLogs.length) return getAddress(hoodieLogs[0].args.creator);
   }
-  // Stable V3 source: HydeV3Pad.LaunchCreated carries the immutable human creator.
-  if (cfg.v3Pad) {
-    const v3Logs = await client.getLogs({
-      address: cfg.v3Pad, event: STABLE_V3_LAUNCH_CREATED, args: { token },
-      fromBlock: cfg.v3DeploymentBlock, toBlock: "latest",
-    });
-    if (v3Logs.length) return getAddress(v3Logs[0].args.creator);
+  // Stable V3 source: require BOTH canonical pad membership and the locker's registered position.
+  // The locker is created by the pad and positionOf(token).creator is fixed at launch; this is the same
+  // creator that receives 95% of fees. No historical scan means this works on Stable's public RPC too.
+  if (cfg.v3Pad && cfg.v3Locker) {
+    const [isHydeToken, position] = await Promise.all([
+      client.readContract({
+        address: cfg.v3Pad,
+        abi: STABLE_V3_PAD_READ_ABI,
+        functionName: "isHydeToken",
+        args: [token],
+      }),
+      client.readContract({
+        address: cfg.v3Locker,
+        abi: STABLE_V3_LOCKER_READ_ABI,
+        functionName: "positionOf",
+        args: [token],
+      }),
+    ]);
+    const creator = position[0];
+    const registered = position[8];
+    if (isHydeToken && registered && isAddress(creator)) return getAddress(creator);
   }
   return null;
 }

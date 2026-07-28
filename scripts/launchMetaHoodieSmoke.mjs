@@ -37,16 +37,40 @@ check("46630 has no hoodieEngine", !cfg46630.hoodieEngine);
 check("46630 → HOODIE branch skipped → null",
   (await onchainCreator(cfg46630, TOKEN, mock(cfg46630, [], [{ args: { creator: HOODIE_CREATOR } }]))) === null);
 
-// (e) Stable V3 resolves the creator from HydeV3Pad.LaunchCreated, without a V4 factory.
+// (e) Stable V3 resolves the creator from canonical pad + locker state without a historical log scan.
 const cfg988 = OWNSTACK[988];
 const STABLE_CREATOR = getAddress("0x4444444444444444444444444444444444444444");
+const stablePosition = (creator = STABLE_CREATOR, registered = true) => [
+  creator,
+  "0x5555555555555555555555555555555555555555",
+  "0x6666666666666666666666666666666666666666",
+  "0x7777777777777777777777777777777777777777",
+  1n,
+  10_000,
+  0n,
+  false,
+  registered,
+];
+const stableMock = (isHydeToken = true, registered = true) => ({
+  getLogs: async () => { throw new Error("Stable creator verification must not scan logs"); },
+  readContract: async ({ address, functionName }) => {
+    if (address.toLowerCase() === cfg988.v3Pad.toLowerCase() && functionName === "isHydeToken") {
+      return isHydeToken;
+    }
+    if (address.toLowerCase() === cfg988.v3Locker.toLowerCase() && functionName === "positionOf") {
+      return stablePosition(STABLE_CREATOR, registered);
+    }
+    throw new Error("unexpected Stable read");
+  },
+});
 check("988 config pins the Stable V3 pad", cfg988.v3Pad === "0xE79F17Fe61F9c76824D74C496f122f0AB483ec6A");
+check("988 config pins the Stable V3 locker", cfg988.v3Locker === "0xE43314319675eF26724a7d4381D95ac31c246d90");
 check("988 V3 source → Stable creator",
-  (await onchainCreator(cfg988, TOKEN, {
-    getLogs: async ({ address }) => address.toLowerCase() === cfg988.v3Pad.toLowerCase()
-      ? [{ args: { creator: STABLE_CREATOR } }]
-      : [],
-  })) === STABLE_CREATOR);
+  (await onchainCreator(cfg988, TOKEN, stableMock())) === STABLE_CREATOR);
+check("988 rejects token absent from canonical pad",
+  (await onchainCreator(cfg988, TOKEN, stableMock(false, true))) === null);
+check("988 rejects unregistered locker position",
+  (await onchainCreator(cfg988, TOKEN, stableMock(true, false))) === null);
 
 console.log(`\n${fail === 0 ? "ALL GREEN" : "FAILED"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
