@@ -34,6 +34,10 @@ const LAUNCH_CREATED = parseAbiItem(
 const HOODIE_LAUNCH_CREATED = parseAbiItem(
   "event HoodieLaunchCreated(address indexed launcher, address indexed creator, address indexed token, bytes32 poolId, uint256 tokenId)"
 );
+// Stable V3 launches use the same HydeERC20 implementation but a V3-specific pad/event shape.
+const STABLE_V3_LAUNCH_CREATED = parseAbiItem(
+  "event LaunchCreated(address indexed token, address indexed creator, address pool, uint256 tokenId, uint128 liquidity)"
+);
 
 const MAX_DESC = 280;
 const MAX_BODY = 16 * 1024;
@@ -76,11 +80,13 @@ function canonicalMessage({ chainId, token, image, description, issuedAt }) {
  *  from the factory deploy block (never fromBlock:0 — kami B-blocker #2 / gojo LOW-1). */
 export async function onchainCreator(cfg, token, client = createPublicClient({ transport: http(cfg.rpc) })) {
   // Primary source: the WETH HydeTokenFactory's LaunchCreated.
-  const wethLogs = await client.getLogs({
-    address: cfg.factory, event: LAUNCH_CREATED, args: { token },
-    fromBlock: cfg.deploymentBlock, toBlock: "latest",
-  });
-  if (wethLogs.length) return getAddress(wethLogs[0].args.creator);
+  if (cfg.factory) {
+    const wethLogs = await client.getLogs({
+      address: cfg.factory, event: LAUNCH_CREATED, args: { token },
+      fromBlock: cfg.deploymentBlock, toBlock: "latest",
+    });
+    if (wethLogs.length) return getAddress(wethLogs[0].args.creator);
+  }
   // Second source (if configured): the HOODIE engine's HoodieLaunchCreated — the human creator, bounded
   // from the engine's OWN deploy block. The signer==creator check downstream is unchanged (no weakening).
   if (cfg.hoodieEngine) {
@@ -89,6 +95,14 @@ export async function onchainCreator(cfg, token, client = createPublicClient({ t
       fromBlock: cfg.hoodieDeploymentBlock, toBlock: "latest",
     });
     if (hoodieLogs.length) return getAddress(hoodieLogs[0].args.creator);
+  }
+  // Stable V3 source: HydeV3Pad.LaunchCreated carries the immutable human creator.
+  if (cfg.v3Pad) {
+    const v3Logs = await client.getLogs({
+      address: cfg.v3Pad, event: STABLE_V3_LAUNCH_CREATED, args: { token },
+      fromBlock: cfg.v3DeploymentBlock, toBlock: "latest",
+    });
+    if (v3Logs.length) return getAddress(v3Logs[0].args.creator);
   }
   return null;
 }

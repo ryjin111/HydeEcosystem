@@ -6,9 +6,9 @@
 //       only swap (TWAP-floored + deviation-gated).
 //   claimCreator(token) [vault]  → sends creatorClaimable to creator (reverts NOTHING at 0).
 //
-// This module is React-free — the pure read/sim/step seam the harvest UI + gates drive. v1 harvests the
-// always-ungated NUMERAIRE leg (delivers e.g. LILHOODIE's ~994 HOODIE); the oracle-gated LT-leg swap
-// (derived minOut) is surfaced but left to a follow-up (rawLT ~0 on LILHOODIE today).
+// This module is React-free — the pure read/sim/step seam the harvest UI + gates drive. Both raw legs
+// are settled: the numeraire leg is a pure reclassification, while the LT leg uses the vault's guarded
+// LT→numeraire swap. The vault itself enforces the TWAP floor + spot-deviation bound when callerMinOut=0.
 import {
   encodeFunctionData, type Address, type Hex, type PublicClient, type WalletClient,
 } from "viem";
@@ -17,6 +17,33 @@ import {
   MAINNET_HOODIE_FEE_VAULT, MAINNET_HOODIE_FEE_COLLECTOR, HYDE_CREATOR_BPS, HYDE_NET_BPS,
 } from "./constants";
 import { isClaimConfirmed, type ReplacedReason } from "./txStatus";
+
+/** Canonical Multicall3 on Robinhood Chain. The harvest calls are all permissionless and pay only the
+ * immutable on-chain recipients, so batching changes neither authority nor fee destinations. */
+export const ROBINHOOD_MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as Address;
+
+const multicall3Abi = [{
+  type: "function",
+  name: "aggregate3",
+  stateMutability: "payable",
+  inputs: [{
+    name: "calls",
+    type: "tuple[]",
+    components: [
+      { name: "target", type: "address" },
+      { name: "allowFailure", type: "bool" },
+      { name: "callData", type: "bytes" },
+    ],
+  }],
+  outputs: [{
+    name: "returnData",
+    type: "tuple[]",
+    components: [
+      { name: "success", type: "bool" },
+      { name: "returnData", type: "bytes" },
+    ],
+  }],
+}] as const;
 
 export function hoodieFeeContracts(chainId: number): { vault: Address; collector: Address; numeraire: Address } {
   const c = V4_CONTRACTS_BY_CHAIN[chainId];
@@ -30,8 +57,7 @@ export const creatorShare = (raw: bigint): bigint => (raw * HYDE_CREATOR_BPS) / 
 /** Which fee affordance a card shows — a pure, deterministic decision (kami's state test):
  *  - `claim`      : creatorClaimable > 0 → settled, ready → "Claim X" (safe, drain-guarded).
  *  - `awaiting`   : nothing settled but numeraire pending > 0 → "Fees awaiting settlement · ~X" + harvest.
- *  - `lt-pending` : only token-side (LT) fees remain → "Token-side fees pending" (LT settle is a follow-up;
- *                   NOT harvestable in v1, and NOT "nothing" — kami 23916 #4).
+ *  - `lt-pending` : only token-side (LT) fees remain → "Token-side fees ready" + settle/claim.
  *  - `none`       : nothing settled and nothing pending → "No settled fees yet".
  *  - `unavailable`: the fee read failed (null) → honest "Unavailable", never "you earned nothing". */
 export type FeeDisplay = "claim" | "awaiting" | "lt-pending" | "none" | "unavailable";
@@ -46,7 +72,7 @@ export function feeDisplayState(claimable: bigint | null, pendingHoodie: bigint 
 export type FeeState = {
   claimable: bigint;      // creatorClaimable — settled, ready to claim NOW
   rawNumeraire: bigint;   // rawFees[numeraire] AFTER a (simulated) collect — settle-able, ungated
-  rawLT: bigint;          // rawFees[LT] AFTER collect — needs the oracle-gated LT settle (v1 defers)
+  rawLT: bigint;          // rawFees[LT] AFTER collect — settled through the vault's guarded LT swap
   pendingHoodie: bigint;  // ~creator HOODIE awaiting settlement from the numeraire leg
 };
 
@@ -62,34 +88,20 @@ const claimData = (token: Address): Hex => encodeFunctionData({ abi: hydeVaultAb
 function revertReason(raw: string): string {
   if (/settle_dev|deviation/i.test(raw)) return "price unstable — try again shortly";
   if (/slippage_floor/i.test(raw)) return "price moved — try again";
+  if (/no_output/i.test(raw)) return "fees are still too small to settle";
+  if (/partial_fill/i.test(raw)) return "not enough active liquidity to settle";
   if (/over_raw/i.test(raw)) return "fees changed — refresh and retry";
   if (/nothing/i.test(raw)) return "nothing to harvest";
   if (/oracle_not_ready/i.test(raw)) return "settlement warming up — try shortly";
   return "harvest simulation failed";
 }
 
-/** INITIAL full-flow gate (kami 23916 #1): one eth_simulateV1 bundle of the planned collect→settle→claim
- *  on the CONFIGURED public RPC — fail fast BEFORE any wallet tx, with an honest reason. `readFeeState`
- *  throws (→ Unavailable) if the fee reads fail; a red step here returns ok:false + reason (no broadcast). */
+/** Exact one-transaction gate: build the same Multicall3 payload the wallet would submit, then eth_call it
+ *  from the connected wallet. A red simulation fails before the wallet is opened; no approximate/mirrored
+ *  calldata is used. */
 export async function simulateHarvestFlow(args: { client: PublicClient; token: Address; wallet: Address; chainId: number }): Promise<{ ok: boolean; reason?: string }> {
-  const { vault, collector, numeraire } = hoodieFeeContracts(args.chainId);
-  const fs = await readFeeState({ client: args.client, token: args.token, chainId: args.chainId, from: args.wallet });
-  const dl = BigInt(Math.floor(Date.now() / 1000) + 600);
-  const calls = [readCall(collector, collectData(args.token), args.wallet)];
-  if (fs.rawNumeraire > 0n) calls.push(readCall(vault, settleData(args.token, numeraire, fs.rawNumeraire, 0n, dl), args.wallet));
-  calls.push(readCall(vault, claimData(args.token), args.wallet));
-  const res = await args.client.request({
-    method: "eth_simulateV1" as never,
-    params: [{ blockStateCalls: [{ calls }], validation: false }, "latest"] as never,
-  }) as never as { calls: { status: string; returnData: Hex; error?: { message?: string } }[] }[];
-  // FAIL-CLOSED: an empty/missing/truncated result must NOT read as success (kami 23937 — `findIndex`
-  // returns -1 on `[]`). Require exactly one block whose calls array matches the planned length; anything
-  // else = simulation unavailable, never authorize a broadcast.
-  const cc = Array.isArray(res) && res.length === 1 ? res[0]?.calls : undefined;
-  if (!Array.isArray(cc) || cc.length !== calls.length) return { ok: false, reason: "harvest simulation unavailable" };
-  const bad = cc.findIndex((x) => x.status !== "0x1");
-  if (bad === -1) return { ok: true };
-  return { ok: false, reason: revertReason((cc[bad].error?.message ?? cc[bad].returnData ?? "").toString()) };
+  const plan = await buildHarvestPlan(args.client, args.token, args.wallet, args.chainId);
+  return simulateHarvestPlan(args.client, args.wallet, plan);
 }
 
 /** One eth_simulateV1 bundle on the CONFIGURED public RPC: [collect] then read rawFees(num/LT) +
@@ -140,6 +152,82 @@ export type HarvestStep = "collect" | "settle" | "claim";
 export type StepStatus = "confirming" | "done" | "skipped" | "failed";
 type StepCb = (step: HarvestStep, status: StepStatus, detail?: string) => void;
 
+type BatchCall = { target: Address; allowFailure: false; callData: Hex };
+type HarvestPlan = {
+  calls: BatchCall[];
+  data: Hex;
+  steps: Record<HarvestStep, boolean>;
+};
+
+/** Build one atomic collect→settle(all legs)→claim payload from the projected post-collect state. Every
+ * sub-call is allowFailure=false, so the batch either completes in full or changes nothing. */
+async function buildHarvestPlan(
+  client: PublicClient,
+  token: Address,
+  wallet: Address,
+  chainId: number,
+): Promise<HarvestPlan> {
+  const { vault, collector, numeraire } = hoodieFeeContracts(chainId);
+  const [rawNumBefore, rawLTBefore, projected] = await Promise.all([
+    readRaw(client, token, numeraire, chainId),
+    readRaw(client, token, token, chainId),
+    readFeeState({ client, token, chainId, from: wallet }),
+  ]);
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
+  const needsCollect =
+    projected.rawNumeraire > rawNumBefore
+    || projected.rawLT > rawLTBefore;
+  const needsSettle = projected.rawNumeraire > 0n || projected.rawLT > 0n;
+  const needsClaim = projected.claimable > 0n || needsSettle;
+  const calls: BatchCall[] = [];
+
+  if (needsCollect) {
+    calls.push({ target: collector, allowFailure: false, callData: collectData(token) });
+  }
+  if (projected.rawNumeraire > 0n) {
+    calls.push({
+      target: vault,
+      allowFailure: false,
+      callData: settleData(token, numeraire, projected.rawNumeraire, 0n, deadline),
+    });
+  }
+  if (projected.rawLT > 0n) {
+    calls.push({
+      target: vault,
+      allowFailure: false,
+      callData: settleData(token, token, projected.rawLT, 0n, deadline),
+    });
+  }
+  if (needsClaim) {
+    calls.push({ target: vault, allowFailure: false, callData: claimData(token) });
+  }
+
+  const data = encodeFunctionData({
+    abi: multicall3Abi,
+    functionName: "aggregate3",
+    args: [calls],
+  });
+  return {
+    calls,
+    data,
+    steps: { collect: needsCollect, settle: needsSettle, claim: needsClaim },
+  };
+}
+
+async function simulateHarvestPlan(
+  client: PublicClient,
+  wallet: Address,
+  plan: HarvestPlan,
+): Promise<{ ok: boolean; reason?: string }> {
+  if (plan.calls.length === 0) return { ok: false, reason: "nothing to harvest" };
+  try {
+    await client.call({ account: wallet, to: ROBINHOOD_MULTICALL3, data: plan.data });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: revertReason(e instanceof Error ? e.message : String(e)) };
+  }
+}
+
 /** The step a Resume should continue at = the first not-done/not-skipped step (null when all done). Drives a
  *  truthful "Resume — <step>" label instead of a hardcoded one (kami 23916 #2). Pure, deterministically tested. */
 export function nextHarvestStep(steps: Record<HarvestStep, StepStatus | "idle">): HarvestStep | null {
@@ -160,59 +248,38 @@ async function send(walletClient: WalletClient, publicClient: PublicClient, to: 
 export type HarvestResult = { claimed: boolean; ltPending: boolean | null };
 
 /**
- * Run the harvest. An INITIAL full-flow sim gates the whole thing (fail fast, honest reason, no tx). Each
- * step then RE-READS fresh state, SIMULATES the exact call right before broadcasting (kami 23916 #1 — a red
- * sim aborts with no tx), and SKIPS if already advanced (permissionless collapse → clean resume). A step's
- * failure marks THAT step `failed` and rethrows, so the UI resumes at the right place (kami #2). Returns
- * whether a claim landed and whether token-side (LT) fees remain (kami #4).
+ * Run the harvest as ONE atomic Multicall3 transaction. The exact wallet payload is eth_call-preflighted;
+ * all planned steps share one confirmation and either all complete or all revert. Funds still move only to
+ * the vault's immutable creator/Hyde recipients.
  */
 export async function runHarvest(args: {
   publicClient: PublicClient; walletClient: WalletClient; token: Address; wallet: Address; chainId: number; onStep: StepCb;
 }): Promise<HarvestResult> {
-  const { vault, collector, numeraire } = hoodieFeeContracts(args.chainId);
   const { publicClient: pc, walletClient: wc, token, wallet, onStep } = args;
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
-
-  // Initial full-flow gate — fail fast before any wallet tx (kami #1).
-  const pre = await simulateHarvestFlow({ client: pc, token, wallet, chainId: args.chainId });
+  const plan = await buildHarvestPlan(pc, token, wallet, args.chainId);
+  const pre = await simulateHarvestPlan(pc, wallet, plan);
   if (!pre.ok) throw new Error(pre.reason ?? "harvest simulation failed");
 
-  // Preflight the EXACT call (eth_call, no state change) then broadcast; a red sim aborts with no tx, and
-  // any error marks THIS step `failed` before rethrowing so the stepper shows the truth (kami #1/#2).
-  const doStep = async (name: HarvestStep, to: Address, data: Hex) => {
-    onStep(name, "confirming");
-    try {
-      await pc.call({ account: wallet, to, data }); // reverts throw → no broadcast
-      await send(wc, pc, to, data, wallet);
-      onStep(name, "done");
-    } catch (e) {
-      onStep(name, "failed");
-      throw e;
-    }
-  };
+  (["collect", "settle", "claim"] as HarvestStep[]).forEach((step) => {
+    onStep(step, plan.steps[step] ? "confirming" : "skipped");
+  });
+  try {
+    await send(wc, pc, ROBINHOOD_MULTICALL3, plan.data, wallet);
+    (["collect", "settle", "claim"] as HarvestStep[]).forEach((step) => {
+      if (plan.steps[step]) onStep(step, "done");
+    });
+  } catch (e) {
+    (["collect", "settle", "claim"] as HarvestStep[]).forEach((step) => {
+      if (plan.steps[step]) onStep(step, "failed");
+    });
+    throw e;
+  }
 
-  // 1. Collect — only if there are uncollected in-position fees (else skip; never a redundant tx).
-  const rawNumBefore = await readRaw(pc, token, numeraire, args.chainId);
-  const projected = (await readFeeState({ client: pc, token, chainId: args.chainId, from: wallet })).rawNumeraire; // throws → Unavailable
-  if (projected > rawNumBefore) await doStep("collect", collector, collectData(token));
-  else onStep("collect", "skipped");
-
-  // 2. Settle the numeraire leg with a FRESH amountIn (gojo 23907 — avoids OVER_RAW).
-  const freshRawNum = await readRaw(pc, token, numeraire, args.chainId);
-  if (freshRawNum > 0n) await doStep("settle", vault, settleData(token, numeraire, freshRawNum, 0n, deadline));
-  else onStep("settle", "skipped");
-
-  // 3. Claim — fresh read; skip if nothing settled (a race may have claimed already).
-  const claimable = await readClaimable(pc, token, args.chainId);
-  let claimed = false;
-  if (claimable > 0n) { await doStep("claim", vault, claimData(token)); claimed = true; }
-  else onStep("claim", "skipped");
-
-  // Token-side (LT) fees left over → not fully harvested; the UI surfaces an LT-pending state (kami #4).
+  // Token-side (LT) fees left over → the guarded settlement may have been raced or a fresh fee arrived.
   // A FAILED read is `null` (unknown), never coerced to "no remainder" (kami 23937) — the UI then avoids
   // asserting fully-harvested. The authoritative post-harvest state comes from the refetch (readFeeState).
   let ltPending: boolean | null;
   try { ltPending = (await readRaw(pc, token, token, args.chainId)) > 0n; }
   catch { ltPending = null; }
-  return { claimed, ltPending };
+  return { claimed: plan.steps.claim, ltPending };
 }

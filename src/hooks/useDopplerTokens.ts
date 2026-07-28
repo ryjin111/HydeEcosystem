@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { createPublicClient, http, defineChain, parseAbiItem } from "viem";
+import { createPublicClient, defineChain, parseAbiItem } from "viem";
 import type { TokenInfo } from "../utils/constants";
-import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, DOPPLER_CONTRACTS_BY_CHAIN, ROBINHOOD_TESTNET_VAULT, hydeVaultAbi } from "../utils/constants";
+import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, STABLE_MAINNET, DOPPLER_CONTRACTS_BY_CHAIN, ROBINHOOD_TESTNET_VAULT, hydeVaultAbi } from "../utils/constants";
 import type { DopplerPool } from "../utils/dopplerConfig";
+import { v3ChainRow } from "../utils/chainRegistry";
+import { rpcTransportForNetwork, rpcUrlsForNetwork } from "../utils/rpc";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 
@@ -44,10 +46,28 @@ const robinhoodChain = defineChain({
   id: ROBINHOOD_CHAIN_ID,
   name: ROBINHOOD_MAINNET.name,
   nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [ROBINHOOD_MAINNET.rpcUrl] } },
+  rpcUrls: { default: { http: rpcUrlsForNetwork(ROBINHOOD_MAINNET) } },
   contracts: { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } },
 });
-const client = createPublicClient({ chain: robinhoodChain, transport: http() });
+const client = createPublicClient({ chain: robinhoodChain, transport: rpcTransportForNetwork(ROBINHOOD_MAINNET) });
+
+// Stable V3 launch source. Scans begin at the HydeV3Pad deployment block, never block zero.
+const STABLE_CHAIN_ID = 988;
+const stableV3 = v3ChainRow(STABLE_CHAIN_ID)!;
+const STABLE_V3_PAD = stableV3.launchpad.pad as `0x${string}`;
+const STABLE_V3_DEPLOY_BLOCK = stableV3.launchpad.deploymentBlock;
+const STABLE_V3_LAUNCH_CREATED = parseAbiItem(
+  "event LaunchCreated(address indexed token, address indexed creator, address pool, uint256 tokenId, uint128 liquidity)"
+);
+const stableChain = defineChain({
+  id: STABLE_CHAIN_ID,
+  name: STABLE_MAINNET.name,
+  nativeCurrency: { name: "USDT0", symbol: "USDT0", decimals: 18 },
+  rpcUrls: { default: { http: rpcUrlsForNetwork(STABLE_MAINNET) } },
+});
+const stableRpcUrls = rpcUrlsForNetwork(STABLE_MAINNET);
+const stableUsesPublicPrimary = stableRpcUrls[0] === STABLE_MAINNET.rpcUrl.replace(/\/$/, "");
+const stableClient = createPublicClient({ chain: stableChain, transport: rpcTransportForNetwork(STABLE_MAINNET) });
 
 // Bounded scan: with thousands of launches, block-0 / all-asset getLogs times
 // out in the browser. Scan the NEWEST launches backwards in fixed block chunks,
@@ -143,6 +163,76 @@ async function getLogsChunked<E>(call: (from: bigint, to: bigint) => Promise<E[]
   for (let s = fromBlock; s <= toBlock; s += RANGE) {
     const e = s + RANGE - 1n > toBlock ? toBlock : s + RANGE - 1n;
     out.push(...(await call(s, e)));
+  }
+  return out;
+}
+
+// Stable's public RPC enforces a hard 500-block eth_getLogs window. Paid Alchemy accepts the full
+// deployment-bounded query, so try the fast path first and fall back to bounded parallel chunks only
+// when the provider explicitly rejects the range.
+const STABLE_PUBLIC_LOG_RANGE = 500n;
+const STABLE_LOG_CONCURRENCY = 4;
+const STABLE_LOG_RETRIES = 4;
+
+function isLogRangeLimit(error: unknown): boolean {
+  const value = error as { message?: string; shortMessage?: string; details?: string };
+  const message = [value?.message, value?.shortMessage, value?.details].filter(Boolean).join(" ");
+  return /maximum.*blocks distance|block range|range.*too (?:large|wide)|query.*more than|response size/i.test(message);
+}
+
+async function getStableLogChunk<E>(
+  call: (from: bigint, to: bigint) => Promise<E[]>,
+  fromBlock: bigint,
+  toBlock: bigint,
+): Promise<E[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < STABLE_LOG_RETRIES; attempt += 1) {
+    try {
+      return await call(fromBlock, toBlock);
+    } catch (error) {
+      lastError = error;
+      if (attempt < STABLE_LOG_RETRIES - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 750 * (2 ** attempt)));
+      }
+    }
+  }
+  throw lastError;
+}
+
+async function getStableLogs<E>(
+  call: (from: bigint, to: bigint) => Promise<E[]>,
+  fromBlock: bigint,
+  toBlock: bigint,
+): Promise<E[]> {
+  // The public endpoint omits CORS headers on its >500-block error response, so browsers only see
+  // "Failed to fetch" and cannot inspect the provider's range-limit message. Skip that doomed
+  // request when public RPC is primary; Alchemy keeps the single-query fast path.
+  if (!stableUsesPublicPrimary) {
+    try {
+      return await call(fromBlock, toBlock);
+    } catch (error) {
+      if (!isLogRangeLimit(error)) throw error;
+    }
+  }
+
+  const ranges: [bigint, bigint][] = [];
+  for (let from = fromBlock; from <= toBlock; from += STABLE_PUBLIC_LOG_RANGE) {
+    const to = from + STABLE_PUBLIC_LOG_RANGE - 1n > toBlock
+      ? toBlock
+      : from + STABLE_PUBLIC_LOG_RANGE - 1n;
+    ranges.push([from, to]);
+  }
+
+  const out: E[] = [];
+  for (let index = 0; index < ranges.length; index += STABLE_LOG_CONCURRENCY) {
+    const chunks = await Promise.all(
+      ranges.slice(index, index + STABLE_LOG_CONCURRENCY)
+        .map(([from, to]) => getStableLogChunk(call, from, to)),
+    );
+    for (const chunk of chunks) out.push(...chunk);
+    if (index + STABLE_LOG_CONCURRENCY < ranges.length) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
   }
   return out;
 }
@@ -267,6 +357,7 @@ export async function fetchLaunchToken(address: `0x${string}`): Promise<DopplerP
     address, chainId: ROBINHOOD_CHAIN_ID,
     baseToken: { address, name, symbol, decimals: 18 },
     quoteToken: { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    launchEngine: "v4-hook",
     // type refined by the Token page from the DEXScreener pair (has pool = graduated)
     type: "v4", dollarLiquidity: null, volumeUsd: null, marketCapUsd: null, priceUsd: null,
     createdAt: new Date(0).toISOString(), // exact create time is unindexed; omitted honestly
@@ -297,6 +388,159 @@ export async function isMainnetOwnStackLaunch(address: `0x${string}`): Promise<b
   return weth.length > 0 || hoodie.length > 0;
 }
 
+type StableLaunchLog = {
+  args: {
+    token: `0x${string}`;
+    creator: `0x${string}`;
+    pool: `0x${string}`;
+    tokenId: bigint;
+    liquidity: bigint;
+  };
+  blockNumber: bigint | null;
+};
+
+const STABLE_LAUNCH_CACHE_TTL_MS = 60_000;
+let stableLaunchCache: { at: number; pools: DopplerPool[] } | null = null;
+let stableLaunchInFlight: Promise<DopplerPool[]> | null = null;
+
+/** Stable V3 launches from HydeV3Pad. Metadata and timestamps come directly from Stable mainnet;
+ * price/liquidity remain null until a dedicated V3 market indexer exists—never fabricated. */
+async function loadStableV3Pools(): Promise<DopplerPool[]> {
+  const latest = await stableClient.getBlockNumber();
+  const logs = await getStableLogs(
+    (fromBlock, toBlock) => stableClient.getLogs({
+      address: STABLE_V3_PAD,
+      event: STABLE_V3_LAUNCH_CREATED,
+      fromBlock,
+      toBlock,
+    }) as unknown as Promise<StableLaunchLog[]>,
+    STABLE_V3_DEPLOY_BLOCK,
+    latest,
+  );
+  const newest = logs.slice(-MAX_SHOWN).reverse();
+  if (newest.length === 0) return [];
+
+  const blockNumbers = [...new Set(newest.map((log) => log.blockNumber ?? STABLE_V3_DEPLOY_BLOCK))];
+  const blocks = await Promise.all(blockNumbers.map((blockNumber) => stableClient.getBlock({ blockNumber })));
+  const blockTimes = new Map(blocks.map((block) => [block.number, Number(block.timestamp)]));
+
+  const rows = await Promise.all(newest.map(async (log): Promise<DopplerPool | null> => {
+    const token = log.args.token;
+    const [name, symbol] = await Promise.all([
+      stableClient.readContract({ address: token, abi: ERC20_META_ABI, functionName: "name" }).catch(() => null),
+      stableClient.readContract({ address: token, abi: ERC20_META_ABI, functionName: "symbol" }).catch(() => null),
+    ]);
+    if (!name || !symbol) return null;
+    const timestamp = blockTimes.get(log.blockNumber ?? STABLE_V3_DEPLOY_BLOCK) ?? 0;
+    return {
+      address: token,
+      chainId: STABLE_CHAIN_ID,
+      poolAddress: log.args.pool,
+      baseToken: { address: token, name, symbol, decimals: 18 },
+      quoteToken: {
+        address: stableV3.numeraire.address,
+        name: "USDT0",
+        symbol: "USDT0",
+        decimals: stableV3.numeraire.decimals,
+      },
+      launchEngine: "v3-single-sided",
+      type: "v3",
+      dollarLiquidity: null,
+      volumeUsd: null,
+      marketCapUsd: null,
+      priceUsd: null,
+      createdAt: new Date(timestamp * 1000).toISOString(),
+      progress: null,
+      creator: log.args.creator,
+      creatorClaimable: null,
+    };
+  }));
+
+  const seen = new Set<string>();
+  return rows.filter((pool): pool is DopplerPool => {
+    if (!pool) return false;
+    const key = pool.address.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function fetchStableV3Pools(force = false): Promise<DopplerPool[]> {
+  if (!force && stableLaunchCache && Date.now() - stableLaunchCache.at < STABLE_LAUNCH_CACHE_TTL_MS) {
+    return stableLaunchCache.pools;
+  }
+  if (!force && stableLaunchInFlight) return stableLaunchInFlight;
+
+  const request = loadStableV3Pools().then((pools) => {
+    stableLaunchCache = { at: Date.now(), pools };
+    return pools;
+  });
+  stableLaunchInFlight = request;
+  try {
+    return await request;
+  } finally {
+    if (stableLaunchInFlight === request) stableLaunchInFlight = null;
+  }
+}
+
+/** Single Stable V3 launch read for the shared /token/:address detail page. Attribution comes from the
+ * indexed HydeV3Pad launch event; arbitrary Stable ERC-20s are rejected. */
+async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
+  const cached = stableLaunchCache?.pools.find(
+    (pool) => pool.address.toLowerCase() === address.toLowerCase(),
+  );
+  if (cached) return cached;
+
+  const latest = await stableClient.getBlockNumber().catch(() => null);
+  if (latest == null) return null;
+  const created = await getStableLogs(
+    (fromBlock, toBlock) => stableClient.getLogs({
+      address: STABLE_V3_PAD,
+      event: STABLE_V3_LAUNCH_CREATED,
+      args: { token: address },
+      fromBlock,
+      toBlock,
+    }) as unknown as Promise<StableLaunchLog[]>,
+    STABLE_V3_DEPLOY_BLOCK,
+    latest,
+  ).catch(() => null);
+  const launch = created?.[0];
+  if (!launch) return null;
+
+  const [name, symbol, block] = await Promise.all([
+    stableClient.readContract({ address, abi: ERC20_META_ABI, functionName: "name" }).catch(() => null),
+    stableClient.readContract({ address, abi: ERC20_META_ABI, functionName: "symbol" }).catch(() => null),
+    launch.blockNumber != null
+      ? stableClient.getBlock({ blockNumber: launch.blockNumber }).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  if (!name || !symbol) return null;
+
+  return {
+    address,
+    chainId: STABLE_CHAIN_ID,
+    poolAddress: launch.args.pool,
+    baseToken: { address, name, symbol, decimals: 18 },
+    quoteToken: {
+      address: stableV3.numeraire.address,
+      name: "USDT0",
+      symbol: "USDT0",
+      decimals: stableV3.numeraire.decimals,
+    },
+    launchEngine: "v3-single-sided",
+    type: "v3",
+    dollarLiquidity: null,
+    volumeUsd: null,
+    marketCapUsd: null,
+    priceUsd: null,
+    createdAt: block ? new Date(Number(block.timestamp) * 1000).toISOString() : new Date(0).toISOString(),
+    progress: null,
+    creator: launch.args.creator,
+    creatorClaimable: null,
+  };
+}
+
 /** Single-token read for launches outside the board page. Network-aware: mainnet reads the two live
  *  own-stack launch sources; testnet reads its own factory. Fails to null (honest not-found). */
 export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN_ID): {
@@ -323,6 +567,8 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
         ? fetchTestnetLaunchToken
         : chainId === ROBINHOOD_CHAIN_ID
           ? fetchMainnetLaunchToken
+          : chainId === STABLE_CHAIN_ID
+            ? fetchStableV3LaunchToken
           : null;
     if (!fetcher) {
       setLoading(false);
@@ -363,10 +609,10 @@ const rhTestnetChain = defineChain({
   id: RH_TESTNET_ID,
   name: "Robinhood Testnet",
   nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [ROBINHOOD_TESTNET.rpcUrl] } },
+  rpcUrls: { default: { http: rpcUrlsForNetwork(ROBINHOOD_TESTNET) } },
   contracts: { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } },
 });
-const testnetClient = createPublicClient({ chain: rhTestnetChain, transport: http() });
+const testnetClient = createPublicClient({ chain: rhTestnetChain, transport: rpcTransportForNetwork(ROBINHOOD_TESTNET) });
 
 type LaunchLog = { args: { token: `0x${string}`; creator: `0x${string}` }; blockNumber: bigint | null };
 
@@ -444,6 +690,7 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
       chainId: RH_TESTNET_ID,
       baseToken: { address: token, name, symbol, decimals: 18 },
       quoteToken: { address: ROBINHOOD_TESTNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+      launchEngine: "v4-hook",
       type: "v4",
       dollarLiquidity: null,
       volumeUsd: null,
@@ -494,6 +741,7 @@ export async function fetchTestnetLaunchToken(address: `0x${string}`): Promise<D
     address, chainId: RH_TESTNET_ID,
     baseToken: { address, name, symbol, decimals: 18 },
     quoteToken: { address: ROBINHOOD_TESTNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    launchEngine: "v4-hook",
     type: "v4", dollarLiquidity: null, volumeUsd: null, marketCapUsd: null, priceUsd: null,
     createdAt: new Date(0).toISOString(), // exact create time unindexed on the single-read path
     progress: null,
@@ -533,6 +781,7 @@ async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerP
     quoteToken: isHoodiePair
       ? { address: MAINNET_HOODIE, name: "Hoodie", symbol: "HOODIE", decimals: 18 }
       : { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    launchEngine: "v4-hook",
     type: "v4",
     dollarLiquidity: null,
     volumeUsd: null,
@@ -600,6 +849,7 @@ async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
         quoteToken: row.isHoodiePair
           ? { address: MAINNET_HOODIE, name: "Hoodie", symbol: "HOODIE", decimals: 18 }
           : { address: ROBINHOOD_MAINNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+        launchEngine: "v4-hook",
         type: "v4",
         dollarLiquidity: null,
         volumeUsd: null,
@@ -630,7 +880,7 @@ async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
   });
 }
 
-const MAINNET_LAUNCH_CACHE_KEY = "hyde_mainnet_launches_v2";
+const MAINNET_LAUNCH_CACHE_KEY = "hyde_mainnet_launches_v3";
 const MAINNET_LAUNCH_CACHE_TTL = 5 * 60 * 1000;
 let mainnetLaunchMemoryCache: { at: number; pools: DopplerPool[] } | null = null;
 let mainnetLaunchInFlight: Promise<DopplerPool[]> | null = null;
@@ -700,13 +950,15 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     setLoading(true);
     setError(null);
 
-    // Only chains with a live Hyde deployment have launches. A "coming" chain (e.g. Stable/988) has none —
-    // return empty rather than falling back to the mainnet fetch (would leak Robinhood data onto Stable).
+    // Only chains with a live Hyde deployment have launches. Unknown chains return empty instead of
+    // falling back to Robinhood data (which would leak launches across chain contexts).
     const fetcher =
       chainId === RH_TESTNET_ID
         ? fetchHydeFactoryPools
         : chainId === ROBINHOOD_CHAIN_ID
           ? () => fetchMainnetOwnStackPools(tick > 0)
+          : chainId === STABLE_CHAIN_ID
+            ? () => fetchStableV3Pools(tick > 0)
           : null;
     if (!fetcher) {
       setPools([]);
@@ -720,8 +972,9 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
       .then((items) => {
         if (!cancelled) setPools(items);
       })
-      .catch(() => {
+      .catch((cause) => {
         if (!cancelled) {
+          console.error(`[Hydeout] launch source failed on chain ${chainId}`, cause);
           setPools([]);
           setError("Launch data source unavailable");
         }

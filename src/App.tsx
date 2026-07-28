@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { Header } from "./components/Header";
+import { SideRail } from "./components/SideRail";
 import { AddLiquidityPage } from "./pages/AddLiquidity";
 import { LaunchpadPage } from "./pages/Launchpad";
 import { LandingPage } from "./pages/Landing";
@@ -59,7 +60,9 @@ function App() {
         networks={NETWORKS.filter((n) => n.id !== 57073)}
       />
 
-      <main className="mx-auto w-full max-w-[1920px] px-4 pt-6 pb-16 sm:px-8 md:px-10">
+      <div className="mx-auto flex w-full max-w-[1920px]">
+        <SideRail />
+        <main className="hyde-content min-w-0 flex-1 px-4 pb-10 pt-4 sm:px-8 md:px-10">
         <Routes>
           <Route path="/swap" element={<LegacySwapRedirect />} />
           <Route
@@ -86,7 +89,8 @@ function App() {
           <Route path="/remove-liquidity" element={<Navigate to="/add-liquidity" replace />} />
           <Route path="*" element={<Navigate to="/launchpad" replace />} />
         </Routes>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

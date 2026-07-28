@@ -1,6 +1,4 @@
-// Fail-closed notice for a "coming" chain (Stable V3, pre-deploy) on trade/liquidity/portfolio routes.
-// The chain is browsable + launch-visible, but V4 trade features aren't available — never render a V4
-// card or Robinhood data on it (kami 24317). Honest, chain-aware, no fabricated values.
+// Fail-closed notice for an engine-specific feature boundary. Never render a V4 action on a V3 route.
 import { Card, Button } from "./ui/kit";
 
 export function ComingChainNotice({
@@ -14,11 +12,10 @@ export function ComingChainNotice({
 }) {
   return (
     <Card variant="panel" className="mx-auto max-w-md text-center">
-      <p className="text-sm font-medium text-pcs-text">{feature} isn’t available on {chainName} yet.</p>
+      <p className="text-sm font-medium text-pcs-text">{feature} isn’t part of {chainName}’s current V3 route.</p>
       <p className="mt-2 text-xs leading-relaxed text-pcs-textSub">
-        {chainName} is a single-sided V3 launch chain. Once launches go live here, liquidity will be
-        permanently locked and tokens will trade on their canonical Uniswap pool. In-app{" "}
-        {feature.toLowerCase()} opens after the chain is verified.
+        {chainName} uses single-sided V3 launches with permanently locked principal. Hydeout exposes
+        only execution paths verified for this engine; V4 controls are intentionally hidden.
       </p>
       {onSwitch && (
         <Button variant="secondary" className="mt-4" onClick={onSwitch}>

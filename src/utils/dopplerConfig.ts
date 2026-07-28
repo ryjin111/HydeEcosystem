@@ -1,7 +1,11 @@
+import type { LaunchEngine } from "./chainRegistry";
+
 /** Shared pool type used by Hyde launch UI and trending components. */
 export type DopplerPool = {
   address: string;
   chainId: number;
+  /** Canonical pool contract when the launch event exposes it directly (Stable V3). */
+  poolAddress?: string | null;
   baseToken: {
     address: string;
     name: string;
@@ -14,6 +18,9 @@ export type DopplerPool = {
     symbol: string;
     decimals: number;
   };
+  /** Contract architecture that created this launch. This is deliberately separate from `type`,
+   * which is legacy market-stage data (`v4` curve / `v2` migrated) and must never drive fee copy. */
+  launchEngine: LaunchEngine;
   type: string;
   dollarLiquidity: string | null;
   volumeUsd: string | null;

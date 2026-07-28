@@ -15,10 +15,15 @@ export interface V3InfraEvidence {
 }
 /** Hyde's OWN deployed launchpad — the LAUNCH-enabled gate (gojo signs after deploy + round-trip). */
 export interface V3LaunchEvidence {
+  implementation?: string;
   pad: string;
   locker: string;
+  implementationCodeSize?: number;
   padCodeSize: number;
   lockerCodeSize: number;
+  implementationCodeHash?: string;
+  padCodeHash?: string;
+  lockerCodeHash?: string;
   padLockerBinding?: string;   // pad.LOCKER() (== locker) — gojo sign-off
   lockerFactoryBinding?: string; // locker.FACTORY() (== pad) — gojo sign-off
   deployTx?: string;
@@ -45,7 +50,7 @@ export interface V3ChainEvidence {
 export const CHAIN_EVIDENCE_V3: Record<number, V3ChainEvidence | undefined> = {
   "988": {
     "chainId": 988,
-    "generatedAtBlock": "32879997",
+    "generatedAtBlock": "33271706",
     "rpcUrl": "https://rpc.stable.xyz",
     "infra": {
       "chainId": 988,
@@ -71,10 +76,27 @@ export const CHAIN_EVIDENCE_V3: Record<number, V3ChainEvidence | undefined> = {
         "codeHash": "0x4d9be648c5bf39973670d9f8b481d5d0b971e6a2db2deccc6b98cde21c5dd83e",
         "codeSize": 2227
       },
-      "verifiedAtBlock": "32879997"
+      "verifiedAtBlock": "33271706"
     },
-    "launch": null,
+    "launch": {
+      "implementation": "0xCA5C4C7cc97C9aA3ea56B5F3a5c50Eb1c086615b",
+      "pad": "0xE79F17Fe61F9c76824D74C496f122f0AB483ec6A",
+      "locker": "0xE43314319675eF26724a7d4381D95ac31c246d90",
+      "implementationCodeSize": 4650,
+      "padCodeSize": 9264,
+      "lockerCodeSize": 3140,
+      "implementationCodeHash": "0xce745b5eba4a683f85e250477ced81eb3f04e5ba9a7ed705ef117e2acad6f012",
+      "padCodeHash": "0x26aa0599221e51251bb88b58d911f07905411f85690da2ea87fd0b505c5310dc",
+      "lockerCodeHash": "0xc45c37ee53500e275f9a166b07d3a44d5df088e6a0ca1a4af71c6c86b768c12e",
+      "padLockerBinding": "0xE43314319675eF26724a7d4381D95ac31c246d90",
+      "lockerFactoryBinding": "0xE79F17Fe61F9c76824D74C496f122f0AB483ec6A",
+      "deployTx": "0x8876d45e5a0c15b2e3781d410bd0db223a4c52b9752084110b1c4484965719f8",
+      "launchRoundTripFdv": "4995.430232 USDT0 (Stable mainnet fork E2E)",
+      "verifiedAtBlock": "33271706"
+    },
     "trade": null,
-    "readSmoke": null
+    "readSmoke": {
+      "verifiedAtBlock": "33271706"
+    }
   }
 };

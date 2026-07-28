@@ -1,7 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { V4LiquidityCard } from "../components/V4LiquidityCard";
 import { ComingChainNotice } from "../components/ComingChainNotice";
+import { TokenImage } from "../components/TokenImage";
+import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { chainV3Capability } from "../utils/chainRegistry";
+import { fetchLaunchMeta } from "../utils/launchMeta";
+import type { DopplerPool } from "../utils/dopplerConfig";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 
 type Props = {
@@ -10,11 +15,117 @@ type Props = {
   onAddCustomToken: (token: { address: `0x${string}`; symbol: string; name: string; decimals: number }) => void;
 };
 
+const short = (value: string) => `${value.slice(0, 7)}…${value.slice(-5)}`;
+
+function StableLiquidityRow({ pool, explorer }: { pool: DopplerPool; explorer: string }) {
+  const [image, setImage] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchLaunchMeta(pool.chainId, pool.address).then((meta) => {
+      if (!cancelled) setImage(meta?.image || null);
+    });
+    return () => { cancelled = true; };
+  }, [pool.address, pool.chainId]);
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-b border-pcs-border/70 px-4 py-3 last:border-b-0">
+      <TokenImage
+        src={image}
+        symbol={pool.baseToken.symbol}
+        className="h-10 w-10 shrink-0 rounded-xl text-sm"
+      />
+      <Link to={`/token/${pool.address}?network=${pool.chainId}`} className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-pcs-text">
+          {pool.baseToken.name}{" "}
+          <span className="font-code text-[11px] text-pcs-textDim">${pool.baseToken.symbol}</span>
+        </p>
+        <p className="mt-0.5 font-code text-[9px] uppercase tracking-wider text-pcs-primary">
+          Permanent V3 position · 1% pool
+        </p>
+      </Link>
+      {pool.poolAddress && (
+        <a
+          href={`${explorer}/address/${pool.poolAddress}`}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-md border border-pcs-border px-2.5 py-1.5 font-code text-[10px] text-pcs-textSub transition hover:border-pcs-primary/35 hover:text-pcs-primary"
+        >
+          Pool {short(pool.poolAddress)} ↗
+        </a>
+      )}
+    </div>
+  );
+}
+
+function StableLiquidityPage({ network }: { network: NetworkConfig }) {
+  const { pools, loading, error, refetch } = useHydeLaunches(network.id);
+  const explorer = network.explorerUrl.replace(/\/$/, "");
+  return (
+    <div className="hyde-page mx-auto w-full max-w-[1000px] space-y-4" data-depth-label="Stable · permanent liquidity">
+      <section className="trench-board-header">
+        <div className="relative z-[1] max-w-2xl">
+          <p className="protocol-kicker"><span className="live-ping" />Stable V3 · custody live</p>
+          <h1 className="mt-3 font-display text-3xl font-semibold tracking-[-0.035em] text-pcs-text sm:text-4xl">
+            Liquidity enters once. <span className="trench-title-accent">It never leaves.</span>
+          </h1>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-pcs-textSub">
+            Every Hydeout Stable launch creates a canonical concentrated V3 position and transfers it
+            into permanent custody. Manual add/remove controls are intentionally not part of this launch route.
+          </p>
+        </div>
+      </section>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          ["Tracked positions", loading || error ? "—" : pools.length.toLocaleString("en-US")],
+          ["Principal custody", "Permanent"],
+          ["Pool fee tier", "1%"],
+          ["Creator fee share", "95%"],
+        ].map(([label, value]) => (
+          <div key={label} className="sonar-metric rounded-xl border border-pcs-border bg-pcs-card p-4">
+            <p className="text-[10px] uppercase tracking-wider text-pcs-textDim">{label}</p>
+            <p className="mt-2 font-code text-lg font-semibold text-pcs-text">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <section className="overflow-hidden rounded-2xl border border-pcs-border bg-pcs-card">
+        <div className="flex items-center justify-between border-b border-pcs-border px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold text-pcs-text">Canonical launch pools</p>
+            <p className="mt-0.5 text-[10px] text-pcs-textDim">On-chain HydeV3Pad launch records</p>
+          </div>
+          <span className="rounded-full border border-pcs-success/25 bg-pcs-success/[0.08] px-2.5 py-1 font-code text-[9px] uppercase tracking-wider text-pcs-success">
+            Live
+          </span>
+        </div>
+        {error ? (
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm text-pcs-textSub">Liquidity records are temporarily unavailable.</p>
+            <button type="button" onClick={refetch} className="btn-ghost-term mt-3 px-3 py-1.5 text-xs">Retry</button>
+          </div>
+        ) : loading ? (
+          <div className="px-5 py-8 text-center text-sm text-pcs-textDim">Reading Stable launch pools…</div>
+        ) : pools.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-pcs-textDim">No Stable V3 positions indexed yet.</div>
+        ) : (
+          pools.map((pool) => (
+            <StableLiquidityRow key={`${pool.chainId}-${pool.address}`} pool={pool} explorer={explorer} />
+          ))
+        )}
+      </section>
+    </div>
+  );
+}
+
 export function AddLiquidityPage({ network, tokens, onAddCustomToken }: Props) {
   const [mode, setMode] = useState<"add" | "remove">("add");
 
-  // Stable-specific fail-close: a single-sided V3 chain has no V4 liquidity (kami 24334). Robinhood untouched.
-  if (chainV3Capability(network.id)) {
+  const v3Capability = chainV3Capability(network.id);
+  if (v3Capability?.status === "live") {
+    return <StableLiquidityPage network={network} />;
+  }
+  if (v3Capability) {
     return (
       <div className="pt-8">
         <ComingChainNotice chainName={network.name} feature="Adding liquidity" />

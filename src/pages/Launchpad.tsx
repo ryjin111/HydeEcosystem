@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { EngineAwareLaunch } from "../components/EngineAwareLaunch";
-import { chainEngineCapabilities } from "../utils/chainRegistry";
+import { chainEngineCapabilities, ENGINE_META } from "../utils/chainRegistry";
 import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import { hydeVaultAbi, MAINNET_HOODIE_FEE_VAULT, MAINNET_WETH_FEE_VAULT, ROBINHOOD_TESTNET_VAULT } from "../utils/constants";
@@ -73,6 +73,7 @@ function fmtClaimable(wei: string | null | undefined, unit = "WETH"): string {
 /* ─── Pool card (Explore tab) ─────────────────────────────────────────────── */
 
 const CHAIN_LABELS: Record<number, string> = {
+  988: "Stable",
   4663: "Robinhood Chain",
   46630: "Robinhood Testnet",
 };
@@ -81,11 +82,12 @@ const CHAIN_LABELS: Record<number, string> = {
  *  with MCAP shown large. The per-card "ROBINHOOD CHAIN" pill is dropped — every launch is on the
  *  same chain (stated in the page/footer), and repeating it was what squeezed the name column.
  *  Metrics are honesty-gated: MCAP/Liquidity render ONLY when the DEXScreener pair is real
- *  (graduated + indexed); curve-stage tokens show the on-chain curve % instead — never a fake $. */
+ *  and indexed; otherwise cards show the on-chain curve level when available — never a fake $. */
 export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void; showClaimable?: boolean; onClaimed?: () => void }) {
   const bt = pool.baseToken;
+  const opensDetailOnly = pool.launchEngine === "v3-single-sided";
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
-  const graduated = pool.type === "v2";
+  const engineMeta = ENGINE_META[pool.launchEngine];
   const hasMcap = pool.marketCapUsd != null && pool.marketCapUsd > 0;
   const hasPrice = pool.priceUsd != null && pool.priceUsd > 0;
   const hasVol = pool.volumeUsd != null && parseFloat(pool.volumeUsd) > 0;
@@ -118,8 +120,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
 
   // Settled-fee claim (My Launches only). SAFE by construction: the button renders ONLY when the vault's
   // creatorClaimable read is > 0, and `claimCreator` reverts only NOTHING (0) — so it can't revert on gas
-  // (kami 23894). Collect/Settle stay non-interactive until gojo's live proof; a raw-but-unsettled balance
-  // isn't wired here yet (LILHOODIE reads all-zero today → "No settled fees yet").
+  // (kami 23894). Raw balances use the collect→settle→claim pipeline below rather than calling claim early.
   const { address: wallet } = useAccount();
   const publicClient = usePublicClient({ chainId: pool.chainId });
   const { data: walletClient } = useWalletClient({ chainId: pool.chainId });
@@ -170,8 +171,9 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
 
   // ── Collect & Claim harvest (HOODIE pairs) ─ accrued-but-unsettled creator fees. The pending figure is
   // the REAL collect-sim output (gojo 23899) — read on card mount; the button runs the permissionless
-  // collect→settle→claim pipeline as a resumable stepper. Only a user's own click/sign broadcasts; the app
-  // never fires it (kami 23913). LT-leg swap-settle is a follow-up (rawLT ~0 today).
+  // collect→settle→claim pipeline as one atomic Multicall3 transaction. Only a user's own click/sign
+  // broadcasts; the app never fires it (kami 23913). Both fee legs settle through the vault; the token-side
+  // swap remains protected by the vault's TWAP floor + spot-deviation gate.
   const isHoodieFeePair = showClaimable && pool.chainId === ROBINHOOD_CHAIN_ID && pool.quoteToken?.symbol === "HOODIE";
   const [feeState, setFeeState] = useState<FeeState | null>(null);
   const [feeError, setFeeError] = useState(false); // read failed → "Unavailable", NEVER fail-open to 0 (kami #3)
@@ -247,9 +249,9 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
         <TokenImage src={image} symbol={bt.symbol} className="h-40 w-full text-4xl" style={{ borderRadius: 0, borderWidth: 0 }} />
         <span
           className="absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
-          style={{ background: graduated ? "rgba(52,199,123,0.92)" : "rgba(42,212,166,0.92)", color: "#0B0D10" }}
+          style={{ background: "rgba(42,212,166,0.92)", color: "#0B0D10" }}
         >
-          {graduated ? "Graduated" : "Live"}
+          Live
         </span>
       </div>
 
@@ -258,6 +260,14 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
         <div className="min-w-0">
           <p className="font-display text-[15px] font-semibold text-pcs-text truncate leading-tight">{bt.name}</p>
           <p className="text-xs text-pcs-textDim mt-0.5">${bt.symbol}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <span className="rounded-md border border-pcs-primary/25 bg-pcs-primary/10 px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wide text-pcs-primaryBright">
+              {engineMeta.title}
+            </span>
+            <span className="rounded-md border border-white/10 px-1.5 py-0.5 font-code text-[9px] text-pcs-textSub">
+              {engineMeta.creatorShare}% creator
+            </span>
+          </div>
         </div>
 
         {/* Contract address — truncated + one-tap copy (clint). Real keyboard-focusable button, a
@@ -318,11 +328,11 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
               </span>
               <span
                 className="text-sm font-semibold tabular-nums"
-                style={{ color: feeDisp === "claim" || feeDisp === "awaiting" ? "#34C77B" : "#7A828E" }}
+                style={{ color: feeDisp === "claim" || feeDisp === "awaiting" || feeDisp === "lt-pending" ? "#34C77B" : "#7A828E" }}
               >
                 {/* claim = settled amount · awaiting = real collect-sim pending (~X, never "you earned
-                    nothing" — shiro 23890/gojo 23899) · lt-pending = token-side fees exist, LT settle is a
-                    follow-up (not "none") · none = settled-zero · unavailable = a failed read (never 0). */}
+                    nothing" — shiro 23890/gojo 23899) · lt-pending = token-side fees ready to settle
+                    (not "none") · none = settled-zero · unavailable = a failed read (never 0). */}
                 {feeLoading
                   ? "Checking…"
                   : feeDisp === "unavailable"
@@ -332,7 +342,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
                       : feeDisp === "awaiting"
                         ? `~${fmtHoodieAmt(pendingHoodie)} HOODIE`
                         : feeDisp === "lt-pending"
-                          ? "Settling"
+                          ? `${fmtHoodieAmt(rawLTPending)} ${bt.symbol}`
                           : "No settled fees yet"}
               </span>
             </div>
@@ -350,7 +360,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
               </button>
             )}
 
-            {!feeLoading && feeDisp === "awaiting" && (
+            {!feeLoading && (feeDisp === "awaiting" || feeDisp === "lt-pending") && (
               <div className="space-y-1.5">
                 {(harvesting || harvestFailed) && (
                   <div className="flex items-center justify-center gap-1.5 text-[10px] font-medium" data-testid="harvest-steps">
@@ -371,27 +381,25 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
                     className="relative z-20 w-full rounded-lg py-1.5 text-xs font-bold text-pcs-bg transition disabled:opacity-50"
                     style={{ background: "#34C77B" }}
                   >
-                    {harvestFailed ? resumeLabel : "Collect & Claim"}
+                    {harvestFailed
+                      ? resumeLabel
+                      : feeDisp === "lt-pending"
+                        ? "Settle & Claim · one confirmation"
+                        : "Collect & Claim · one confirmation"}
                   </button>
                 )}
                 {harvesting && (
-                  <p className="text-center text-[10px] text-pcs-textDim">Confirm each step in your wallet…</p>
+                  <p className="text-center text-[10px] text-pcs-textDim">Confirm the complete batch once in your wallet…</p>
                 )}
               </div>
             )}
 
-            {/* Token-side (LT) fees exist but the oracle-gated LT settle is a follow-up — honest, not "none". */}
-            {!feeLoading && feeDisp === "lt-pending" && (
-              <p className="text-[10px] leading-relaxed text-pcs-textDim">
-                Token-side trading fees are accruing and will be claimable once LT settlement ships.
-              </p>
-            )}
           </div>
         )}
 
-        {/* Curve progress — real % of the launch inventory BOUGHT, on-chain (non-graduated). Tooltip
+        {/* Curve progress — real % of the launch inventory BOUGHT, on-chain. Tooltip
             flags it's a live two-way level (rises on net buys, dips on net sells) — shiro 21736. */}
-        {!graduated && pool.progress !== null && (
+        {pool.progress !== null && (
           <div title="% of the launch curve bought so far — rises on net buys, dips on net sells (a live level, not a one-way counter)">
             <div className="flex justify-between text-[10px] text-pcs-textDim mb-1">
               <span>Curve bought</span>
@@ -416,7 +424,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
             className="pointer-events-none text-xs font-semibold px-4 py-2 rounded-lg flex-shrink-0 transition group-hover:brightness-125"
             style={{ background: "rgba(42,212,166,0.12)", color: "#4FE3BE" }}
           >
-            Trade →
+            {opensDetailOnly ? "Open →" : "Trade →"}
           </span>
         </div>
       </div>
@@ -426,7 +434,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
           the visible focus ring / hover-lift live on the wrapper above (kami 23788, shiro 23791). */}
       <button
         type="button"
-        aria-label={`Trade ${bt.name} ($${bt.symbol})`}
+        aria-label={`${opensDetailOnly ? "Open" : "Trade"} ${bt.name} ($${bt.symbol})`}
         onClick={trade}
         className="absolute inset-0 z-10 rounded-2xl outline-none"
       />
@@ -451,17 +459,33 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   const { pools, loading, refetch } = useHydeLaunches(chainId);
   const navigate = useNavigate();
   const { address } = useAccount();
+  const engineCapabilities = chainEngineCapabilities(chainId);
+  const engineLabels = engineCapabilities.map((capability) => ENGINE_META[capability.engine]);
+  const creatorShares = [...new Set(engineLabels.map((meta) => meta.creatorShare))].sort((a, b) => a - b);
+  const creatorShareLabel = creatorShares.length === 0
+    ? "—"
+    : creatorShares.length === 1
+      ? `${creatorShares[0]}%`
+      : `${creatorShares[0]}–${creatorShares[creatorShares.length - 1]}%`;
+  const routeLabel = engineCapabilities.length === 1
+    ? (engineCapabilities[0].engine === "v4-hook" ? "V4 hook" : "V3 single")
+    : `${engineCapabilities.length} engines`;
 
   // My Launches = the connected wallet's own-stack launches (creator/creatorClaimable are null on the
   // Doppler mainnet rail, so it's empty there). Sorted by claimable fees (desc) or market cap.
-  const [sort, setSort] = useState<"claimable" | "mcap">("claimable");
+  const [sort, setSort] = useState<"claimable" | "mcap" | "new">(chainId === 988 ? "new" : "claimable");
+  useEffect(() => {
+    setSort(chainId === 988 ? "new" : "claimable");
+  }, [chainId]);
   const mine = useMemo(
     () => (address ? pools.filter((p) => p.creator && p.creator.toLowerCase() === address.toLowerCase()) : []),
     [pools, address]
   );
   const shown = useMemo(() => {
     const arr = [...mine];
-    if (sort === "claimable") {
+    if (sort === "new") {
+      arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } else if (sort === "claimable") {
       arr.sort((a, b) => {
         const av = claimableBig(a.creatorClaimable), bv = claimableBig(b.creatorClaimable);
         if (bv > av) return 1;
@@ -477,13 +501,53 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   const handleTrade = (tokenAddress: string, poolChainId: number) => {
     if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) return;
     // Hyde launches live on Robinhood mainnet (4663) OR the testnet own-stack (46630) — allow both;
-    // the swap page trades on whichever network is selected in the dropdown (matches the board).
-    if (poolChainId !== ROBINHOOD_CHAIN_ID && poolChainId !== RH_TESTNET_ID) return;
-    navigate(`/token/${tokenAddress}`);
+    // Stable V3 uses the same token-detail design, with an honest external-routing notice instead of
+    // pretending the V4 swap widget supports it.
+    if (poolChainId !== ROBINHOOD_CHAIN_ID && poolChainId !== RH_TESTNET_ID && poolChainId !== 988) return;
+    navigate(`/token/${tokenAddress}?network=${poolChainId}`);
   };
 
   return (
-    <div className="w-full">
+    <div className="trench-launchpad w-full">
+      <section className="trench-hero">
+        <div className="trench-grid" aria-hidden="true" />
+        <div className="trench-bubbles" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
+
+        <div className="relative z-10 max-w-2xl">
+          <div className="protocol-kicker">
+            <span className="live-ping" />
+            Hydeout protocol · depth {chainId.toLocaleString()}
+          </div>
+          <h1 className="mt-3 font-display text-4xl font-semibold leading-[0.98] tracking-[-0.04em] text-[var(--term-text)] sm:text-5xl lg:text-6xl">
+            Launch from
+            <span className="block trench-title-accent">the deep.</span>
+          </h1>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-[var(--term-sub)] sm:text-base">
+            Build quietly. Surface with impact. Shape a token, verify its route, and release it through Hydeout.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <span className="hero-proof"><strong>1B</strong> single-sided supply</span>
+            <span className="hero-proof"><strong>{creatorShareLabel}</strong> creator fees</span>
+            <span className="hero-proof"><strong>∞</strong> locked liquidity</span>
+          </div>
+        </div>
+
+        <div className="trench-guardian" aria-hidden="true">
+          <div className="sonar-ring sonar-ring-one" />
+          <div className="sonar-ring sonar-ring-two" />
+          <div className="sonar-ring sonar-ring-three" />
+          <img src="/logo/trademark-shark-light.png" alt="" />
+          <div className="guardian-readout">
+            <span>Route</span>
+            <strong>{isTestnet ? "V4 sandbox" : routeLabel}</strong>
+          </div>
+        </div>
+      </section>
       {/* Testnet indicator — unmistakable; nothing can read as mainnet/real money (shiro #1). */}
       {isTestnet && (
         <div
@@ -499,21 +563,21 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       )}
 
       {/* Header */}
-      <div className="mb-6 border-b border-[var(--term-border)] pb-5">
+      <div className="launchpad-legacy-heading mb-6 border-b border-[var(--term-border)] pb-5">
         <p className="term-label mb-2">Hydeout protocol</p>
         <h1 className="font-display text-2xl font-semibold text-[var(--term-text)]">Launchpad</h1>
         <p className="mt-1 text-sm text-[var(--term-sub)]">
           {isTestnet
             ? "Live launches on Robinhood Testnet — custody-locked liquidity."
-            : chainEngineCapabilities(chainId)[0]?.engine === "v3-single-sided"
-              ? `Single-sided launches on ${chainEngineCapabilities(chainId)[0]?.name ?? "this chain"} — liquidity permanently locked.`
-              : `Live token launches on ${chainEngineCapabilities(chainId)[0]?.name ?? "Robinhood Chain"}.`}
+            : engineCapabilities[0]?.engine === "v3-single-sided"
+              ? `Single-sided launches on ${engineCapabilities[0]?.name ?? "this chain"} — liquidity permanently locked.`
+              : `Live token launches on ${engineCapabilities[0]?.name ?? "Robinhood Chain"}.`}
         </p>
       </div>
 
       {/* Tabs */}
       <div
-        className="mb-6 flex w-fit gap-1 rounded-lg p-1"
+        className="trench-route-tabs mb-6 flex w-fit gap-1 rounded-lg p-1"
         style={{ background: "var(--term-panel-2)", border: "1px solid var(--term-border)" }}
       >
         {(["launch", "mine"] as const).map((t) => (
@@ -544,11 +608,13 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
               Sort
               <select
                 value={sort}
-                onChange={(e) => setSort(e.target.value as "claimable" | "mcap")}
+                onChange={(e) => setSort(e.target.value as "claimable" | "mcap" | "new")}
                 className="rounded-lg bg-pcs-card px-2 py-1 text-xs font-medium text-pcs-textSub outline-none cursor-pointer focus-visible:ring-2 focus-visible:ring-pcs-primary/70"
                 style={{ border: "1px solid #22252D" }}
               >
-                <option value="claimable">Claimable fees</option>
+                {chainId === 988
+                  ? <option value="new">Newest launch</option>
+                  : <option value="claimable">Claimable fees</option>}
                 <option value="mcap">Market cap</option>
               </select>
             </label>
@@ -588,7 +654,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
                   key={`${pool.chainId}-${pool.address}-${pool.baseToken.address}`}
                   pool={pool}
                   onTrade={handleTrade}
-                  showClaimable
+                  showClaimable={chainId !== 988}
                   onClaimed={refetch}
                 />
               ))}
@@ -597,8 +663,8 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         </div>
       )}
 
-      {/* Launch tab — engine-aware: chain toggle → V3/V4 selector → live V4 form or fail-closed coming panel */}
-      {tab === "launch" && <EngineAwareLaunch defaultChainId={chainId} />}
+      {/* Launch tab — engine-aware: live V4 form or evidence-gated Stable V3 form. */}
+      {tab === "launch" && <EngineAwareLaunch defaultChainId={chainId} onLaunched={refetch} />}
     </div>
   );
 }

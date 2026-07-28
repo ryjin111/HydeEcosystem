@@ -7,6 +7,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAccount } from "wagmi";
+import { formatUnits } from "viem";
+import {
+  ArrowTopRightOnSquareIcon,
+  ArrowsRightLeftIcon,
+  SignalIcon,
+  UserGroupIcon,
+} from "@heroicons/react/24/outline";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import { WETH_CONTAINMENT } from "../utils/containment";
@@ -17,6 +24,7 @@ import { HoodieSwapCard } from "../components/HoodieSwapCard";
 import { YourPositionCard } from "../components/YourPositionCard";
 import { TokenImage } from "../components/TokenImage";
 import { fetchLaunchMeta, type LaunchMeta } from "../utils/launchMeta";
+import { ENGINE_META } from "../utils/chainRegistry";
 import { Card, Button, Stat, SectionLabel } from "../components/ui/kit";
 
 type Props = { network: NetworkConfig; tokens: TokenInfo[]; onAddCustomToken: (t: { address: `0x${string}`; symbol: string; name: string; decimals: number }) => void };
@@ -97,6 +105,18 @@ function useTopHolders(address?: string, chainId?: number): { holders: Holder[];
 
 const short = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
 
+function fmtTokenAmount(value: string, decimals: number): string {
+  try {
+    const amount = Number(formatUnits(BigInt(value), decimals));
+    if (!Number.isFinite(amount)) return "—";
+    if (amount >= 1_000_000) return `${(amount / 1_000_000).toFixed(amount >= 10_000_000 ? 1 : 2)}M`;
+    if (amount >= 1_000) return `${(amount / 1_000).toFixed(amount >= 100_000 ? 1 : 2)}K`;
+    return amount.toLocaleString("en-US", { maximumFractionDigits: amount < 1 ? 4 : 2 });
+  } catch {
+    return "—";
+  }
+}
+
 function timeAgo(iso: string): string | null {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t) || new Date(iso).getUTCFullYear() <= 2020) return null; // unindexed create time → omit
@@ -119,7 +139,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   // own-stack launch sources — never cross-chain data.
   const { pools } = useHydeLaunches(network.id);
   const { pair } = useDexPair(address, network.id);
-  const { holders } = useTopHolders(address, network.id);
+  const { holders, loading: holdersLoading } = useTopHolders(address, network.id);
   const [copied, setCopied] = useState(false);
   const [feedTab, setFeedTab] = useState<"trades" | "holders">("trades"); // coin-mockup: Trades/Holders tabs
   // Off-chain metadata (own-stack tokens store no tokenURI) — fetched by (chain, address); fail-neutral.
@@ -147,34 +167,46 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const { isConnected } = useAccount();
   const { position, error: positionError } = useTokenPosition(pool?.address ?? "", network.id, isHoodiePair);
 
-  if (tokenLoading && !boardPool) return <div className="py-20 text-center text-pcs-textSub">Loading token…</div>;
+  if (tokenLoading && !boardPool) {
+    return (
+      <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
+        <div className="py-12 text-center text-pcs-textSub">Loading token…</div>
+      </div>
+    );
+  }
   if (tokenError && !boardPool) {
     return (
-      <Card variant="panel" className="mx-auto max-w-lg text-center">
-        <p className="py-6 text-pcs-textSub">Token data is temporarily unavailable.</p>
-        <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
-      </Card>
+      <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
+        <Card variant="panel" className="mx-auto max-w-lg text-center">
+          <p className="py-5 text-pcs-textSub">Token data is temporarily unavailable.</p>
+          <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+        </Card>
+      </div>
     );
   }
   if (!pool) {
     return (
-      <Card variant="panel" className="mx-auto max-w-lg text-center">
-        <p className="py-6 text-pcs-textSub">This isn’t a Hydeout launch token.</p>
-        <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
-      </Card>
+      <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
+        <Card variant="panel" className="mx-auto max-w-lg text-center">
+          <p className="py-5 text-pcs-textSub">This isn’t a Hydeout launch token.</p>
+          <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+        </Card>
+      </div>
     );
   }
 
   const sym = pool.baseToken.symbol || "?";
+  const engineMeta = ENGINE_META[pool.launchEngine];
+  const isV4Launch = pool.launchEngine === "v4-hook";
   // WETH-only containment (kami 24019): a non-HOODIE (WETH-paired) token while WETH_CONTAINMENT is active.
   // Its chart/Trades empty-states must NOT claim "trading is live on-chain" (contradicts the amber pause card),
   // and the green LIVE badge is swapped for a paused one. HOODIE pages keep the live copy unchanged.
-  const wethContained = !isHoodiePair && WETH_CONTAINMENT.active;
+  const wethContained = isV4Launch && !isHoodiePair && WETH_CONTAINMENT.active;
   const creatorAddr = (pool as { creator?: string }).creator;
   const launchedAgo = timeAgo(pool.createdAt);
 
   return (
-    <div className="mx-auto w-full max-w-[1200px]">
+    <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
       {/* Breadcrumb (coin-mockup) */}
       <nav className="mb-3 flex items-center gap-1.5 text-xs text-pcs-textDim">
         <Link to="/discover" className="transition hover:text-pcs-textSub">Board</Link>
@@ -182,9 +214,9 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
         <span className="truncate text-pcs-textSub">{pool.baseToken.name}</span>
       </nav>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr,380px]">
+      <div className="grid gap-4 lg:grid-cols-[1fr,380px]">
         {/* ---------- main ---------- */}
-        <div className="min-w-0 space-y-5">
+        <div className="min-w-0 space-y-4">
           {/* Header — image · name · by creator · time · address · right-aligned price (coin-mockup) */}
           <Card>
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -201,6 +233,9 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                     {creatorAddr && <span>by {short(creatorAddr)}</span>}
                     {launchedAgo && <span>· {launchedAgo}</span>}
                     <button type="button" onClick={() => { navigator.clipboard?.writeText(pool.address); setCopied(true); setTimeout(() => setCopied(false), 1200); }} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono transition hover:text-pcs-textSub" style={{ border: "1px solid #22252D" }}>{copied ? "Copied" : short(pool.address)} ⧉</button>
+                    <span className="rounded-md border border-pcs-primary/25 bg-pcs-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-pcs-primaryBright">
+                      {engineMeta.title}
+                    </span>
                     <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>LIVE</span>
                   </div>
                 </div>
@@ -230,7 +265,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             ))}
           </div>
           <div
-            className="relative flex h-[300px] flex-col items-center justify-center gap-4 px-6 text-center"
+            className="relative flex h-[250px] flex-col items-center justify-center gap-3 px-6 text-center"
             style={{ background: "radial-gradient(120% 90% at 50% 0%, rgba(46,159,230,0.05), transparent 60%), #0E1013" }}
           >
             <div
@@ -259,32 +294,118 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
           {/* Curve/liquidity label — own-stack launches straight into a locked-liquidity pool (no graduation). */}
           <div className="flex items-center gap-2 border-t px-4 py-2.5" style={{ borderColor: "#1C1F26" }}>
             <span className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: "#34C77B" }} />
-            <p className="font-mono text-[11px] text-pcs-textDim">Liquidity locked · single-sided seed, auto-compounding as it earns fees.</p>
+            <p className="font-mono text-[11px] text-pcs-textDim">
+              {isV4Launch
+                ? "V4 hook liquidity locked · 5% of fees auto-compounds into locked LP."
+                : "V3 single-sided liquidity · principal permanently locked."}
+            </p>
           </div>
         </Card>
 
-        {/* Trades / Holders tabs (coin-mockup) — Trades tape is an honest empty state until swaps index. */}
-        <Card className="p-0 overflow-hidden">
-          <div className="flex items-center gap-5 border-b px-4" style={{ borderColor: "#1C1F26" }}>
-            {(["trades", "holders"] as const).map((t) => (
-              <button key={t} type="button" onClick={() => setFeedTab(t)} className="relative py-3 text-sm font-semibold transition" style={{ color: feedTab === t ? "#E8ECF1" : "#5D6470" }}>
-                {t === "trades" ? "Trades" : `Holders${holders.length ? ` ${holders.length}` : ""}`}
-                {feedTab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full" style={{ background: "#2E9FE6" }} />}
-              </button>
-            ))}
+        {/* Honest activity surface: the trade tape remains explicit about indexing, while holders are a
+            Blockscout snapshot rather than an implied total holder count. */}
+        <Card className="token-activity-panel overflow-hidden p-0">
+          <div className="flex flex-col gap-3 border-b border-pcs-border px-4 pb-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <SignalIcon className="h-4 w-4 text-pcs-primary" />
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-pcs-textSub">On-chain activity</p>
+              </div>
+              <p className="mt-1 text-[11px] text-pcs-textDim">Live pool context and indexed wallet distribution.</p>
+            </div>
+            <div className="token-feed-tabs" role="tablist" aria-label="Token activity">
+              {(["trades", "holders"] as const).map((tab) => {
+                const active = feedTab === tab;
+                const Icon = tab === "trades" ? ArrowsRightLeftIcon : UserGroupIcon;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setFeedTab(tab)}
+                    className={`token-feed-tab ${active ? "token-feed-tab-active" : ""}`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {tab === "trades" ? "Trades" : "Top holders"}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="p-4">
+
+          <div className="min-h-[178px] p-4">
             {feedTab === "trades" ? (
-              <p className="py-6 text-center text-sm text-pcs-textDim">{wethContained ? "Trading is paused — launch price under review." : "No trades indexed yet — trading is live on-chain; the tape begins with on-chain swaps."}</p>
+              <div className="token-feed-empty">
+                <div className="token-feed-radar" aria-hidden="true">
+                  <ArrowsRightLeftIcon className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-pcs-text">
+                    {wethContained ? "Trade feed paused" : "Trade tape warming up"}
+                  </p>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
+                    {wethContained
+                      ? "Activity is hidden while this pool’s launch price is under review."
+                      : "Swaps are live on-chain. Indexed activity will appear here when the trade feed is connected."}
+                  </p>
+                </div>
+                {!wethContained && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-pcs-primary/20 bg-pcs-primary/[0.06] px-2.5 py-1 font-code text-[9px] uppercase tracking-wider text-pcs-primary">
+                    <span className="hyde-pulse h-1.5 w-1.5 rounded-full bg-pcs-primary" />
+                    Pool live
+                  </span>
+                )}
+              </div>
+            ) : holdersLoading ? (
+              <div className="space-y-2">
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className="h-[46px] animate-pulse rounded-lg border border-pcs-border bg-white/[0.02]" />
+                ))}
+              </div>
             ) : holders.length === 0 ? (
-              <p className="py-6 text-center text-sm text-pcs-textDim">Holder data unavailable right now.</p>
+              <div className="token-feed-empty">
+                <div className="token-feed-radar" aria-hidden="true">
+                  <UserGroupIcon className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-pcs-text">Holder snapshot unavailable</p>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
+                    No holder rows were returned by the selected chain’s explorer.
+                  </p>
+                </div>
+              </div>
             ) : (
-              <div className="space-y-1.5">
-                {holders.map((h, i) => (
-                  <a key={h.address + i} href={`${network.explorerUrl}/address/${h.address}`} target="_blank" rel="noreferrer" className="flex items-center justify-between text-xs text-pcs-textSub transition hover:text-pcs-text">
-                    <span className="font-mono">#{i + 1} {short(h.address)}</span>
+              <div className="space-y-2">
+                {holders.map((holder, index) => (
+                  <a
+                    key={holder.address + index}
+                    href={`${network.explorerUrl}/address/${holder.address}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="token-holder-row group"
+                  >
+                    <span className={`token-holder-rank ${index < 3 ? "token-holder-rank-top" : ""}`}>
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-code text-xs text-pcs-text">{short(holder.address)}</span>
+                      <span className="mt-0.5 block text-[10px] uppercase tracking-wider text-pcs-textDim">
+                        Wallet on {network.name}
+                      </span>
+                    </span>
+                    <span className="text-right">
+                      <span className="block font-code text-xs font-semibold tabular-nums text-pcs-text">
+                        {fmtTokenAmount(holder.value, pool.baseToken.decimals)}
+                      </span>
+                      <span className="mt-0.5 block font-code text-[9px] uppercase tracking-wider text-pcs-textDim">{sym}</span>
+                    </span>
+                    <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 text-pcs-textDim transition group-hover:text-pcs-primary" />
                   </a>
                 ))}
+                <p className="pt-1 text-right font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
+                  Snapshot via chain explorer
+                </p>
               </div>
             )}
           </div>
@@ -292,17 +413,17 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
       </div>
 
       {/* ---------- right rail ---------- */}
-      <div className="min-w-0 space-y-5">
+      <div className="min-w-0 space-y-4">
         {/* Rail-aware trade widget (§3.2). When the router genuinely goes live, the reused
            V4SwapCard executes; otherwise the primary action routes to the live pair and the
            in-app Buy/Sell is shown REFERENCE-ONLY (dimmed, non-interactive) — never implying
            Hyde submits/pre-fills an order it can't carry. Graduation is NEVER cited as a reason. */}
-        {isHoodiePair ? (
+        {isV4Launch && isHoodiePair ? (
           <HoodieSwapCard
             network={network}
             token={{ address: pool.address as `0x${string}`, symbol: sym, name: pool.baseToken.name, decimals: pool.baseToken.decimals }}
           />
-        ) : isGatewayLive(network.id) && !WETH_CONTAINMENT.active ? (
+        ) : isV4Launch && isGatewayLive(network.id) && !WETH_CONTAINMENT.active ? (
           <V4SwapCard network={network} tokens={tokens} onAddCustomToken={onAddCustomToken} forceTokenOut={pool.address.toLowerCase()} />
         ) : (
           <Card variant="panel">
@@ -310,11 +431,11 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             {/* WETH CONTAINMENT (kami 24005/24008): this branch is the non-HOODIE (WETH-paired) path — its preset
                 seeded the ~$1.9T pool. No audited in-app sell → the whole external trade link is removed (routing
                 users to the broken pool is the same harm); price/FDV stays truthful. HOODIE pairs never reach here. */}
-            {WETH_CONTAINMENT.active ? (
+            {isV4Launch && WETH_CONTAINMENT.active ? (
               <p className="mt-3 rounded-lg px-2.5 py-2 text-center text-sm leading-relaxed" style={{ background: "rgba(232,163,61,0.08)", border: "1px solid rgba(232,163,61,0.28)", color: "#E0A32E" }}>
                 {WETH_CONTAINMENT.noSell}
               </p>
-            ) : pair ? (
+            ) : isV4Launch && pair ? (
               <>
                 <a
                   href={`https://dexscreener.com/robinhood/${pair}`}
@@ -328,7 +449,23 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <p className="mt-2 text-xs text-pcs-textSub">Trading is live on this token’s pair.</p>
               </>
             ) : (
-              <p className="mt-2 text-sm text-pcs-textSub">In-app swap for this token is coming shortly. It trades live now on its locked-liquidity pool, on-chain.</p>
+              <>
+                <p className="mt-2 text-sm text-pcs-textSub">
+                  {isV4Launch
+                    ? "In-app swap for this token is coming shortly. It trades live now on its locked-liquidity pool, on-chain."
+                    : "This token trades through its canonical Stable V3 pool. Hydeout’s in-app V3 router is not connected, so no swap control is simulated here."}
+                </p>
+                {!isV4Launch && pool.poolAddress && (
+                  <a
+                    href={`${network.explorerUrl.replace(/\/$/, "")}/address/${pool.poolAddress}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 block rounded-xl border border-pcs-primary/30 bg-pcs-primary/[0.09] py-2.5 text-center text-sm font-semibold text-pcs-primaryBright transition hover:bg-pcs-primary/[0.13]"
+                  >
+                    View canonical V3 pool ↗
+                  </a>
+                )}
+              </>
             )}
             {/* Disabled Buy/Sell preview removed (kami 23517) — it read as a working swap; the live-pair
                 link above is the single trade action until the native swap actually executes. */}
@@ -365,11 +502,13 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             <div className="flex items-center gap-2">
               <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>HYDE STACK · LIVE</span>
             </div>
-            <p className="font-mono text-[11px] text-pcs-text">90% creator · 5% Hyde · 5% locked liquidity</p>
-            <p className="text-[11px] leading-relaxed text-pcs-textSub">Liquidity is custody-locked and auto-compounds as fees accrue.</p>
-            <p className="text-[11px] leading-relaxed text-pcs-textDim">
-              <span className="font-semibold text-pcs-textSub">Launch protection:</span> swap fee decays 3%→1% over 5 minutes; 1% max-wallet for 5 minutes. Selling remains unrestricted.
-            </p>
+            <p className="font-mono text-[11px] text-pcs-text">{engineMeta.feeSplitLabel}</p>
+            <p className="text-[11px] leading-relaxed text-pcs-textSub">{engineMeta.trustLine}</p>
+            {isV4Launch && (
+              <p className="text-[11px] leading-relaxed text-pcs-textDim">
+                <span className="font-semibold text-pcs-textSub">Launch protection:</span> swap fee decays 3%→1% over 5 minutes; 1% max-wallet for 5 minutes. Selling remains unrestricted.
+              </p>
+            )}
           </div>
         </Card>
 
