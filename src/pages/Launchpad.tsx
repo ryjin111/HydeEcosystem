@@ -8,8 +8,16 @@ import type { DopplerPool } from "../utils/dopplerConfig";
 import { EngineAwareLaunch } from "../components/EngineAwareLaunch";
 import { chainEngineCapabilities, ENGINE_META } from "../utils/chainRegistry";
 import { TokenImage } from "../components/TokenImage";
+import { StableV3FeeCollector } from "../components/StableV3FeeCollector";
 import { fetchLaunchMeta } from "../utils/launchMeta";
-import { hydeVaultAbi, MAINNET_HOODIE_FEE_VAULT, MAINNET_WETH_FEE_VAULT, ROBINHOOD_TESTNET_VAULT } from "../utils/constants";
+import {
+  hydeVaultAbi,
+  MAINNET_HOODIE_FEE_VAULT,
+  MAINNET_WETH_FEE_VAULT,
+  NETWORKS,
+  ROBINHOOD_TESTNET_VAULT,
+  type NetworkConfig,
+} from "../utils/constants";
 import { isClaimConfirmed, type ReplacedReason } from "../utils/txStatus";
 import { readFeeState, runHarvest, feeDisplayState, nextHarvestStep, type FeeState, type HarvestStep, type StepStatus } from "../utils/hoodieFees";
 
@@ -83,11 +91,24 @@ const CHAIN_LABELS: Record<number, string> = {
  *  same chain (stated in the page/footer), and repeating it was what squeezed the name column.
  *  Metrics are honesty-gated: MCAP/Liquidity render ONLY when the DEXScreener pair is real
  *  and indexed; otherwise cards show the on-chain curve level when available — never a fake $. */
-export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { pool: DopplerPool; onTrade: (addr: string, chainId: number) => void; showClaimable?: boolean; onClaimed?: () => void }) {
+export function PoolCard({
+  pool,
+  network,
+  onTrade,
+  showClaimable = false,
+  onClaimed,
+}: {
+  pool: DopplerPool;
+  network?: NetworkConfig;
+  onTrade: (addr: string, chainId: number) => void;
+  showClaimable?: boolean;
+  onClaimed?: () => void;
+}) {
   const bt = pool.baseToken;
   const opensDetailOnly = pool.launchEngine === "v3-single-sided";
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
   const engineMeta = ENGINE_META[pool.launchEngine];
+  const showV4Claimable = showClaimable && pool.launchEngine === "v4-hook";
   const hasMcap = pool.marketCapUsd != null && pool.marketCapUsd > 0;
   const hasPrice = pool.priceUsd != null && pool.priceUsd > 0;
   const hasVol = pool.volumeUsd != null && parseFloat(pool.volumeUsd) > 0;
@@ -174,7 +195,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
   // collect→settle→claim pipeline as one atomic Multicall3 transaction. Only a user's own click/sign
   // broadcasts; the app never fires it (kami 23913). Both fee legs settle through the vault; the token-side
   // swap remains protected by the vault's TWAP floor + spot-deviation gate.
-  const isHoodieFeePair = showClaimable && pool.chainId === ROBINHOOD_CHAIN_ID && pool.quoteToken?.symbol === "HOODIE";
+  const isHoodieFeePair = showV4Claimable && pool.chainId === ROBINHOOD_CHAIN_ID && pool.quoteToken?.symbol === "HOODIE";
   const [feeState, setFeeState] = useState<FeeState | null>(null);
   const [feeError, setFeeError] = useState(false); // read failed → "Unavailable", NEVER fail-open to 0 (kami #3)
   const [harvesting, setHarvesting] = useState(false);
@@ -317,7 +338,7 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
         {/* Claimable creator fees — shown only on My Launches. Real fees from the pair's vault, in the pool's
             numeraire (HOODIE / WETH); honest "Unavailable" for a null read, settled-zero for a real 0 — never
             fabricated (kami 23889). The one-click harvest itself lands with gojo's collect→settle→claim proof. */}
-        {showClaimable && (
+        {showV4Claimable && (
           <div
             className="rounded-xl px-3 py-2 space-y-2"
             style={{ background: "rgba(52,199,123,0.06)", border: "1px solid rgba(52,199,123,0.22)" }}
@@ -397,6 +418,20 @@ export function PoolCard({ pool, onTrade, showClaimable = false, onClaimed }: { 
           </div>
         )}
 
+        {showClaimable && pool.launchEngine === "v3-single-sided" && network && (
+          <div className="relative z-20">
+            <StableV3FeeCollector
+              network={network}
+              token={{
+                address: bt.address as `0x${string}`,
+                symbol: bt.symbol,
+                decimals: bt.decimals,
+              }}
+              compact
+            />
+          </div>
+        )}
+
         {/* Curve progress — real % of the launch inventory BOUGHT, on-chain. Tooltip
             flags it's a live two-way level (rises on net buys, dips on net sells) — shiro 21736. */}
         {pool.progress !== null && (
@@ -457,6 +492,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   // Network-aware: on Robinhood Testnet this reads the LIVE own-stack factory; else the Doppler rail.
   const isTestnet = chainId === RH_TESTNET_ID;
   const { pools, loading, refetch } = useHydeLaunches(chainId);
+  const network = NETWORKS.find((item) => item.id === chainId);
   const navigate = useNavigate();
   const { address } = useAccount();
   const engineCapabilities = chainEngineCapabilities(chainId);
@@ -653,8 +689,9 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
                 <PoolCard
                   key={`${pool.chainId}-${pool.address}-${pool.baseToken.address}`}
                   pool={pool}
+                  network={network}
                   onTrade={handleTrade}
-                  showClaimable={chainId !== 988}
+                  showClaimable
                   onClaimed={refetch}
                 />
               ))}

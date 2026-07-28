@@ -1,5 +1,5 @@
-import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
-import { lazy, Suspense, useMemo, useState } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Header } from "./components/Header";
 import { SideRail } from "./components/SideRail";
 import { NETWORKS } from "./utils/constants";
@@ -18,9 +18,13 @@ const ProfilePage = lazy(() => import("./pages/Profile").then((module) => ({ def
 function LegacySwapRedirect() {
   const [searchParams] = useSearchParams();
   const address = searchParams.get("out") ?? "";
+  const requestedNetwork = Number(searchParams.get("network"));
+  const networkQuery = NETWORKS.some((network) => network.id === requestedNetwork)
+    ? `?network=${requestedNetwork}`
+    : "";
   return (
     <Navigate
-      to={/^0x[0-9a-fA-F]{40}$/.test(address) ? `/token/${address}` : "/discover"}
+      to={/^0x[0-9a-fA-F]{40}$/.test(address) ? `/token/${address}${networkQuery}` : `/discover${networkQuery}`}
       replace
     />
   );
@@ -30,14 +34,29 @@ function App() {
   // Global chain context can be URL-initialized (?network=988) so a chain view is shareable/linkable; the
   // header selector remains the live authority thereafter. Validated against NETWORKS.
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const urlNetwork = Number(searchParams.get("network"));
   const [selectedNetworkId, setSelectedNetworkId] = useState(
     NETWORKS.some((n) => n.id === urlNetwork) ? urlNetwork : NETWORKS[0].id,
   );
+  useEffect(() => {
+    // Cross-chain discovery cards carry their network in the URL. Adopt that
+    // context before mounting transaction controls for the destination token.
+    if (NETWORKS.some((network) => network.id === urlNetwork)) {
+      setSelectedNetworkId(urlNetwork);
+    }
+  }, [urlNetwork]);
   const selectedNetwork = useMemo(
     () => NETWORKS.find((network) => network.id === selectedNetworkId) ?? NETWORKS[0],
     [selectedNetworkId]
   );
+  const changeNetwork = (networkId: number) => {
+    setSelectedNetworkId(networkId);
+    const nextSearch = new URLSearchParams(location.search);
+    nextSearch.set("network", String(networkId));
+    navigate({ pathname: location.pathname, search: nextSearch.toString() }, { replace: true });
+  };
 
   const { tokens: baseTokens, addCustomToken } = useTokenList(selectedNetwork);
   const { tokens: hydeTokens } = useHydeTokens(selectedNetwork.id);
@@ -57,7 +76,7 @@ function App() {
     <div className="min-h-screen">
       <Header
         selectedNetwork={selectedNetwork}
-        onNetworkChange={setSelectedNetworkId}
+        onNetworkChange={changeNetwork}
         networks={NETWORKS.filter((n) => n.id !== 57073)}
       />
 

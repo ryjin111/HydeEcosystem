@@ -2,11 +2,12 @@
 // (`type`) is intentionally not used for economics: V3 and V4 have different truthful fee splits.
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { useHydeLaunches } from "../hooks/useDopplerTokens";
+import { useAllHydeLaunches } from "../hooks/useAllHydeLaunches";
 import { TokenImage } from "../components/TokenImage";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import { chainEngineCapabilities, ENGINE_META, type LaunchEngine } from "../utils/chainRegistry";
+import { NETWORKS } from "../utils/constants";
 
 // Spec palette (§1) — kept local for pixel control against the mock.
 const C = {
@@ -22,8 +23,41 @@ const C = {
   amber: "#E0A32E",
 };
 
-type SortKey = "new" | "mcap";
+type SortKey = "volume" | "new" | "liquidity" | "mcap";
 type Filter = "all" | LaunchEngine;
+type ChainScope = "all" | number;
+
+const SORTS: { id: SortKey; label: string }[] = [
+  { id: "volume", label: "24h Volume" },
+  { id: "new", label: "New" },
+  { id: "liquidity", label: "Top Liquidity" },
+  { id: "mcap", label: "Top MCap" },
+];
+
+function networkName(chainId: number): string {
+  return NETWORKS.find((network) => network.id === chainId)?.name ?? `Chain ${chainId}`;
+}
+
+function numeric(value: string | number | null | undefined): number | null {
+  if (value == null) return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sortLaunches(pools: DopplerPool[], sort: SortKey): DopplerPool[] {
+  return [...pools].sort((a, b) => {
+    const newestFirst = () => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (sort === "new") return newestFirst();
+
+    const metric = sort === "volume"
+      ? (pool: DopplerPool) => numeric(pool.volumeUsd)
+      : sort === "liquidity"
+        ? (pool: DopplerPool) => numeric(pool.dollarLiquidity)
+        : (pool: DopplerPool) => numeric(pool.marketCapUsd);
+
+    return (metric(b) ?? -1) - (metric(a) ?? -1) || newestFirst();
+  });
+}
 
 function LaunchLink({ p, className, children }: { p: DopplerPool; className?: string; children: ReactNode }) {
   return <Link to={`/token/${p.address}?network=${p.chainId}`} className={className}>{children}</Link>;
@@ -80,7 +114,24 @@ function EngineBadge({ engine }: { engine: LaunchEngine }) {
         ? { background: "rgba(42,212,166,0.10)", color: "#4FE3BE", border: "1px solid rgba(42,212,166,0.25)" }
         : { background: "rgba(46,159,230,0.10)", color: C.blueH, border: `1px solid ${C.blue}40` }}
     >
-      {isV4 ? "V4 hook" : "V3 single-sided"}
+      {isV4 ? "V4 hook" : "V3"}
+    </span>
+  );
+}
+
+function ChainBadge({ chainId }: { chainId: number }) {
+  const isStable = chainId === 988;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.06em]"
+      style={{
+        background: isStable ? "rgba(52,199,123,0.10)" : "rgba(138,147,162,0.12)",
+        color: isStable ? "#67E3A2" : "#C8CED8",
+        border: `1px solid ${isStable ? "rgba(52,199,123,0.28)" : "rgba(138,147,162,0.24)"}`,
+      }}
+    >
+      <span className="h-1 w-1 rounded-full" style={{ background: isStable ? C.green : C.blueH }} />
+      {isStable ? "Stable" : "Robinhood"}
     </span>
   );
 }
@@ -139,7 +190,8 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
           />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10" />
 
-          <div className="absolute left-2.5 top-2.5">
+          <div className="absolute left-2.5 top-2.5 flex max-w-[calc(100%-4.75rem)] flex-wrap gap-1.5">
+            <ChainBadge chainId={p.chainId} />
             <EngineBadge engine={p.launchEngine} />
           </div>
 
@@ -223,7 +275,10 @@ function LatestSignal({ p }: { p: DopplerPool }) {
       >
         <div className="mb-3 flex items-center justify-between gap-3">
           <span className="protocol-kicker"><span className="live-ping" />Latest signal</span>
-          <EngineBadge engine={p.launchEngine} />
+          <span className="flex flex-wrap items-center justify-end gap-1.5">
+            <ChainBadge chainId={p.chainId} />
+            <EngineBadge engine={p.launchEngine} />
+          </span>
         </div>
         <div className="flex items-center gap-4">
           <LaunchTokenImage p={p} className="h-16 w-16 shrink-0 rounded-2xl text-2xl" style={{ border: `1px solid ${C.hairline}` }} />
@@ -296,10 +351,10 @@ function RecentLaunches({ pools }: { pools: DopplerPool[] }) {
     <div className="trench-signal-strip flex items-center gap-3 overflow-x-auto rounded-[13px] px-3 py-2" style={{ background: C.surface, border: `1px solid ${C.hairline}` }}>
       <span className="shrink-0 text-[10px] font-semibold tracking-wide" style={{ color: C.faint }}>RECENT</span>
       {items.map((p) => (
-        <span key={p.address} className="shrink-0 whitespace-nowrap font-mono text-[11px]" style={{ color: C.muted }}>
-          🚀 <span style={{ color: C.blue }}>${p.baseToken.symbol}</span>
-          <span style={{ color: C.faint }}> · {p.launchEngine === "v4-hook" ? "V4" : "V3"} · {ageOf(p.createdAt)} ago</span>
-        </span>
+          <span key={`${p.chainId}-${p.address}`} className="shrink-0 whitespace-nowrap font-mono text-[11px]" style={{ color: C.muted }}>
+            🚀 <span style={{ color: C.blue }}>${p.baseToken.symbol}</span>
+            <span style={{ color: C.faint }}> · {networkName(p.chainId)} · {p.launchEngine === "v4-hook" ? "V4" : "V3"} · {ageOf(p.createdAt)} ago</span>
+          </span>
       ))}
     </div>
   );
@@ -307,16 +362,33 @@ function RecentLaunches({ pools }: { pools: DopplerPool[] }) {
 
 /* ── board ────────────────────────────────────────────────────────────────── */
 export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
-  const { pools, loading, error, refetch } = useHydeLaunches(chainId);
+  const { pools: allPools, sources, loading, error, warning, refetch } = useAllHydeLaunches();
+  const [chainScope, setChainScope] = useState<ChainScope>("all");
   const [filter, setFilter] = useState<Filter>("all");
-  const [sort, setSort] = useState<SortKey>("new");
+  const [sort, setSort] = useState<SortKey>("volume");
   const [q, setQ] = useState("");
-  const capabilities = useMemo(() => chainEngineCapabilities(chainId), [chainId]);
+  const pools = useMemo(
+    () => chainScope === "all"
+      ? allPools
+      : allPools.filter((pool) => pool.chainId === chainScope),
+    [allPools, chainScope],
+  );
+  const capabilities = useMemo(
+    () => chainScope === "all"
+      ? NETWORKS.flatMap((network) => chainEngineCapabilities(network.id))
+      : chainEngineCapabilities(chainScope),
+    [chainScope],
+  );
   const supportedEngines = useMemo(
     () => [...new Set(capabilities.map((capability) => capability.engine))],
     [capabilities],
   );
-  const chainName = capabilities[0]?.name ?? `Chain ${chainId}`;
+  const scopeName = chainScope === "all" ? "All live networks" : networkName(chainScope);
+  const scopedSource = chainScope === "all"
+    ? null
+    : sources.find((source) => source.chainId === chainScope);
+  const scopeLoading = chainScope === "all" ? loading : (scopedSource?.loading ?? false);
+  const scopeError = chainScope === "all" ? error : (scopedSource?.error ?? null);
 
   useEffect(() => {
     if (filter !== "all" && !supportedEngines.includes(filter)) setFilter("all");
@@ -341,10 +413,7 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
       const needle = q.trim().toLowerCase();
       list = list.filter((p) => p.baseToken.name.toLowerCase().includes(needle) || p.baseToken.symbol.toLowerCase().includes(needle));
     }
-    const sorted = [...list];
-    if (sort === "mcap") sorted.sort((a, b) => (b.marketCapUsd ?? -1) - (a.marketCapUsd ?? -1));
-    else sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return sorted;
+    return sortLaunches(list, sort);
   }, [pools, filter, sort, q]);
 
   const FILTERS: { id: Filter; label: string; count: number }[] = [
@@ -357,15 +426,16 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
   ];
 
   return (
-    <div className="hyde-page hyde-discover mx-auto w-full max-w-[1240px] space-y-4" data-depth-label="Market trench · signal board">
+    <div className="hyde-page hyde-discover mx-auto w-full max-w-[1240px] space-y-4" data-depth-label="Market trench · cross-chain signals">
       <section className="trench-board-header">
         <div className="relative z-[1] max-w-2xl">
-          <p className="protocol-kicker"><span className="live-ping" />{chainName} · engine-aware discovery</p>
+          <p className="protocol-kicker"><span className="live-ping" />Hydeout aggregate · {scopeName}</p>
           <h1 className="mt-3 font-display text-3xl font-semibold tracking-[-0.035em] text-pcs-text sm:text-4xl">
-            Know the launcher <span className="trench-title-accent">before the token.</span>
+            One trench. <span className="trench-title-accent">Every Hydeout launch.</span>
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-pcs-textSub">
-            Every card identifies its V3 or V4 contract route, creator share, and liquidity behavior.
+            Browse Robinhood and Stable together without hiding the route. Every card carries its
+            chain, V3 or V4 engine, creator share, and chain-safe token link.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {supportedEngines.map((engine) => {
@@ -388,13 +458,19 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
 
       <RecentLaunches pools={pools} />
 
+      {warning && chainScope === "all" && (
+        <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-2.5 text-xs text-amber-200/80">
+          Partial market view: {warning}
+        </div>
+      )}
+
       {/* Latest launch + engine filter panel. */}
       <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
-        {error ? (
+        {scopeError ? (
           <div className="rounded-[14px] p-8 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
             Launch data is temporarily unavailable.
           </div>
-        ) : loading ? (
+        ) : scopeLoading && pools.length === 0 ? (
           <div className="rounded-[14px] p-8 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
             Loading the board…
           </div>
@@ -402,7 +478,7 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
           <LatestSignal p={featured} />
         ) : (
           <div className="rounded-[14px] p-8 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
-            No live launches yet — <Link to="/launchpad?tab=launch" style={{ color: C.blue }}>be the first</Link>.
+            No live launches in this view — <Link to={`/launchpad?tab=launch&network=${chainId}`} style={{ color: C.blue }}>launch on {networkName(chainId)}</Link>.
           </div>
         )}
         <EngineRoutes
@@ -413,51 +489,93 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
         />
       </div>
 
-      {/* filters + sort + search */}
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTERS.map((f) => (
+      {/* Cross-chain browse controls stay separate from the wallet/network transaction context. */}
+      <div className="rounded-[13px] p-3" style={{ background: C.surface, border: `1px solid ${C.hairline}` }}>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="commandbar-label mr-1">Network</span>
           <button
-            key={f.id}
-            onClick={() => setFilter(f.id)}
+            type="button"
+            onClick={() => setChainScope("all")}
+            aria-pressed={chainScope === "all"}
             className="rounded-lg px-3 py-1.5 text-xs font-medium transition"
-            style={
-              filter === f.id
-                ? { background: "#2AD4A6", color: "#04120D" }
-                : { background: C.surface, color: C.muted, border: `1px solid ${C.hairline}` }
-            }
+            style={chainScope === "all"
+              ? { background: "#2AD4A6", color: "#04120D" }
+              : { color: C.muted, border: `1px solid ${C.hairline}` }}
           >
-            {f.label} <span className="font-mono tabular-nums opacity-70">{f.count}</span>
+            All chains <span className="font-mono tabular-nums opacity-70">{allPools.length}</span>
           </button>
-        ))}
-        <div className="ml-auto flex items-center gap-2">
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            className="rounded-lg px-2.5 py-1.5 text-xs"
-            style={{ background: C.surface, color: C.text, border: `1px solid ${C.hairline}` }}
-          >
-            <option value="new">Sort: New</option>
-            <option value="mcap">Sort: Market cap</option>
-          </select>
+          {sources.map((source) => (
+            <button
+              key={source.chainId}
+              type="button"
+              onClick={() => setChainScope(source.chainId)}
+              aria-pressed={chainScope === source.chainId}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium transition"
+              style={chainScope === source.chainId
+                ? { background: "#2AD4A6", color: "#04120D" }
+                : { color: C.muted, border: `1px solid ${C.hairline}` }}
+            >
+              {source.name} <span className="font-mono tabular-nums opacity-70">{source.pools.length}</span>
+            </button>
+          ))}
+          <span className="mx-1 hidden h-5 w-px sm:block" style={{ background: C.hairline }} aria-hidden />
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => setFilter(f.id)}
+              aria-pressed={filter === f.id}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium transition"
+              style={
+                filter === f.id
+                  ? { background: "rgba(46,159,230,0.14)", color: C.blueH, border: `1px solid ${C.blue}55` }
+                  : { color: C.muted, border: `1px solid ${C.hairline}` }
+              }
+            >
+              {f.label} <span className="font-mono tabular-nums opacity-70">{f.count}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3" style={{ borderColor: C.hairline }}>
+          <span className="commandbar-label mr-1">Rank</span>
+          {SORTS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSort(item.id)}
+              aria-pressed={sort === item.id}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium transition"
+              style={sort === item.id
+                ? { background: "rgba(42,212,166,0.11)", color: "#4FE3BE", border: "1px solid rgba(42,212,166,0.35)" }
+                : { color: C.muted, border: `1px solid ${C.hairline}` }}
+            >
+              {item.label}
+            </button>
+          ))}
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search name or ticker"
-            className="rounded-lg px-3 py-1.5 text-xs outline-none"
-            style={{ background: C.surface, color: C.text, border: `1px solid ${C.hairline}`, minWidth: 180 }}
+            aria-label="Search launches"
+            className="ml-auto min-w-0 flex-1 rounded-lg px-3 py-1.5 text-xs outline-none sm:max-w-[230px]"
+            style={{ background: C.elevated, color: C.text, border: `1px solid ${C.hairline}` }}
           />
         </div>
+        <p className="mt-2 font-mono text-[10px] text-pcs-textDim">
+          {shown.length} result{shown.length === 1 ? "" : "s"} · token actions open on their canonical network
+        </p>
       </div>
 
       {/* grid */}
-      {error ? (
+      {scopeError ? (
         <div className="rounded-[13px] py-10 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
           <p>Launch data is temporarily unavailable.</p>
           <button type="button" onClick={refetch} className="mt-3 rounded-md px-3 py-1.5 text-xs font-semibold" style={{ color: C.blueH, border: `1px solid ${C.blue}45` }}>
             Retry
           </button>
         </div>
-      ) : loading ? (
+      ) : scopeLoading && pools.length === 0 ? (
         <div className="py-10 text-center text-sm" style={{ color: C.muted }}>Loading launches…</div>
       ) : shown.length === 0 ? (
         <div className="rounded-[13px] py-10 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
@@ -468,7 +586,7 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
           {shown.map((p) => (
             // `trending` stays false everywhere until a real market-velocity signal exists (kami 21204.1);
             // the neon styling in CoinCard remains dormant/ready.
-            <CoinCard key={p.address} p={p} />
+            <CoinCard key={`${p.chainId}-${p.address}`} p={p} />
           ))}
         </div>
       )}

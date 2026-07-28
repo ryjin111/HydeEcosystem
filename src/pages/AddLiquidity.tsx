@@ -107,7 +107,7 @@ function StableLiquidityPage({ network }: { network: NetworkConfig }) {
         ) : loading ? (
           <div className="px-5 py-8 text-center text-sm text-pcs-textDim">Reading Stable launch pools…</div>
         ) : pools.length === 0 ? (
-          <div className="px-5 py-8 text-center text-sm text-pcs-textDim">No Stable V3 positions indexed yet.</div>
+          <div className="px-5 py-8 text-center text-sm text-pcs-textDim">No Stable V3 launch positions found yet.</div>
         ) : (
           pools.map((pool) => (
             <StableLiquidityRow key={`${pool.chainId}-${pool.address}`} pool={pool} explorer={explorer} />
