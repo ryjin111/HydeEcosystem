@@ -4,8 +4,8 @@
 //
 //   node scripts/chainevidence-v3.mjs
 //
-// Hyde-launchpad (LAUNCH) and swap (TRADE) proofs stay null until gojo signs them (deploy round-trip /
-// funded quote). An empty/infra-only artifact keeps the chain fail-closed 'coming', launch/Swap disabled.
+// Hyde-launchpad (LAUNCH) and swap (TRADE) proofs stay null until they are backed by pinned deployment /
+// funded quote evidence. An empty/infra-only artifact keeps the corresponding capability fail-closed.
 import { createPublicClient, http, keccak256 } from "viem";
 import { writeFileSync } from "node:fs";
 
@@ -42,6 +42,21 @@ const ROWS = [
       expectLockerCodeHash: "0xc45c37ee53500e275f9a166b07d3a44d5df088e6a0ca1a4af71c6c86b768c12e",
       launchRoundTripFdv: "4995.430232 USDT0 (Stable mainnet fork E2E)",
     },
+    trade: {
+      swapRouter: "0x32eaf9B5d5F2CD7361c5012890C943D7de84C22a",
+      quoter: "0xb070179E7032CdA868b53e6C1742F80c9e940d1A",
+      expectRouterCodeHash: "0x058094ebcd628e76ed0308fd777ebbe4ece1005e2f1f53e3014f92f3e184277f",
+      expectQuoterCodeHash: "0x50e66edfe1f177d8b214cdbccc6de1828b3f1b360e517c2deb98b685e5cbb393",
+      verifyBlock: 33443361n,
+      // Real Hyde V3 launch + live pool used for the deterministic quote smoke.
+      token: "0x8aa67e0D40e9dE58ad10919A8d88FFAf2747EC69",
+      amountIn: 100_000n,
+      // This account held enough USDT0 and retained an unlimited Router02 allowance at verifyBlock.
+      smokeAccount: "0x576d116ef6649bb177659a3ad2f34f6ba1fd9703",
+      // Successful funded exactInputSingle call to this exact canonical router on Stable mainnet.
+      tradeTx: "0xc7956e4c5075ab6858760e5cb93be296e0975de89bf6d685a89514cf446b3975",
+      tradeBlock: 33305719n,
+    },
   },
 ];
 
@@ -73,6 +88,51 @@ const LOCKER = [
   { name: "FACTORY", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { name: "POSITION_MANAGER", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { name: "HYDE_BPS", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+];
+const QUOTER_V2 = [
+  {
+    name: "quoteExactInputSingle",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{
+      name: "params",
+      type: "tuple",
+      components: [
+        { name: "tokenIn", type: "address" },
+        { name: "tokenOut", type: "address" },
+        { name: "amountIn", type: "uint256" },
+        { name: "fee", type: "uint24" },
+        { name: "sqrtPriceLimitX96", type: "uint160" },
+      ],
+    }],
+    outputs: [
+      { name: "amountOut", type: "uint256" },
+      { name: "sqrtPriceX96After", type: "uint160" },
+      { name: "initializedTicksCrossed", type: "uint32" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
+  },
+];
+const SWAP_ROUTER_02 = [
+  {
+    name: "exactInputSingle",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [{
+      name: "params",
+      type: "tuple",
+      components: [
+        { name: "tokenIn", type: "address" },
+        { name: "tokenOut", type: "address" },
+        { name: "fee", type: "uint24" },
+        { name: "recipient", type: "address" },
+        { name: "amountIn", type: "uint256" },
+        { name: "amountOutMinimum", type: "uint256" },
+        { name: "sqrtPriceLimitX96", type: "uint160" },
+      ],
+    }],
+    outputs: [{ name: "amountOut", type: "uint256" }],
+  },
 ];
 
 function must(cond, msg) {
@@ -185,12 +245,81 @@ async function proveRow(row) {
     };
     console.log(`  • Hyde launchpad verified (impl ${imf.codeSize}B / pad ${pf.codeSize}B / locker ${lf.codeSize}B)`);
   } else {
-    console.log("  • Hyde launchpad NOT deployed → launch:null → chain stays 'coming' (launch-only, Swap disabled)");
+    console.log("  • Hyde launchpad NOT deployed → launch:null → chain stays 'coming'");
+  }
+
+  let trade = null;
+  if (row.trade) {
+    const tv = row.trade.verifyBlock;
+    const [routerFacts, quoterFacts, quote, tradeReceipt, tradeTx] = await Promise.all([
+      codeFacts(client, row.trade.swapRouter, tv),
+      codeFacts(client, row.trade.quoter, tv),
+      client.simulateContract({
+        address: row.trade.quoter,
+        abi: QUOTER_V2,
+        functionName: "quoteExactInputSingle",
+        args: [{
+          tokenIn: row.numeraire.address,
+          tokenOut: row.trade.token,
+          amountIn: row.trade.amountIn,
+          fee: row.feeTier,
+          sqrtPriceLimitX96: 0n,
+        }],
+        blockNumber: tv,
+      }),
+      client.getTransactionReceipt({ hash: row.trade.tradeTx }),
+      client.getTransaction({ hash: row.trade.tradeTx }),
+    ]);
+    must(routerFacts.codeHash.toLowerCase() === row.trade.expectRouterCodeHash.toLowerCase(), "SwapRouter02 runtime hash matches pinned deployment");
+    must(quoterFacts.codeHash.toLowerCase() === row.trade.expectQuoterCodeHash.toLowerCase(), "QuoterV2 runtime hash matches pinned deployment");
+    must(routerFacts.codeSize > 0 && quoterFacts.codeSize > 0, "SwapRouter02 + QuoterV2 code-size both > 0");
+    must(quote.result[0] > 0n, "QuoterV2 returns a funded Hyde-pool quote");
+    must(tradeReceipt.status === "success", "funded SwapRouter02 smoke transaction succeeded");
+    must(tradeTx.to?.toLowerCase() === row.trade.swapRouter.toLowerCase(), "funded smoke transaction targets configured SwapRouter02");
+    must(tradeReceipt.blockNumber === row.trade.tradeBlock, "funded smoke transaction block matches pinned evidence");
+    const amountOutMinimum = (quote.result[0] * 99n) / 100n;
+    const routerSimulation = await client.simulateContract({
+      account: row.trade.smokeAccount,
+      address: row.trade.swapRouter,
+      abi: SWAP_ROUTER_02,
+      functionName: "exactInputSingle",
+      args: [{
+        tokenIn: row.numeraire.address,
+        tokenOut: row.trade.token,
+        fee: row.feeTier,
+        recipient: row.trade.smokeAccount,
+        amountIn: row.trade.amountIn,
+        amountOutMinimum,
+        sqrtPriceLimitX96: 0n,
+      }],
+      value: 0n,
+      blockNumber: tv,
+    });
+    must(routerSimulation.result === quote.result[0], "funded Hyde-pool Router02 simulation matches QuoterV2");
+
+    trade = {
+      swapRouter: row.trade.swapRouter,
+      quoter: row.trade.quoter,
+      swapRouterCodeHash: routerFacts.codeHash,
+      quoterCodeHash: quoterFacts.codeHash,
+      quoteSmoke: {
+        tokenIn: row.numeraire.address,
+        tokenOut: row.trade.token,
+        fee: row.feeTier,
+        amountIn: row.trade.amountIn.toString(),
+        amountOut: quote.result[0].toString(),
+        routerAmountOut: routerSimulation.result.toString(),
+        smokeAccount: row.trade.smokeAccount,
+        atBlock: tv.toString(),
+      },
+      tradeSmoke: { txHash: row.trade.tradeTx, atBlock: tradeReceipt.blockNumber.toString() },
+    };
+    console.log(`  • Stable V3 trade path verified (quote ${quote.result[0]} / tx ${row.trade.tradeTx})`);
   }
 
   return {
     chainId: row.chainId,
-    generatedAtBlock: row.hyde.verifyBlock?.toString() ?? block,
+    generatedAtBlock: row.trade?.verifyBlock?.toString() ?? row.hyde.verifyBlock?.toString() ?? block,
     rpcUrl: row.rpcUrl,
     infra: {
       chainId: row.chainId,
@@ -201,7 +330,7 @@ async function proveRow(row) {
       verifiedAtBlock: block,
     },
     launch, // null until Hyde deployed + gojo's round-trip sign-off
-    trade: null, // null until gojo verifies SwapRouter02 + QuoterV2 + funded smoke (launch-only otherwise)
+    trade,
     readSmoke: launch ? { verifiedAtBlock: row.hyde.verifyBlock.toString() } : null,
   };
 }
@@ -215,8 +344,8 @@ const header = `// AUTO-GENERATED by scripts/chainevidence-v3.mjs — DO NOT HAN
 // Regenerate: node scripts/chainevidence-v3.mjs
 // The V3 registry (chainRegistry.ts) derives readiness from THIS artifact's raw facts (addresses, tick
 // spacing, code hashes, block) by deriving equality vs the configured row — never trusting summary
-// booleans. \`launch\` (Hyde launchpad) and \`trade\` (swap) proofs stay null until gojo signs them, so a
-// chain is fail-closed 'coming' (launch/Swap disabled) until real deployment + round-trip evidence.\n`;
+// booleans. \`launch\` (Hyde launchpad) and \`trade\` (swap) proofs stay null until pinned live evidence
+// exists, so each capability remains fail-closed until its own release gate passes.\n`;
 
 const body = `${header}
 export interface V3InfraEvidence {
@@ -248,7 +377,9 @@ export interface V3LaunchEvidence {
 export interface V3TradeEvidence {
   swapRouter: string;
   quoter: string;
-  quoteSmoke: { amountIn: string; amountOut: string; atBlock: string };
+  swapRouterCodeHash?: string;
+  quoterCodeHash?: string;
+  quoteSmoke: { tokenIn?: string; tokenOut?: string; fee?: number; amountIn: string; amountOut: string; routerAmountOut?: string; smokeAccount?: string; atBlock: string };
   tradeSmoke: { txHash: string; atBlock: string };
 }
 export interface V3ChainEvidence {

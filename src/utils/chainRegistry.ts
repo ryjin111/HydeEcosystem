@@ -32,8 +32,8 @@ import { CHAIN_EVIDENCE_V3, type V3ChainEvidence } from "./chainEvidenceV3";
 import { evidencePoolIdMatches } from "./v4Encoding";
 
 export type ChainStatus = "live" | "coming" | "unsupported";
-/** "launch" = launch-only (V3 reach line: launch here, tokens trade on canonical Uniswap; in-app Swap
- *  disabled until a verified router/quoter). "launch+trade"/"trade" = V4 venues. */
+/** "launch" = launch-only. "launch+trade" = launch plus a verified in-app execution path.
+ *  "trade" = a trade venue without Hyde launch deployment. */
 export type ChainRole = "launch+trade" | "trade" | "launch";
 
 /** Which launch/trade stack a chain runs: V4 hooks (premium line, WETH numeraire) or single-sided
@@ -87,10 +87,17 @@ export interface ChainCapability {
   evidence?: ChainEvidence | V3ChainEvidence;
 }
 
-/** In-app SWAP execution config, engine-tagged (kami 24254 #2/#5). Only V4 has a verified in-app swap path
- *  today; the V3 reach line is launch-only (Swap disabled) until a SwapRouter02/QuoterV2 is verified, so it
- *  never populates this. `trade === null` ⇒ Swap disabled. */
-export type TradeConfig = { engine: "v4-hook"; network: NetworkConfig; contracts: V4Contracts };
+/** In-app SWAP execution config, engine-tagged. `trade === null` means the execution path remains
+ *  fail-closed; non-null means the router/quoter and funded smoke evidence passed for that engine. */
+export type TradeConfig =
+  | { engine: "v4-hook"; network: NetworkConfig; contracts: V4Contracts }
+  | {
+      engine: "v3-single-sided";
+      swapRouter: string;
+      quoter: string;
+      feeTier: number;
+      numeraire: NumeraireInfo;
+    };
 
 /** The 7 clint-locked chains (msg 23047/23064): Robinhood = launch+trade, the
  *  rest = curated-markets trade venues. Order = kami's rollout waves. */
@@ -205,6 +212,10 @@ export interface V3ChainRow {
   nativeSymbol: string;
   v3Factory: string;
   positionManager: string;
+  swapRouter: string;
+  quoter: string;
+  swapRouterCodeHash: string;
+  quoterCodeHash: string;
   numeraire: NumeraireInfo;
   feeTier: number;
   launchpad: {
@@ -273,8 +284,40 @@ function v3LaunchProven(row: V3ChainRow, ev: V3ChainEvidence | undefined): boole
   );
 }
 
-/** Derive a V3 chain's capability. `ev` is injectable for tests; defaults to the generated artifact.
- *  Launch-only: `trade` is always null (Swap disabled) until a verified router/quoter (kami #5). */
+function positiveInteger(value?: string): boolean {
+  try {
+    return !!value && BigInt(value) > 0n;
+  } catch {
+    return false;
+  }
+}
+
+/** Independent V3 trade release gate: both deployed runtime hashes, a real directional quote through
+ * QuoterV2, and a successful funded exactInputSingle transaction to the configured SwapRouter02. */
+function v3TradeProven(row: V3ChainRow, ev: V3ChainEvidence | undefined): boolean {
+  const trade = ev?.trade;
+  return (
+    !!trade &&
+    isRealAddress(row.swapRouter) &&
+    isRealAddress(row.quoter) &&
+    trade.swapRouter.toLowerCase() === row.swapRouter.toLowerCase() &&
+    trade.quoter.toLowerCase() === row.quoter.toLowerCase() &&
+    trade.swapRouterCodeHash?.toLowerCase() === row.swapRouterCodeHash.toLowerCase() &&
+    trade.quoterCodeHash?.toLowerCase() === row.quoterCodeHash.toLowerCase() &&
+    trade.quoteSmoke.tokenIn?.toLowerCase() === row.numeraire.address.toLowerCase() &&
+    trade.quoteSmoke.fee === row.feeTier &&
+    positiveInteger(trade.quoteSmoke.amountIn) &&
+    positiveInteger(trade.quoteSmoke.amountOut) &&
+    trade.quoteSmoke.routerAmountOut === trade.quoteSmoke.amountOut &&
+    isRealAddress(trade.quoteSmoke.smokeAccount) &&
+    !!trade.quoteSmoke.atBlock &&
+    isRealTxHash(trade.tradeSmoke.txHash) &&
+    !!trade.tradeSmoke.atBlock
+  );
+}
+
+/** Derive a V3 chain's launch and trade capabilities independently. `ev` is injectable for tests;
+ * defaults to the generated live-chain artifact. */
 export function deriveV3Capability(
   row: V3ChainRow,
   ev: V3ChainEvidence | undefined = CHAIN_EVIDENCE_V3[row.id],
@@ -284,6 +327,7 @@ export function deriveV3Capability(
   const readSmoke = !!ev?.readSmoke && ev.chainId === row.id;
   // LIVE requires: canonical infra (derived vs row) AND Hyde deployed+signed AND metadata AND read smoke.
   const launchEnabled = v3InfraProven(row, ev) && v3LaunchProven(row, ev) && metadataReady && readSmoke;
+  const tradeReady = launchEnabled && v3TradeProven(row, ev);
   const status: ChainStatus = launchEnabled ? "live" : "coming";
   return {
     id: row.id,
@@ -293,12 +337,20 @@ export function deriveV3Capability(
     nativeSymbol: row.nativeSymbol,
     explorer: row.explorer,
     status,
-    role: row.role, // "launch" ⇒ launch-only, in-app Swap disabled
+    role: tradeReady ? row.role : "launch",
     engine: "v3-single-sided",
     numeraire: row.numeraire,
     browse: { kind: "hyde-launches", markets: [] },
-    trade: null, // launch-only: no in-app V3 swap path until a verified SwapRouter/Quoter (kami #5)
-    smoke: { read: readSmoke, trade: false },
+    trade: tradeReady
+      ? {
+          engine: "v3-single-sided",
+          swapRouter: row.swapRouter,
+          quoter: row.quoter,
+          feeTier: row.feeTier,
+          numeraire: row.numeraire,
+        }
+      : null,
+    smoke: { read: readSmoke, trade: tradeReady },
     evidence: ev, // expose V3 evidence (kami #4) — no longer discarded
   };
 }
@@ -315,6 +367,10 @@ export const V3_CANDIDATES: V3ChainRow[] = [
     nativeSymbol: "USDT0", // verified native gas symbol (gojo 24328) — NOT ETH; matches NetworkConfig
     v3Factory: "0x88F0a512eF09175D456bc9547f914f48C013E4aA",
     positionManager: "0x3BdC3437405f7D801b6036532713fc1F179136a6",
+    swapRouter: "0x32eaf9B5d5F2CD7361c5012890C943D7de84C22a",
+    quoter: "0xb070179E7032CdA868b53e6C1742F80c9e940d1A",
+    swapRouterCodeHash: "0x058094ebcd628e76ed0308fd777ebbe4ece1005e2f1f53e3014f92f3e184277f",
+    quoterCodeHash: "0x50e66edfe1f177d8b214cdbccc6de1828b3f1b360e517c2deb98b685e5cbb393",
     numeraire: {
       address: "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
       symbol: "USDT0",
@@ -332,7 +388,7 @@ export const V3_CANDIDATES: V3ChainRow[] = [
       lockerCodeHash: "0xc45c37ee53500e275f9a166b07d3a44d5df088e6a0ca1a4af71c6c86b768c12e",
       deploymentBlock: 33271478n,
     },
-    role: "launch", // launch-only reach line — tokens trade on canonical Uniswap; in-app Swap disabled
+    role: "launch+trade",
   },
 ];
 
