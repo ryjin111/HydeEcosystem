@@ -44,7 +44,7 @@ Five core contracts with **56 Foundry test/invariant functions** (55 pass · 1 s
 ### Launchpad frontend (`src/`) — Vite + React
 - **Launchpad** — permissionless launch form; network-aware, writes to the live own-stack factory on 46630.
 - **Discover / Launches / Stats** — on-chain aggregates and trending, read straight from factory events.
-- **Swap** — V4 quoter preview + off-chain tick-walk quoting for own-stack pools (fork-verified bit-exact).
+- **Swap** — V4 own-stack routing plus Stable V3 SwapRouter02/QuoterV2 Buy/Sell with live preflight and slippage protection.
 - **Add / Remove Liquidity** — V4 Position Manager multicall flows.
 - **Token page** — per-token detail, embedded GeckoTerminal chart.
 - **Trust / Security page** — the four failure classes this design defends against, with live on-chain receipts.

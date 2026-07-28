@@ -55,10 +55,39 @@ const client = createPublicClient({ chain: robinhoodChain, transport: rpcTranspo
 const STABLE_CHAIN_ID = 988;
 const stableV3 = v3ChainRow(STABLE_CHAIN_ID)!;
 const STABLE_V3_PAD = stableV3.launchpad.pad as `0x${string}`;
+const STABLE_V3_LOCKER = stableV3.launchpad.locker as `0x${string}`;
 const STABLE_V3_DEPLOY_BLOCK = stableV3.launchpad.deploymentBlock;
 const STABLE_V3_LAUNCH_CREATED = parseAbiItem(
   "event LaunchCreated(address indexed token, address indexed creator, address pool, uint256 tokenId, uint128 liquidity)"
 );
+const STABLE_V3_POSITION_ABI = [{
+  type: "function",
+  name: "positionOf",
+  stateMutability: "view",
+  inputs: [{ name: "token", type: "address" }],
+  outputs: [
+    { name: "creator", type: "address" },
+    { name: "token0", type: "address" },
+    { name: "token1", type: "address" },
+    { name: "numeraire", type: "address" },
+    { name: "tokenId", type: "uint256" },
+    { name: "feeTier", type: "uint24" },
+    { name: "cumulativeNumeraireFees", type: "uint256" },
+    { name: "graduated", type: "bool" },
+    { name: "registered", type: "bool" },
+  ],
+}] as const;
+const STABLE_V3_FACTORY_ABI = [{
+  type: "function",
+  name: "getPool",
+  stateMutability: "view",
+  inputs: [
+    { name: "tokenA", type: "address" },
+    { name: "tokenB", type: "address" },
+    { name: "fee", type: "uint24" },
+  ],
+  outputs: [{ name: "pool", type: "address" }],
+}] as const;
 const stableChain = defineChain({
   id: STABLE_CHAIN_ID,
   name: STABLE_MAINNET.name,
@@ -485,42 +514,50 @@ async function fetchStableV3Pools(force = false): Promise<DopplerPool[]> {
 }
 
 /** Single Stable V3 launch read for the shared /token/:address detail page. Attribution comes from the
- * indexed HydeV3Pad launch event; arbitrary Stable ERC-20s are rejected. */
+ * locker's factory-only position registry, which is both authoritative and a constant-time direct read.
+ * This avoids scanning every 500-block log window before a token page can expose its live swap. */
 async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
   const cached = stableLaunchCache?.pools.find(
     (pool) => pool.address.toLowerCase() === address.toLowerCase(),
   );
   if (cached) return cached;
 
-  const latest = await stableClient.getBlockNumber().catch(() => null);
-  if (latest == null) return null;
-  const created = await getStableLogs(
-    (fromBlock, toBlock) => stableClient.getLogs({
-      address: STABLE_V3_PAD,
-      event: STABLE_V3_LAUNCH_CREATED,
-      args: { token: address },
-      fromBlock,
-      toBlock,
-    }) as unknown as Promise<StableLaunchLog[]>,
-    STABLE_V3_DEPLOY_BLOCK,
-    latest,
-  ).catch(() => null);
-  const launch = created?.[0];
-  if (!launch) return null;
+  const position = await stableClient.readContract({
+    address: STABLE_V3_LOCKER,
+    abi: STABLE_V3_POSITION_ABI,
+    functionName: "positionOf",
+    args: [address],
+  }).catch(() => null);
+  if (!position) return null;
+  const [creator, token0, token1, positionNumeraire, , feeTier, , , registered] = position;
+  const tokenLower = address.toLowerCase();
+  const numeraireLower = stableV3.numeraire.address.toLowerCase();
+  const pairMatches =
+    (token0.toLowerCase() === tokenLower && token1.toLowerCase() === numeraireLower)
+    || (token1.toLowerCase() === tokenLower && token0.toLowerCase() === numeraireLower);
+  if (
+    !registered
+    || !pairMatches
+    || positionNumeraire.toLowerCase() !== numeraireLower
+    || Number(feeTier) !== stableV3.feeTier
+  ) return null;
 
-  const [name, symbol, block] = await Promise.all([
+  const [name, symbol, poolAddress] = await Promise.all([
     stableClient.readContract({ address, abi: ERC20_META_ABI, functionName: "name" }).catch(() => null),
     stableClient.readContract({ address, abi: ERC20_META_ABI, functionName: "symbol" }).catch(() => null),
-    launch.blockNumber != null
-      ? stableClient.getBlock({ blockNumber: launch.blockNumber }).catch(() => null)
-      : Promise.resolve(null),
+    stableClient.readContract({
+      address: stableV3.v3Factory as `0x${string}`,
+      abi: STABLE_V3_FACTORY_ABI,
+      functionName: "getPool",
+      args: [address, stableV3.numeraire.address as `0x${string}`, stableV3.feeTier],
+    }).catch(() => null),
   ]);
-  if (!name || !symbol) return null;
+  if (!name || !symbol || !poolAddress || /^0x0{40}$/i.test(poolAddress)) return null;
 
   return {
     address,
     chainId: STABLE_CHAIN_ID,
-    poolAddress: launch.args.pool,
+    poolAddress,
     baseToken: { address, name, symbol, decimals: 18 },
     quoteToken: {
       address: stableV3.numeraire.address,
@@ -534,9 +571,11 @@ async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<Doppler
     volumeUsd: null,
     marketCapUsd: null,
     priceUsd: null,
-    createdAt: block ? new Date(Number(block.timestamp) * 1000).toISOString() : new Date(0).toISOString(),
+    // The direct position registry intentionally avoids a history scan. Unknown time is omitted by
+    // timeAgo() rather than fabricated; the board still carries the exact launch-block timestamp.
+    createdAt: new Date(0).toISOString(),
     progress: null,
-    creator: launch.args.creator,
+    creator,
     creatorClaimable: null,
   };
 }

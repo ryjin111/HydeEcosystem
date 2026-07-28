@@ -2,8 +2,8 @@
 // Regenerate: node scripts/chainevidence-v3.mjs
 // The V3 registry (chainRegistry.ts) derives readiness from THIS artifact's raw facts (addresses, tick
 // spacing, code hashes, block) by deriving equality vs the configured row — never trusting summary
-// booleans. `launch` (Hyde launchpad) and `trade` (swap) proofs stay null until gojo signs them, so a
-// chain is fail-closed 'coming' (launch/Swap disabled) until real deployment + round-trip evidence.
+// booleans. `launch` (Hyde launchpad) and `trade` (swap) proofs stay null until pinned live evidence
+// exists, so each capability remains fail-closed until its own release gate passes.
 
 export interface V3InfraEvidence {
   chainId: number;
@@ -34,7 +34,9 @@ export interface V3LaunchEvidence {
 export interface V3TradeEvidence {
   swapRouter: string;
   quoter: string;
-  quoteSmoke: { amountIn: string; amountOut: string; atBlock: string };
+  swapRouterCodeHash?: string;
+  quoterCodeHash?: string;
+  quoteSmoke: { tokenIn?: string; tokenOut?: string; fee?: number; amountIn: string; amountOut: string; routerAmountOut?: string; smokeAccount?: string; atBlock: string };
   tradeSmoke: { txHash: string; atBlock: string };
 }
 export interface V3ChainEvidence {
@@ -50,7 +52,7 @@ export interface V3ChainEvidence {
 export const CHAIN_EVIDENCE_V3: Record<number, V3ChainEvidence | undefined> = {
   "988": {
     "chainId": 988,
-    "generatedAtBlock": "33271706",
+    "generatedAtBlock": "33443361",
     "rpcUrl": "https://rpc.stable.xyz",
     "infra": {
       "chainId": 988,
@@ -94,7 +96,26 @@ export const CHAIN_EVIDENCE_V3: Record<number, V3ChainEvidence | undefined> = {
       "launchRoundTripFdv": "4995.430232 USDT0 (Stable mainnet fork E2E)",
       "verifiedAtBlock": "33271706"
     },
-    "trade": null,
+    "trade": {
+      "swapRouter": "0x32eaf9B5d5F2CD7361c5012890C943D7de84C22a",
+      "quoter": "0xb070179E7032CdA868b53e6C1742F80c9e940d1A",
+      "swapRouterCodeHash": "0x058094ebcd628e76ed0308fd777ebbe4ece1005e2f1f53e3014f92f3e184277f",
+      "quoterCodeHash": "0x50e66edfe1f177d8b214cdbccc6de1828b3f1b360e517c2deb98b685e5cbb393",
+      "quoteSmoke": {
+        "tokenIn": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+        "tokenOut": "0x8aa67e0D40e9dE58ad10919A8d88FFAf2747EC69",
+        "fee": 10000,
+        "amountIn": "100000",
+        "amountOut": "19817710300606260025938",
+        "routerAmountOut": "19817710300606260025938",
+        "smokeAccount": "0x576d116ef6649bb177659a3ad2f34f6ba1fd9703",
+        "atBlock": "33443361"
+      },
+      "tradeSmoke": {
+        "txHash": "0xc7956e4c5075ab6858760e5cb93be296e0975de89bf6d685a89514cf446b3975",
+        "atBlock": "33305719"
+      }
+    },
     "readSmoke": {
       "verifiedAtBlock": "33271706"
     }

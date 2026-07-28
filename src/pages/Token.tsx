@@ -21,11 +21,12 @@ import { useHydeLaunches, useHydeToken } from "../hooks/useDopplerTokens";
 import { useTokenPosition } from "../hooks/useTokenPosition";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { HoodieSwapCard } from "../components/HoodieSwapCard";
+import { StableV3SwapCard } from "../components/StableV3SwapCard";
 import { YourPositionCard } from "../components/YourPositionCard";
 import { TokenImage } from "../components/TokenImage";
 import { LaunchMetadataEditor } from "../components/LaunchMetadataEditor";
 import { fetchLaunchMeta, type LaunchMeta } from "../utils/launchMeta";
-import { ENGINE_META } from "../utils/chainRegistry";
+import { chainV3Capability, ENGINE_META } from "../utils/chainRegistry";
 import { Card, Button, Stat, SectionLabel } from "../components/ui/kit";
 
 type Props = { network: NetworkConfig; tokens: TokenInfo[]; onAddCustomToken: (t: { address: `0x${string}`; symbol: string; name: string; decimals: number }) => void };
@@ -199,6 +200,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const sym = pool.baseToken.symbol || "?";
   const engineMeta = ENGINE_META[pool.launchEngine];
   const isV4Launch = pool.launchEngine === "v4-hook";
+  const stableV3SwapReady = chainV3Capability(network.id)?.trade?.engine === "v3-single-sided";
   // WETH-only containment (kami 24019): a non-HOODIE (WETH-paired) token while WETH_CONTAINMENT is active.
   // Its chart/Trades empty-states must NOT claim "trading is live on-chain" (contradicts the amber pause card),
   // and the green LIVE badge is swapped for a paused one. HOODIE pages keep the live copy unchanged.
@@ -430,7 +432,12 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
            V4SwapCard executes; otherwise the primary action routes to the live pair and the
            in-app Buy/Sell is shown REFERENCE-ONLY (dimmed, non-interactive) — never implying
            Hyde submits/pre-fills an order it can't carry. Graduation is NEVER cited as a reason. */}
-        {isV4Launch && isHoodiePair ? (
+        {!isV4Launch && stableV3SwapReady ? (
+          <StableV3SwapCard
+            network={network}
+            token={{ address: pool.address as `0x${string}`, symbol: sym, name: pool.baseToken.name, decimals: pool.baseToken.decimals }}
+          />
+        ) : isV4Launch && isHoodiePair ? (
           <HoodieSwapCard
             network={network}
             token={{ address: pool.address as `0x${string}`, symbol: sym, name: pool.baseToken.name, decimals: pool.baseToken.decimals }}
@@ -465,7 +472,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <p className="mt-2 text-sm text-pcs-textSub">
                   {isV4Launch
                     ? "In-app swap for this token is coming shortly. It trades live now on its locked-liquidity pool, on-chain."
-                    : "This token trades through its canonical Stable V3 pool. Hydeout’s in-app V3 router is not connected, so no swap control is simulated here."}
+                    : "This token trades through its canonical Stable V3 pool. In-app execution is temporarily unavailable because the verified router gate did not pass."}
                 </p>
                 {!isV4Launch && pool.poolAddress && (
                   <a

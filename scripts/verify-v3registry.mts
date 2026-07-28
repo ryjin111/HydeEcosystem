@@ -1,8 +1,8 @@
 // V3 multichain registry plumbing — fail-closed derivation, engine-aware lookups, copy-gate fixtures.
 // Bundled+run via esbuild (imports transitive app modules). Run all: `node scripts/verify-v3ui-all.mjs`.
 // Covers kami 24254/24259: raw-fact evidence derived vs the row (no summary booleans); canonical Uniswap ≠
-// app-available (needs deployed+signed Hyde launch); launch-only/Swap-disabled; mismatch/missing-proof
-// fail-closed; V4-only/V3-only/both/neither lookups; no V4 copy in the V3 branch.
+// app-available (needs deployed+signed Hyde launch); independently verified V3 trade path;
+// mismatch/missing-proof fail-closed; V4-only/V3-only/both/neither lookups; no V4 copy in the V3 branch.
 import {
   chainCapabilities,
   chainCapability,
@@ -52,21 +52,45 @@ const signedLaunch = {
   deployTx: "0x" + "a".repeat(64),
   launchRoundTripFdv: "5000",
 };
+const signedTrade = {
+  swapRouter: stableRow.swapRouter,
+  quoter: stableRow.quoter,
+  swapRouterCodeHash: stableRow.swapRouterCodeHash,
+  quoterCodeHash: stableRow.quoterCodeHash,
+  quoteSmoke: {
+    tokenIn: stableRow.numeraire.address,
+    tokenOut: "0x8aa67e0D40e9dE58ad10919A8d88FFAf2747EC69",
+    fee: stableRow.feeTier,
+    amountIn: "100000",
+    amountOut: "19817710300606260025938",
+    routerAmountOut: "19817710300606260025938",
+    smokeAccount: "0x576d116ef6649bb177659a3ad2f34f6ba1fd9703",
+    atBlock: "33443361",
+  },
+  tradeSmoke: { txHash: "0x" + "b".repeat(64), atBlock: "33305719" },
+};
 
-console.log("Real generated artifact (Stable deployment fully verified):");
+console.log("Real generated artifact (Stable launch + trade fully verified):");
 const stableCap = chainCapabilities().find((c) => c.id === 988)!;
-ok("Stable engine v3-single-sided, role launch (launch-only)", stableCap.engine === "v3-single-sided" && stableCap.role === "launch");
+ok("Stable engine v3-single-sided, role launch+trade", stableCap.engine === "v3-single-sided" && stableCap.role === "launch+trade");
 ok("numeraire = USDT0 6-dec USD-pegged", stableCap.numeraire.symbol === "USDT0" && stableCap.numeraire.decimals === 6 && stableCap.numeraire.usdPegged === true);
 ok("canonical infra + Hyde deployment evidence → live", stableCap.status === "live");
-ok("launch-only ⇒ trade null (in-app Swap disabled, kami #5)", stableCap.trade === null);
+ok("verified V3 trade config is exposed", stableCap.trade?.engine === "v3-single-sided" && stableCap.smoke.trade);
 ok("V3 evidence EXPOSED (not discarded), infra present (kami #4)", !!stableCap.evidence && "infra" in stableCap.evidence && (stableCap.evidence as V3ChainEvidence).infra?.factory.tickSpacing === 200);
 
-console.log("\nFully-signed evidence → live (needs metadata row):");
+console.log("\nLaunch proof and trade proof fail independently:");
 const rowWithMeta = { ...stableRow, explorer: "https://explorer.stable.example", nativeSymbol: "USDT0" };
 const liveEv: V3ChainEvidence = { chainId: 988, generatedAtBlock: "1", infra: infraFor(stableRow), launch: signedLaunch, readSmoke: { verifiedAtBlock: "1" } };
 const capLive = deriveV3Capability(rowWithMeta, liveEv);
 ok("infra + signed launch + metadata + read smoke → live", capLive.status === "live");
-ok("…still launch-only, trade stays null", capLive.trade === null);
+ok("missing trade proof stays launch-only", capLive.trade === null && capLive.role === "launch");
+const tradeLive = deriveV3Capability(rowWithMeta, { ...liveEv, trade: signedTrade });
+ok("signed router + quoter + quote + funded tx → in-app V3 trade", tradeLive.trade?.engine === "v3-single-sided" && tradeLive.role === "launch+trade");
+const badTradeHash = deriveV3Capability(rowWithMeta, {
+  ...liveEv,
+  trade: { ...signedTrade, quoterCodeHash: "0x" + "f".repeat(64) },
+});
+ok("trade runtime hash mismatch fails closed without disabling launch", badTradeHash.status === "live" && badTradeHash.trade === null && badTradeHash.role === "launch");
 
 console.log("\nFail-closed: mismatch / missing-proof (kami #3):");
 const wrongFactory: V3ChainEvidence = { ...liveEv, infra: { ...infraFor(stableRow), factory: { ...infraFor(stableRow).factory, address: "0x9999999999999999999999999999999999999999" } } };
