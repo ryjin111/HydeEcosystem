@@ -25,6 +25,9 @@ export const OWNSTACK = {
       || process.env.VITE_STABLE_MAINNET_RPC_URL
       || "https://rpc.stable.xyz",
     v3Pad: "0xE79F17Fe61F9c76824D74C496f122f0AB483ec6A",
+    // Canonical locker created by the pad. positionOf(token) is the direct immutable creator registry,
+    // so metadata verification never needs an RPC-provider-specific historical log scan.
+    v3Locker: "0xE43314319675eF26724a7d4381D95ac31c246d90",
     v3DeploymentBlock: 33271478n,
   },
 };
