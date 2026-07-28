@@ -261,13 +261,17 @@ async function getStableLogs<E>(
   }
 }
 
-// Real market-cap / price / liquidity / 24h-volume from the DEXScreener pair — the
-// same indexer the Token page already uses for the chart. Only graduated tokens that
-// have a live Uniswap pool are indexed; curve-stage tokens simply aren't returned, so
-// their MCAP stays null (honest — no fabricated number, the card shows curve % instead).
+// Real market-cap / price / liquidity / 24h-volume from a chain-scoped DEXScreener pair.
+// A pair must match both the requested chain and Uniswap venue. Tokens not returned by
+// that source remain null (honest — no fabricated number).
 // Batched (up to 30 addrs/call) + fail-neutral: any error leaves everything null.
 type DexData = { marketCapUsd: number | null; priceUsd: number | null; liquidityUsd: number | null; volumeUsd: number | null };
-async function fetchDexData(addresses: string[]): Promise<Map<string, DexData>> {
+type DexChain = "robinhood" | "stable";
+async function fetchDexData(
+  addresses: string[],
+  expectedChain: DexChain = "robinhood",
+  canonicalPairByToken?: ReadonlyMap<string, string>,
+): Promise<Map<string, DexData>> {
   const out = new Map<string, DexData>();
   const CHUNK = 30; // DEXScreener /tokens accepts up to 30 comma-separated addresses
   for (let i = 0; i < addresses.length; i += CHUNK) {
@@ -276,13 +280,15 @@ async function fetchDexData(addresses: string[]): Promise<Map<string, DexData>> 
       const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${batch.join(",")}`);
       if (!r.ok) continue;
       const d = await r.json();
-      type Pair = { chainId?: string; dexId?: string; baseToken?: { address?: string };
+      type Pair = { chainId?: string; dexId?: string; pairAddress?: string; baseToken?: { address?: string };
         marketCap?: number; fdv?: number; priceUsd?: string; liquidity?: { usd?: number }; volume?: { h24?: number } };
       for (const p of (d?.pairs ?? []) as Pair[]) {
-        // only robinhood/uniswap pairs — never a wrong-chain price
-        if (p.chainId !== "robinhood" || p.dexId !== "uniswap") continue;
+        // Only the requested chain's Uniswap pair — never a wrong-chain price.
+        if (p.chainId !== expectedChain || p.dexId !== "uniswap") continue;
         const key = (p.baseToken?.address ?? "").toLowerCase();
         if (!key) continue;
+        const canonicalPair = canonicalPairByToken?.get(key);
+        if (canonicalPair && p.pairAddress?.toLowerCase() !== canonicalPair.toLowerCase()) continue;
         const liq = p.liquidity?.usd ?? null;
         const prev = out.get(key);
         // keep the deepest-liquidity pair per token (the canonical/graduated one)
@@ -429,8 +435,8 @@ const STABLE_LAUNCH_CACHE_TTL_MS = 60_000;
 let stableLaunchCache: { at: number; pools: DopplerPool[] } | null = null;
 let stableLaunchInFlight: Promise<DopplerPool[]> | null = null;
 
-/** Stable V3 launches from HydeV3Pad. Metadata and timestamps come directly from Stable mainnet;
- * price/liquidity remain null until a dedicated V3 market indexer exists—never fabricated. */
+/** Stable V3 launches from HydeV3Pad. Membership, metadata, and timestamps come directly from Stable;
+ * market fields are accepted only from Stable-scoped Uniswap pairs returned by DEXScreener. */
 async function loadStableV3Pools(): Promise<DopplerPool[]> {
   const latest = await stableClient.getBlockNumber();
   const logs = await getStableLogs(
@@ -483,12 +489,29 @@ async function loadStableV3Pools(): Promise<DopplerPool[]> {
   }));
 
   const seen = new Set<string>();
-  return rows.filter((pool): pool is DopplerPool => {
+  const deduped = rows.filter((pool): pool is DopplerPool => {
     if (!pool) return false;
     const key = pool.address.toLowerCase();
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
+  });
+  const canonicalPairs = new Map(
+    deduped
+      .filter((pool) => !!pool.poolAddress)
+      .map((pool) => [pool.address.toLowerCase(), pool.poolAddress!] as const),
+  );
+  const dex = await fetchDexData(deduped.map((pool) => pool.address), "stable", canonicalPairs);
+  return deduped.map((pool) => {
+    const data = dex.get(pool.address.toLowerCase());
+    if (!data) return pool;
+    return {
+      ...pool,
+      marketCapUsd: data.marketCapUsd,
+      priceUsd: data.priceUsd,
+      dollarLiquidity: data.liquidityUsd != null ? String(data.liquidityUsd) : pool.dollarLiquidity,
+      volumeUsd: data.volumeUsd != null ? String(data.volumeUsd) : pool.volumeUsd,
+    };
   });
 }
 
@@ -551,7 +574,7 @@ async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<Doppler
   ]);
   if (!name || !symbol || !poolAddress || /^0x0{40}$/i.test(poolAddress)) return null;
 
-  return {
+  const pool: DopplerPool = {
     address,
     chainId: STABLE_CHAIN_ID,
     poolAddress,
@@ -575,6 +598,18 @@ async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<Doppler
     creator,
     creatorClaimable: null,
   };
+  const data = (await fetchDexData(
+    [address],
+    "stable",
+    new Map([[address.toLowerCase(), poolAddress]]),
+  )).get(address.toLowerCase());
+  return data ? {
+    ...pool,
+    marketCapUsd: data.marketCapUsd,
+    priceUsd: data.priceUsd,
+    dollarLiquidity: data.liquidityUsd != null ? String(data.liquidityUsd) : pool.dollarLiquidity,
+    volumeUsd: data.volumeUsd != null ? String(data.volumeUsd) : pool.volumeUsd,
+  } : pool;
 }
 
 /** Single-token read for launches outside the board page. Network-aware: mainnet reads the two live

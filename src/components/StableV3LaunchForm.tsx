@@ -534,7 +534,7 @@ export function StableV3LaunchForm({
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-pcs-primary" />
               <div>
                 <p className="text-xs font-medium text-pcs-text">Canonical V3 pool</p>
-                <p className="mt-0.5 text-[10px] leading-relaxed text-pcs-textDim">Trading is live on the canonical V3 pool; Hydeout links to the verified pool externally.</p>
+                <p className="mt-0.5 text-[10px] leading-relaxed text-pcs-textDim">Trading is available inside Hydeout through the verified Stable SwapRouter02 route.</p>
               </div>
             </div>
           </div>

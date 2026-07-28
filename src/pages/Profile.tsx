@@ -375,7 +375,7 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
           <p className="text-xs font-semibold uppercase tracking-wider text-pcs-textSub">Portfolio coverage</p>
           <p className="mt-1 text-xs leading-5 text-pcs-textDim">
             {isV3Chain
-              ? "Stable launches come from HydeV3Pad events and balances come from direct token reads. USD portfolio value stays hidden until a verified Stable market indexer is connected."
+              ? "Stable launches come from HydeV3Pad events and balances come from direct token reads. Token cards use chain-scoped market data; combined portfolio value remains hidden until balance and pricing aggregation is added."
               : "Holdings are attributed on-chain. Creator history and priced portfolio value appear only when their verified data sources are available."}
           </p>
         </div>

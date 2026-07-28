@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import toast from "react-hot-toast";
 import { ConnectorAlreadyConnectedError, useAccount, useConnect } from "wagmi";
-import { useHydeLaunches } from "../hooks/useDopplerTokens";
+import { useAllHydeLaunches } from "../hooks/useAllHydeLaunches";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { chainEngineCapabilities, chainV3Capability } from "../utils/chainRegistry";
+import { NETWORKS } from "../utils/constants";
 import { CoinCard } from "./Discover";
 
 const ROBINHOOD_CHAIN_ID = 4663;
@@ -12,6 +13,7 @@ const MARKET_ROW_COUNT = 6;
 
 type MarketSort = "volume" | "new" | "liquidity" | "mcap";
 type MarketEngine = DopplerPool["launchEngine"] | "all";
+type ChainScope = "all" | number;
 
 const MARKET_TABS: { id: MarketSort; label: string }[] = [
   { id: "volume", label: "24h Volume" },
@@ -46,18 +48,22 @@ function formatUsd(value: number | null, compact = false): string {
 
 function sortMarket(pools: DopplerPool[], sort: MarketSort): DopplerPool[] {
   return [...pools].sort((a, b) => {
+    const newestFirst = () => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     if (sort === "new") {
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      return newestFirst();
     }
     if (sort === "liquidity") {
-      return (numeric(b.dollarLiquidity) ?? -1) - (numeric(a.dollarLiquidity) ?? -1);
+      return (numeric(b.dollarLiquidity) ?? -1) - (numeric(a.dollarLiquidity) ?? -1)
+        || newestFirst();
     }
     if (sort === "mcap") {
-      return (numeric(b.marketCapUsd) ?? -1) - (numeric(a.marketCapUsd) ?? -1);
+      return (numeric(b.marketCapUsd) ?? -1) - (numeric(a.marketCapUsd) ?? -1)
+        || newestFirst();
     }
     return (
       (numeric(b.volumeUsd) ?? -1) - (numeric(a.volumeUsd) ?? -1)
       || (numeric(b.marketCapUsd) ?? -1) - (numeric(a.marketCapUsd) ?? -1)
+      || newestFirst()
     );
   });
 }
@@ -66,9 +72,10 @@ function sortMarket(pools: DopplerPool[], sort: MarketSort): DopplerPool[] {
  *  The layout follows the reference; every number and readiness state remains chain/data-derived.
  */
 export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
-  const { pools, loading, error, refetch } = useHydeLaunches(chainId);
+  const { pools: allPools, sources, loading, error, warning, refetch } = useAllHydeLaunches();
   const { address, isConnected } = useAccount();
   const { connectAsync, connectors, isPending } = useConnect();
+  const [chainScope, setChainScope] = useState<ChainScope>("all");
   const [marketSort, setMarketSort] = useState<MarketSort>("volume");
   const [marketEngine, setMarketEngine] = useState<MarketEngine>("all");
 
@@ -80,15 +87,37 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   const launchLive = capabilities.some((item) => item.engine === "v4-hook")
     || v3Capability?.status === "live";
   const isStableV3 = capabilities.length > 0 && capabilities.every((item) => item.engine === "v3-single-sided");
-  const marketTabs = isStableV3 ? MARKET_TABS.filter((tab) => tab.id === "new") : MARKET_TABS;
-  const supportedMarketEngines = capabilities
+  const pools = useMemo(
+    () => chainScope === "all"
+      ? allPools
+      : allPools.filter((pool) => pool.chainId === chainScope),
+    [allPools, chainScope],
+  );
+  const marketCapabilities = chainScope === "all"
+    ? NETWORKS.flatMap((network) => chainEngineCapabilities(network.id))
+    : chainEngineCapabilities(chainScope);
+  const scopeIsStableV3 = marketCapabilities.length > 0
+    && marketCapabilities.every((item) => item.engine === "v3-single-sided");
+  const supportedMarketEngines = marketCapabilities
     .filter((item) => item.status !== "unsupported")
     .map((item) => item.engine);
+  const scopedSource = chainScope === "all"
+    ? null
+    : sources.find((source) => source.chainId === chainScope);
+  const scopeLoading = chainScope === "all" ? loading : (scopedSource?.loading ?? false);
+  const scopeError = chainScope === "all" ? error : (scopedSource?.error ?? null);
+  const scopeName = chainScope === "all"
+    ? "All chains"
+    : (scopedSource?.name ?? `Chain ${chainScope}`);
 
   useEffect(() => {
-    setMarketSort(isStableV3 ? "new" : "volume");
+    setMarketSort("volume");
     setMarketEngine("all");
-  }, [chainId, isStableV3]);
+  }, [chainId]);
+
+  useEffect(() => {
+    setMarketEngine("all");
+  }, [chainScope]);
 
   const marketRows = useMemo(
     () => sortMarket(
@@ -101,6 +130,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   );
   const volume24h = useMemo(() => sumKnown(pools.map((pool) => pool.volumeUsd)), [pools]);
   const lockedLiquidity = useMemo(() => sumKnown(pools.map((pool) => pool.dollarLiquidity)), [pools]);
+  const liveNetworkCount = sources.filter((source) => !source.error).length;
 
   const connectWallet = async () => {
     const connector = connectors[0];
@@ -122,19 +152,22 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
       <section className="term-panel mb-4 grid overflow-hidden rounded-lg grid-cols-2 lg:grid-cols-4">
         <ProtocolStat
           label="Total launches"
-          value={loading || error ? "—" : pools.length.toLocaleString("en-US")}
+          value={(scopeLoading && pools.length === 0) || scopeError ? "—" : pools.length.toLocaleString("en-US")}
         />
         <ProtocolStat label="24h volume" value={formatUsd(volume24h, true)} accent />
         <ProtocolStat
-          label={isStableV3 ? "Locked positions" : "LP locked"}
-          value={isStableV3
-            ? (loading || error ? "—" : pools.length.toLocaleString("en-US"))
-            : formatUsd(lockedLiquidity, true)}
+          label={chainScope === "all" ? "Live networks" : (scopeIsStableV3 ? "Locked positions" : "LP locked")}
+          value={chainScope === "all"
+            ? liveNetworkCount.toLocaleString("en-US")
+            : scopeIsStableV3
+              ? (scopeLoading || scopeError ? "—" : pools.length.toLocaleString("en-US"))
+              : formatUsd(lockedLiquidity, true)}
+          note={chainScope === "all" ? "aggregated" : undefined}
         />
         <ProtocolStat
           label="Fees → creators"
-          value={isStableV3 ? "95%" : "—"}
-          note={isStableV3 ? "in kind" : "not indexed"}
+          value={chainScope === "all" ? "90–95%" : (scopeIsStableV3 ? "95%" : "90%")}
+          note={chainScope === "all" ? "by engine" : (scopeIsStableV3 ? "in kind" : "plus 5% auto LP")}
         />
       </section>
 
@@ -202,11 +235,51 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
 
       {/* Card-first discovery mirrors the token-first launchpad flow: pick a token, then trade on its page. */}
       <section id="live-market" className="mb-7 scroll-mt-28">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <h2 className="mr-3 font-display text-sm font-bold uppercase tracking-[0.14em] text-[var(--term-sub)]">
-            Live market
-          </h2>
-          {marketTabs.map((tab) => (
+        <div className="mb-3 flex items-center gap-3">
+          <div>
+            <h2 className="font-display text-sm font-bold uppercase tracking-[0.14em] text-[var(--term-sub)]">
+              Live market
+            </h2>
+            <p className="mt-0.5 font-code text-[10px] uppercase tracking-[0.1em] text-[var(--term-dim)]">
+              {scopeName} · chain-safe discovery
+            </p>
+          </div>
+          <NavLink to="/discover" className="ml-auto text-[12px] font-semibold text-[var(--term-teal)] hover:underline">
+            View all →
+          </NavLink>
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--term-border)] bg-[var(--term-panel)] p-2.5">
+          <span className="term-label mr-1">Network</span>
+          <button
+            type="button"
+            onClick={() => setChainScope("all")}
+            aria-pressed={chainScope === "all"}
+            className={`rounded-md border px-3 py-1.5 text-[12px] font-semibold transition ${
+              chainScope === "all"
+                ? "border-[var(--term-teal)] bg-[var(--term-teal-dim)] text-[var(--term-teal)]"
+                : "border-[var(--term-border)] text-[var(--term-dim)] hover:text-[var(--term-sub)]"
+            }`}
+          >
+            All chains
+          </button>
+          {sources.map((source) => (
+            <button
+              key={source.chainId}
+              type="button"
+              onClick={() => setChainScope(source.chainId)}
+              aria-pressed={chainScope === source.chainId}
+              className={`rounded-md border px-3 py-1.5 text-[12px] font-semibold transition ${
+                chainScope === source.chainId
+                  ? "border-[var(--term-teal)] bg-[var(--term-teal-dim)] text-[var(--term-teal)]"
+                  : "border-[var(--term-border)] text-[var(--term-dim)] hover:text-[var(--term-sub)]"
+              }`}
+            >
+              {source.name}
+            </button>
+          ))}
+          <span className="mx-1 hidden h-5 w-px bg-[var(--term-border)] sm:block" aria-hidden="true" />
+          {MARKET_TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -245,17 +318,20 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               </button>
             );
           })}
-          <NavLink to="/discover" className="ml-auto text-[12px] font-semibold text-[var(--term-teal)] hover:underline">
-            View all →
-          </NavLink>
         </div>
 
-        {error ? (
+        {warning && chainScope === "all" && (
+          <div className="mb-3 rounded-lg border border-amber-400/20 bg-amber-400/[0.06] px-4 py-2.5 text-xs text-amber-200/80">
+            Partial market view: {warning}
+          </div>
+        )}
+
+        {scopeError ? (
           <div className="term-panel rounded-lg px-5 py-10 text-center">
             <p className="text-sm text-[var(--term-sub)]">Launch data is temporarily unavailable.</p>
             <button type="button" onClick={refetch} className="btn-ghost-term mt-4 px-4 py-2">Retry</button>
           </div>
-        ) : loading && marketRows.length === 0 ? (
+        ) : scopeLoading && marketRows.length === 0 ? (
           <div className="term-panel rounded-lg px-5 py-10 text-center font-code text-[12px] text-[var(--term-dim)]">
             Indexing live launches…
           </div>

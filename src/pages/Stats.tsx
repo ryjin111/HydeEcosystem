@@ -174,7 +174,7 @@ function ChainStats({ chainId }: { chainId: number }) {
 
       <p className="mt-6 text-[11px] leading-relaxed text-pcs-textDim">
         {isStableV3
-          ? "Only values guaranteed by Stable launch events and the deployed V3 configuration are shown. USD liquidity, volume, and fee totals remain hidden until a verified market indexer is connected."
+          ? "Launch and custody totals come from Stable on-chain events. Token price, liquidity, and 24h volume use chain-scoped Uniswap market data; aggregate fee totals remain hidden until a dedicated protocol indexer is deployed."
           : "Only metrics directly supported by the current own-stack event reader are shown. Creator payouts, V4 auto-compounded LP, protocol revenue, and all-time volume remain hidden until dedicated on-chain aggregators are deployed; this page does not estimate them."}
       </p>
     </div>
