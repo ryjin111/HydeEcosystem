@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import toast from "react-hot-toast";
 import { ConnectorAlreadyConnectedError, useAccount, useConnect } from "wagmi";
@@ -73,6 +73,11 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   const launchLive = capabilities.some((item) => item.engine === "v4-hook")
     || v3Capability?.status === "live";
   const isStableV3 = capabilities.length > 0 && capabilities.every((item) => item.engine === "v3-single-sided");
+  const marketTabs = isStableV3 ? MARKET_TABS.filter((tab) => tab.id === "new") : MARKET_TABS;
+
+  useEffect(() => {
+    setMarketSort(isStableV3 ? "new" : "volume");
+  }, [chainId, isStableV3]);
 
   const marketRows = useMemo(
     () => sortMarket(pools, marketSort).slice(0, MARKET_ROW_COUNT),
@@ -104,8 +109,17 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
           value={loading || error ? "—" : pools.length.toLocaleString("en-US")}
         />
         <ProtocolStat label="24h volume" value={formatUsd(volume24h, true)} accent />
-        <ProtocolStat label="LP locked" value={formatUsd(lockedLiquidity, true)} />
-        <ProtocolStat label="Fees → creators" value="—" note="not indexed" />
+        <ProtocolStat
+          label={isStableV3 ? "Locked positions" : "LP locked"}
+          value={isStableV3
+            ? (loading || error ? "—" : pools.length.toLocaleString("en-US"))
+            : formatUsd(lockedLiquidity, true)}
+        />
+        <ProtocolStat
+          label="Fees → creators"
+          value={isStableV3 ? "95%" : "—"}
+          note={isStableV3 ? "in kind" : "not indexed"}
+        />
       </section>
 
       {/* Reference hero band: copy on the left, protocol-volume stage on the right. */}
@@ -116,15 +130,15 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
             Launch a token.
             <br />
             <span className="term-teal">
-              {isStableV3 ? "Liquidity will lock forever." : "Liquidity locked forever."}
+              Liquidity locked forever.
             </span>
           </h1>
           <p className="mt-4 max-w-[610px] text-sm leading-6 text-[var(--term-sub)]">
             {isStableV3 ? (
               <>
-                <strong className="font-semibold text-[var(--term-text)]">Coming soon on {chainName}.</strong>{" "}
-                Single-sided V3 launches will route 95% of fees to creators and 5% to Hyde; LP principal
-                cannot be removed. The launch action stays disabled until deployment evidence lands.
+                <strong className="font-semibold text-[var(--term-text)]">Live on {chainName} mainnet.</strong>{" "}
+                Single-sided V3 launches route 95% of trading fees to creators and 5% to Hyde. Every
+                canonical pool position enters permanent custody at launch.
               </>
             ) : (
               <>
@@ -176,7 +190,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
           <h2 className="mr-3 font-display text-sm font-bold uppercase tracking-[0.14em] text-[var(--term-sub)]">
             Live market
           </h2>
-          {MARKET_TABS.map((tab) => (
+          {marketTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -229,7 +243,9 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
                 Wallet connected
               </h3>
               <p className="mx-auto mt-2 max-w-md text-sm text-[var(--term-sub)]">
-                Open the chain-scoped portfolio for launches, LP positions, and claimable fees.
+                {isStableV3
+                  ? "Open your Stable portfolio for creator launches and V3 token positions."
+                  : "Open the chain-scoped portfolio for launches, LP positions, and claimable fees."}
               </p>
               <p className="mx-auto mt-4 w-fit rounded-md border border-[var(--term-border)] px-3 py-2 font-code text-[11px] text-[var(--term-dim)]">
                 {address.slice(0, 8)}…{address.slice(-6)}
@@ -244,7 +260,9 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
                 No wallet connected
               </h3>
               <p className="mx-auto mt-2 max-w-md text-sm text-[var(--term-sub)]">
-                Connect to view your launches, LP positions, and claimable fees.
+                {isStableV3
+                  ? "Connect to view your Stable launches and V3 token positions."
+                  : "Connect to view your launches, LP positions, and claimable fees."}
               </p>
               <button
                 type="button"

@@ -4,6 +4,8 @@ import type { LaunchEngine } from "./chainRegistry";
 export type DopplerPool = {
   address: string;
   chainId: number;
+  /** Canonical pool contract when the launch event exposes it directly (Stable V3). */
+  poolAddress?: string | null;
   baseToken: {
     address: string;
     name: string;

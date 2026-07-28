@@ -51,11 +51,21 @@ function ComingLaunchBody({ chainId, chainName }: { chainId: number; chainName: 
 
 /** Render one engine's launch body. Stable V3 becomes executable only after its registry capability
  *  passes the generated deployment/hash/binding evidence gate; otherwise the disabled panel remains. */
-function EngineBody({ engine, chainId, chainName }: { engine: LaunchEngine; chainId: number; chainName: string }) {
+function EngineBody({
+  engine,
+  chainId,
+  chainName,
+  onLaunched,
+}: {
+  engine: LaunchEngine;
+  chainId: number;
+  chainName: string;
+  onLaunched?: () => void;
+}) {
   if (engine === "v3-single-sided") {
     const capability = chainEngineCapabilities(chainId).find((item) => item.engine === engine);
     return capability?.status === "live"
-      ? <StableV3LaunchForm chainId={chainId} chainName={chainName} />
+      ? <StableV3LaunchForm chainId={chainId} chainName={chainName} onLaunched={onLaunched} />
       : <ComingLaunchBody chainId={chainId} chainName={chainName} />;
   }
   return (
@@ -83,7 +93,17 @@ function EngineRouteBanner({ engine }: { engine: LaunchEngine }) {
 
 /** 2+ live engines on one chain (none today): a minimal engine-mode selector over the registry-derived
  *  engines. Kept so the render rule holds if a chain (e.g. Robinhood) ever passes a second engine row. */
-function MultiEngineLaunch({ engines, chainId, chainName }: { engines: LaunchEngine[]; chainId: number; chainName: string }) {
+function MultiEngineLaunch({
+  engines,
+  chainId,
+  chainName,
+  onLaunched,
+}: {
+  engines: LaunchEngine[];
+  chainId: number;
+  chainName: string;
+  onLaunched?: () => void;
+}) {
   const [picked, setPicked] = useState<LaunchEngine>(engines[0]);
   return (
     <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3">
@@ -103,12 +123,18 @@ function MultiEngineLaunch({ engines, chainId, chainName }: { engines: LaunchEng
         ))}
       </div>
       <EngineRouteBanner engine={picked} />
-      <EngineBody engine={picked} chainId={chainId} chainName={chainName} />
+      <EngineBody engine={picked} chainId={chainId} chainName={chainName} onLaunched={onLaunched} />
     </div>
   );
 }
 
-export function EngineAwareLaunch({ defaultChainId = 4663 }: { defaultChainId?: number }) {
+export function EngineAwareLaunch({
+  defaultChainId = 4663,
+  onLaunched,
+}: {
+  defaultChainId?: number;
+  onLaunched?: () => void;
+}) {
   // Chain context = the GLOBAL network selector (App → LaunchpadPage → here). No launch-only deep-link:
   // one chain context, every surface (subtitle/ticker/sidebar/form) derives from it (kami 24313).
   const chainId = defaultChainId;
@@ -132,11 +158,11 @@ export function EngineAwareLaunch({ defaultChainId = 4663 }: { defaultChainId?: 
     return (
       <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3">
         <EngineRouteBanner engine={engines[0].engine} />
-        <EngineBody engine={engines[0].engine} chainId={chainId} chainName={chainName} />
+        <EngineBody engine={engines[0].engine} chainId={chainId} chainName={chainName} onLaunched={onLaunched} />
       </div>
     );
   }
 
   // 2+ live engines (none today) — engine-mode selector over the registry-derived engines.
-  return <MultiEngineLaunch engines={engines.map((c) => c.engine)} chainId={chainId} chainName={chainName} />;
+  return <MultiEngineLaunch engines={engines.map((c) => c.engine)} chainId={chainId} chainName={chainName} onLaunched={onLaunched} />;
 }

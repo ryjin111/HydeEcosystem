@@ -59,7 +59,15 @@ function shortAddress(value: string): string {
   return `${value.slice(0, 7)}…${value.slice(-5)}`;
 }
 
-export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; chainName: string }) {
+export function StableV3LaunchForm({
+  chainId,
+  chainName,
+  onLaunched,
+}: {
+  chainId: number;
+  chainName: string;
+  onLaunched?: () => void;
+}) {
   const row = v3ChainRow(chainId);
   const { address, chainId: walletChainId, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId });
@@ -220,6 +228,7 @@ export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; ch
       setSalt(freshSalt());
       setPreview(null);
       setRecipientConfirmed(false);
+      onLaunched?.();
       if (savedImage.startsWith("ipfs://") || savedDescription.trim()) {
         void saveMetaFor(result.tokenAddress, savedImage, savedDescription);
       }
@@ -525,7 +534,7 @@ export function StableV3LaunchForm({ chainId, chainName }: { chainId: number; ch
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-pcs-primary" />
               <div>
                 <p className="text-xs font-medium text-pcs-text">Canonical V3 pool</p>
-                <p className="mt-0.5 text-[10px] leading-relaxed text-pcs-textDim">Trading is external for now; Hyde’s in-app V3 swap is not enabled.</p>
+                <p className="mt-0.5 text-[10px] leading-relaxed text-pcs-textDim">Trading is live on the canonical V3 pool; Hydeout links to the verified pool externally.</p>
               </div>
             </div>
           </div>

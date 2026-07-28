@@ -449,11 +449,23 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <p className="mt-2 text-xs text-pcs-textSub">Trading is live on this token’s pair.</p>
               </>
             ) : (
-              <p className="mt-2 text-sm text-pcs-textSub">
-                {isV4Launch
-                  ? "In-app swap for this token is coming shortly. It trades live now on its locked-liquidity pool, on-chain."
-                  : "This V3 launch uses a permanently locked single-sided position. In-app V3 routing is not enabled yet."}
-              </p>
+              <>
+                <p className="mt-2 text-sm text-pcs-textSub">
+                  {isV4Launch
+                    ? "In-app swap for this token is coming shortly. It trades live now on its locked-liquidity pool, on-chain."
+                    : "This token trades through its canonical Stable V3 pool. Hydeout’s in-app V3 router is not connected, so no swap control is simulated here."}
+                </p>
+                {!isV4Launch && pool.poolAddress && (
+                  <a
+                    href={`${network.explorerUrl.replace(/\/$/, "")}/address/${pool.poolAddress}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 block rounded-xl border border-pcs-primary/30 bg-pcs-primary/[0.09] py-2.5 text-center text-sm font-semibold text-pcs-primaryBright transition hover:bg-pcs-primary/[0.13]"
+                  >
+                    View canonical V3 pool ↗
+                  </a>
+                )}
+              </>
             )}
             {/* Disabled Buy/Sell preview removed (kami 23517) — it read as a working swap; the live-pair
                 link above is the single trade action until the native swap actually executes. */}

@@ -473,14 +473,19 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
 
   // My Launches = the connected wallet's own-stack launches (creator/creatorClaimable are null on the
   // Doppler mainnet rail, so it's empty there). Sorted by claimable fees (desc) or market cap.
-  const [sort, setSort] = useState<"claimable" | "mcap">("claimable");
+  const [sort, setSort] = useState<"claimable" | "mcap" | "new">(chainId === 988 ? "new" : "claimable");
+  useEffect(() => {
+    setSort(chainId === 988 ? "new" : "claimable");
+  }, [chainId]);
   const mine = useMemo(
     () => (address ? pools.filter((p) => p.creator && p.creator.toLowerCase() === address.toLowerCase()) : []),
     [pools, address]
   );
   const shown = useMemo(() => {
     const arr = [...mine];
-    if (sort === "claimable") {
+    if (sort === "new") {
+      arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } else if (sort === "claimable") {
       arr.sort((a, b) => {
         const av = claimableBig(a.creatorClaimable), bv = claimableBig(b.creatorClaimable);
         if (bv > av) return 1;
@@ -603,11 +608,13 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
               Sort
               <select
                 value={sort}
-                onChange={(e) => setSort(e.target.value as "claimable" | "mcap")}
+                onChange={(e) => setSort(e.target.value as "claimable" | "mcap" | "new")}
                 className="rounded-lg bg-pcs-card px-2 py-1 text-xs font-medium text-pcs-textSub outline-none cursor-pointer focus-visible:ring-2 focus-visible:ring-pcs-primary/70"
                 style={{ border: "1px solid #22252D" }}
               >
-                <option value="claimable">Claimable fees</option>
+                {chainId === 988
+                  ? <option value="new">Newest launch</option>
+                  : <option value="claimable">Claimable fees</option>}
                 <option value="mcap">Market cap</option>
               </select>
             </label>
@@ -657,7 +664,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       )}
 
       {/* Launch tab — engine-aware: live V4 form or evidence-gated Stable V3 form. */}
-      {tab === "launch" && <EngineAwareLaunch defaultChainId={chainId} />}
+      {tab === "launch" && <EngineAwareLaunch defaultChainId={chainId} onLaunched={refetch} />}
     </div>
   );
 }

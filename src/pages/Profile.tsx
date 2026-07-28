@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import toast from "react-hot-toast";
-import { ConnectorAlreadyConnectedError, useAccount, useConnect } from "wagmi";
+import { ConnectorAlreadyConnectedError, useAccount, useConnect, usePublicClient } from "wagmi";
 import {
   ArrowTopRightOnSquareIcon,
   BanknotesIcon,
@@ -18,13 +18,15 @@ import {
   ShieldCheckIcon,
   WalletIcon,
 } from "@heroicons/react/24/outline";
-import { isMainnetOwnStackLaunch } from "../hooks/useDopplerTokens";
+import { isMainnetOwnStackLaunch, useHydeLaunches } from "../hooks/useDopplerTokens";
 import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { ROBINHOOD_MAINNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import type { NetworkConfig } from "../utils/constants";
-import { ComingChainNotice } from "../components/ComingChainNotice";
 import { chainV3Capability } from "../utils/chainRegistry";
 import { Card, Button, Stat, VerifiedBadge, SectionLabel } from "../components/ui/kit";
+import { TokenImage } from "../components/TokenImage";
+import { fetchLaunchMeta } from "../utils/launchMeta";
+import type { DopplerPool } from "../utils/dopplerConfig";
 
 // Base numeraire assets are pool pairs, never "a launch you hold" — excluded from Hyde holdings so
 // launching LILHOODIE never surfaces $HOODIE as a holding (kami 23886).
@@ -37,6 +39,14 @@ const BASE_ASSETS = new Set(
 const EXPLORER = "https://robinhoodchain.blockscout.com";
 const short = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
 type Holding = { address: string; name: string; symbol: string; value: string; decimals: number };
+
+const BALANCE_OF_ABI = [{
+  type: "function",
+  name: "balanceOf",
+  stateMutability: "view",
+  inputs: [{ name: "account", type: "address" }],
+  outputs: [{ type: "uint256" }],
+}] as const;
 
 function fmtBalance(value: string, decimals: number): string {
   try {
@@ -80,7 +90,57 @@ function useHydeHoldings(address?: string, enabled = true): { holdings: Holding[
   return { holdings, loading };
 }
 
-function HoldingRow({ h }: { h: Holding }) {
+/** Stable has no Blockscout-dependent portfolio adapter. Read balances directly from the verified
+ * HydeV3Pad launch set, so creator and public wallet profiles are live as soon as a launch confirms. */
+function useStableV3Holdings(
+  address: string,
+  chainId: number,
+  pools: DopplerPool[],
+  enabled: boolean,
+): { holdings: Holding[]; loading: boolean } {
+  const publicClient = usePublicClient({ chainId });
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!enabled || !publicClient || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      setHoldings([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    Promise.all(pools.map(async (pool) => {
+      const balance = await publicClient.readContract({
+        address: pool.address as `0x${string}`,
+        abi: BALANCE_OF_ABI,
+        functionName: "balanceOf",
+        args: [address as `0x${string}`],
+      }).catch(() => 0n);
+      return {
+        address: pool.address.toLowerCase(),
+        name: pool.baseToken.name,
+        symbol: pool.baseToken.symbol,
+        value: balance.toString(),
+        decimals: pool.baseToken.decimals,
+      } satisfies Holding;
+    }))
+      .then((rows) => {
+        if (!cancelled) setHoldings(rows.filter((row) => BigInt(row.value) > 0n));
+      })
+      .catch(() => {
+        if (!cancelled) setHoldings([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [address, enabled, pools, publicClient]);
+
+  return { holdings, loading };
+}
+
+function RobinhoodHoldingRow({ h }: { h: Holding }) {
   const verify = useVerifiedStatus(h.address);
   return (
     <Link to={`/token/${h.address}`} className="block">
@@ -104,10 +164,17 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
   const { connectAsync, connectors, isPending } = useConnect();
   const address = (routeAddr || connected || "").toLowerCase();
   const [copied, setCopied] = useState(false);
-  // Stable-specific: a single-sided V3 chain has no chain-scoped holdings source (the query is Robinhood-
-  // scoped). Disable the request AND fail the render closed (kami 24334 / 24323 #4). Robinhood untouched.
   const isV3Chain = !!chainV3Capability(network.id);
-  const { holdings, loading } = useHydeHoldings(address, !isV3Chain);
+  const { pools, loading: launchesLoading } = useHydeLaunches(network.id);
+  const robinhoodPortfolio = useHydeHoldings(address, !isV3Chain);
+  const stablePortfolio = useStableV3Holdings(address, network.id, pools, isV3Chain);
+  const holdings = isV3Chain ? stablePortfolio.holdings : robinhoodPortfolio.holdings;
+  const loading = isV3Chain
+    ? launchesLoading || stablePortfolio.loading
+    : robinhoodPortfolio.loading;
+  const myLaunches = address
+    ? pools.filter((pool) => pool.creator?.toLowerCase() === address)
+    : [];
   const connectWallet = async () => {
     const connector = connectors[0];
     if (!connector) {
@@ -122,14 +189,6 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
     }
   };
 
-  if (isV3Chain) {
-    return (
-      <div className="hyde-page hyde-profile mx-auto w-full max-w-[900px] pt-4" data-depth-label="Hideout · wallet depth">
-        <ComingChainNotice chainName={network.name} feature="Portfolio" />
-      </div>
-    );
-  }
-
   if (!address) {
     return (
       <div className="hyde-page hyde-profile mx-auto w-full max-w-[1040px] space-y-4" data-depth-label="Hideout · wallet depth">
@@ -140,7 +199,9 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
               <span className="font-code text-[10px] uppercase tracking-[0.16em] text-pcs-primary">Private wallet depth</span>
             </div>
             <h1 className="mt-5 max-w-xl font-display text-3xl font-bold leading-tight text-pcs-text sm:text-[40px]">
-              Your launches, positions, and fees—one layer down.
+              {isV3Chain
+                ? "Your Stable launches and token positions—one layer down."
+                : "Your launches, positions, and fees—one layer down."}
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-pcs-textSub">
               Connect your wallet to reveal the Hydeout assets tied to it. Portfolio data is read from
@@ -175,7 +236,9 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
           {[
             { label: "My launches", detail: "Creator deployments", icon: RocketLaunchIcon },
             { label: "Token positions", detail: "Verified Hyde holdings", icon: CircleStackIcon },
-            { label: "Claimable fees", detail: "Chain-scoped rewards", icon: BanknotesIcon },
+            isV3Chain
+              ? { label: "Creator fee route", detail: "95% paid in pool assets", icon: BanknotesIcon }
+              : { label: "Claimable fees", detail: "Chain-scoped rewards", icon: BanknotesIcon },
           ].map(({ label, detail, icon: Icon }) => (
             <div key={label} className="profile-preview-card">
               <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-pcs-primary/20 bg-pcs-primary/[0.07] text-pcs-primary">
@@ -214,7 +277,7 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
                 {copied ? "Copied" : "Copy address"}
               </Button>
               <a
-                href={`${EXPLORER}/address/${address}`}
+                href={`${network.explorerUrl.replace(/\/$/, "")}/address/${address}`}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-pcs-textSub transition hover:bg-white/[0.04] hover:text-pcs-text"
@@ -225,10 +288,10 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
           </div>
           <div className="grid grid-cols-2 gap-2 sm:min-w-[280px]">
             <div className="sonar-metric rounded-xl border border-pcs-border bg-black/10 p-3">
-              <Stat label="Hyde tokens" value={loading ? "—" : holdings.length} />
+              <Stat label="My launches" value={launchesLoading ? "—" : myLaunches.length} />
             </div>
             <div className="sonar-metric rounded-xl border border-pcs-border bg-black/10 p-3">
-              <Stat label="Index status" value={loading ? "Syncing" : "Live"} />
+              <Stat label="Token positions" value={loading ? "—" : holdings.length} />
             </div>
           </div>
         </div>
@@ -237,8 +300,41 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
       <div className="rounded-2xl border border-pcs-border bg-pcs-cardLight p-4 sm:p-5">
         <div className="flex items-center justify-between">
           <div>
+            <SectionLabel>My launches</SectionLabel>
+            <p className="mt-1 text-xs text-pcs-textDim">
+              Creator deployments attributed by the selected chain’s launch events.
+            </p>
+          </div>
+          <RocketLaunchIcon className="h-5 w-5 text-pcs-primary" />
+        </div>
+        {launchesLoading ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {[0, 1].map((item) => <div key={item} className="h-[74px] animate-pulse rounded-xl border border-pcs-border bg-white/[0.02]" />)}
+          </div>
+        ) : myLaunches.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-dashed border-pcs-border bg-black/10 px-5 py-6 text-center">
+            <p className="text-sm font-semibold text-pcs-text">No creator launches found</p>
+            <p className="mt-1 text-xs text-pcs-textDim">Launch a token and it will appear here from its on-chain event.</p>
+            <Link to="/launchpad?tab=launch" className="btn-ghost-term mt-4 inline-flex px-4 py-2 text-xs">
+              Launch a token
+            </Link>
+          </div>
+        ) : (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {myLaunches.map((pool) => <ProfileLaunchRow key={`${pool.chainId}-${pool.address}`} pool={pool} />)}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-pcs-border bg-pcs-cardLight p-4 sm:p-5">
+        <div className="flex items-center justify-between">
+          <div>
             <SectionLabel>Token holdings</SectionLabel>
-            <p className="mt-1 text-xs text-pcs-textDim">Hydeout launches detected in this wallet.</p>
+            <p className="mt-1 text-xs text-pcs-textDim">
+              {isV3Chain
+                ? "Balances read directly across verified Stable V3 launches."
+                : "Hydeout launches detected in this wallet."}
+            </p>
           </div>
           <ChartBarSquareIcon className="h-5 w-5 text-pcs-primary" />
         </div>
@@ -258,7 +354,11 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
             </Link>
           </div>
         ) : (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">{holdings.map((h) => <HoldingRow key={h.address} h={h} />)}</div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {holdings.map((h) => isV3Chain
+              ? <StableHoldingRow key={h.address} h={h} />
+              : <RobinhoodHoldingRow key={h.address} h={h} />)}
+          </div>
         )}
       </div>
 
@@ -267,10 +367,83 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-pcs-textSub">Portfolio coverage</p>
           <p className="mt-1 text-xs leading-5 text-pcs-textDim">
-            Holdings are attributed on-chain. Creator history and priced portfolio value appear only when their verified data sources are available.
+            {isV3Chain
+              ? "Stable launches come from HydeV3Pad events and balances come from direct token reads. USD portfolio value stays hidden until a verified Stable market indexer is connected."
+              : "Holdings are attributed on-chain. Creator history and priced portfolio value appear only when their verified data sources are available."}
           </p>
         </div>
       </div>
     </div>
+  );
+}
+
+function StableHoldingRow({ h }: { h: Holding }) {
+  const [image, setImage] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchLaunchMeta(988, h.address).then((meta) => {
+      if (!cancelled) setImage(meta?.image || null);
+    });
+    return () => { cancelled = true; };
+  }, [h.address]);
+
+  return (
+    <Link to={`/token/${h.address}?network=988`} className="block">
+      <Card variant="token" interactive>
+        <div className="flex items-center gap-3">
+          <TokenImage
+            src={image}
+            symbol={h.symbol}
+            className="h-10 w-10 shrink-0 rounded-xl text-sm"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-semibold text-pcs-text">
+              {h.name} <span className="font-mono text-xs text-pcs-textSub">${h.symbol}</span>
+            </p>
+            <p className="mt-1 font-code text-[9px] uppercase tracking-wider text-pcs-primary">
+              Stable · V3 launch
+            </p>
+          </div>
+          <span className="font-mono text-sm text-pcs-text">{fmtBalance(h.value, h.decimals)}</span>
+        </div>
+      </Card>
+    </Link>
+  );
+}
+
+function ProfileLaunchRow({ pool }: { pool: DopplerPool }) {
+  const [image, setImage] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchLaunchMeta(pool.chainId, pool.address).then((meta) => {
+      if (!cancelled) setImage(meta?.image || null);
+    });
+    return () => { cancelled = true; };
+  }, [pool.address, pool.chainId]);
+
+  return (
+    <Link to={`/token/${pool.address}?network=${pool.chainId}`} className="block">
+      <Card variant="token" interactive>
+        <div className="flex items-center gap-3">
+          <TokenImage
+            src={image}
+            symbol={pool.baseToken.symbol}
+            className="h-10 w-10 shrink-0 rounded-xl text-sm"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-semibold text-pcs-text">
+              {pool.baseToken.name}{" "}
+              <span className="font-mono text-xs text-pcs-textSub">${pool.baseToken.symbol}</span>
+            </p>
+            <p className="mt-1 text-[10px] text-pcs-textDim">
+              {pool.launchEngine === "v3-single-sided" ? "V3 · 95% creator" : "V4 · 90% creator"}
+            </p>
+          </div>
+          <span className="rounded-md border border-pcs-primary/20 bg-pcs-primary/[0.07] px-2 py-1 font-code text-[9px] uppercase tracking-wider text-pcs-primary">
+            Live
+          </span>
+        </div>
+      </Card>
+    </Link>
   );
 }
