@@ -11,12 +11,18 @@ const ROBINHOOD_CHAIN_ID = 4663;
 const MARKET_ROW_COUNT = 6;
 
 type MarketSort = "volume" | "new" | "liquidity" | "mcap";
+type MarketEngine = DopplerPool["launchEngine"] | "all";
 
 const MARKET_TABS: { id: MarketSort; label: string }[] = [
   { id: "volume", label: "24h Volume" },
   { id: "new", label: "New" },
   { id: "liquidity", label: "Top Liquidity" },
   { id: "mcap", label: "Top MCap" },
+];
+
+const MARKET_ENGINE_TABS: { id: DopplerPool["launchEngine"]; label: string }[] = [
+  { id: "v4-hook", label: "V4" },
+  { id: "v3-single-sided", label: "V3" },
 ];
 
 function numeric(value: string | number | null | undefined): number | null {
@@ -64,6 +70,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   const { address, isConnected } = useAccount();
   const { connectAsync, connectors, isPending } = useConnect();
   const [marketSort, setMarketSort] = useState<MarketSort>("volume");
+  const [marketEngine, setMarketEngine] = useState<MarketEngine>("all");
 
   const capabilities = chainEngineCapabilities(chainId);
   const capability = capabilities[0];
@@ -74,14 +81,23 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
     || v3Capability?.status === "live";
   const isStableV3 = capabilities.length > 0 && capabilities.every((item) => item.engine === "v3-single-sided");
   const marketTabs = isStableV3 ? MARKET_TABS.filter((tab) => tab.id === "new") : MARKET_TABS;
+  const supportedMarketEngines = capabilities
+    .filter((item) => item.status !== "unsupported")
+    .map((item) => item.engine);
 
   useEffect(() => {
     setMarketSort(isStableV3 ? "new" : "volume");
+    setMarketEngine("all");
   }, [chainId, isStableV3]);
 
   const marketRows = useMemo(
-    () => sortMarket(pools, marketSort).slice(0, MARKET_ROW_COUNT),
-    [pools, marketSort],
+    () => sortMarket(
+      marketEngine === "all"
+        ? pools
+        : pools.filter((pool) => pool.launchEngine === marketEngine),
+      marketSort,
+    ).slice(0, MARKET_ROW_COUNT),
+    [pools, marketSort, marketEngine],
   );
   const volume24h = useMemo(() => sumKnown(pools.map((pool) => pool.volumeUsd)), [pools]);
   const lockedLiquidity = useMemo(() => sumKnown(pools.map((pool) => pool.dollarLiquidity)), [pools]);
@@ -195,6 +211,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               key={tab.id}
               type="button"
               onClick={() => setMarketSort(tab.id)}
+              aria-pressed={marketSort === tab.id}
               className={`rounded-md border px-3 py-1.5 text-[12px] font-semibold transition ${
                 marketSort === tab.id
                   ? "border-[var(--term-teal)] bg-[var(--term-teal-dim)] text-[var(--term-teal)]"
@@ -204,6 +221,30 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               {tab.label}
             </button>
           ))}
+          <span className="mx-1 h-5 w-px bg-[var(--term-border)]" aria-hidden="true" />
+          {MARKET_ENGINE_TABS.map((tab) => {
+            const supported = supportedMarketEngines.includes(tab.id);
+            const active = marketEngine === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setMarketEngine((current) => current === tab.id ? "all" : tab.id)}
+                aria-pressed={active}
+                disabled={!supported}
+                title={supported ? `Filter by ${tab.label} launches` : `${tab.label} is not supported on ${chainName}`}
+                className={`rounded-md border px-3 py-1.5 text-[12px] font-semibold transition ${
+                  !supported
+                    ? "cursor-not-allowed border-[var(--term-border)] text-[var(--term-dim)] opacity-35"
+                    : active
+                      ? "border-[var(--term-teal)] bg-[var(--term-teal-dim)] text-[var(--term-teal)]"
+                      : "border-[var(--term-border)] text-[var(--term-dim)] hover:text-[var(--term-sub)]"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
           <NavLink to="/discover" className="ml-auto text-[12px] font-semibold text-[var(--term-teal)] hover:underline">
             View all →
           </NavLink>
@@ -220,7 +261,9 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
           </div>
         ) : marketRows.length === 0 ? (
           <div className="term-panel rounded-lg px-5 py-10 text-center font-code text-[12px] text-[var(--term-dim)]">
-            No launches indexed on {chainName} yet.
+            {marketEngine === "all"
+              ? `No launches indexed on ${chainName} yet.`
+              : `No ${marketEngine === "v4-hook" ? "V4" : "V3"} launches indexed on ${chainName} yet.`}
           </div>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,220px))] gap-x-4 gap-y-6">

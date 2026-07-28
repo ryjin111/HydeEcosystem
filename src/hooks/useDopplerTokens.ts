@@ -196,18 +196,13 @@ async function getLogsChunked<E>(call: (from: bigint, to: bigint) => Promise<E[]
   return out;
 }
 
-// Stable's public RPC enforces a hard 500-block eth_getLogs window. Paid Alchemy accepts the full
-// deployment-bounded query, so try the fast path first and fall back to bounded parallel chunks only
-// when the provider explicitly rejects the range.
+// Stable's public RPC enforces a hard 500-block eth_getLogs window. Alchemy accepts at most 10,000
+// blocks per request. Always stay inside the provider's advertised bound: an oversized first request
+// used to fail, then viem's fallback transport silently moved the whole scan onto the slow public RPC.
 const STABLE_PUBLIC_LOG_RANGE = 500n;
+const STABLE_PAID_LOG_RANGE = 10_000n;
 const STABLE_LOG_CONCURRENCY = 4;
 const STABLE_LOG_RETRIES = 4;
-
-function isLogRangeLimit(error: unknown): boolean {
-  const value = error as { message?: string; shortMessage?: string; details?: string };
-  const message = [value?.message, value?.shortMessage, value?.details].filter(Boolean).join(" ");
-  return /maximum.*blocks distance|block range|range.*too (?:large|wide)|query.*more than|response size/i.test(message);
-}
 
 async function getStableLogChunk<E>(
   call: (from: bigint, to: bigint) => Promise<E[]>,
@@ -233,37 +228,37 @@ async function getStableLogs<E>(
   fromBlock: bigint,
   toBlock: bigint,
 ): Promise<E[]> {
-  // The public endpoint omits CORS headers on its >500-block error response, so browsers only see
-  // "Failed to fetch" and cannot inspect the provider's range-limit message. Skip that doomed
-  // request when public RPC is primary; Alchemy keeps the single-query fast path.
-  if (!stableUsesPublicPrimary) {
-    try {
-      return await call(fromBlock, toBlock);
-    } catch (error) {
-      if (!isLogRangeLimit(error)) throw error;
+  const scan = async (range: bigint): Promise<E[]> => {
+    const ranges: [bigint, bigint][] = [];
+    for (let from = fromBlock; from <= toBlock; from += range) {
+      const to = from + range - 1n > toBlock
+        ? toBlock
+        : from + range - 1n;
+      ranges.push([from, to]);
     }
-  }
 
-  const ranges: [bigint, bigint][] = [];
-  for (let from = fromBlock; from <= toBlock; from += STABLE_PUBLIC_LOG_RANGE) {
-    const to = from + STABLE_PUBLIC_LOG_RANGE - 1n > toBlock
-      ? toBlock
-      : from + STABLE_PUBLIC_LOG_RANGE - 1n;
-    ranges.push([from, to]);
-  }
-
-  const out: E[] = [];
-  for (let index = 0; index < ranges.length; index += STABLE_LOG_CONCURRENCY) {
-    const chunks = await Promise.all(
-      ranges.slice(index, index + STABLE_LOG_CONCURRENCY)
-        .map(([from, to]) => getStableLogChunk(call, from, to)),
-    );
-    for (const chunk of chunks) out.push(...chunk);
-    if (index + STABLE_LOG_CONCURRENCY < ranges.length) {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+    const out: E[] = [];
+    for (let index = 0; index < ranges.length; index += STABLE_LOG_CONCURRENCY) {
+      const chunks = await Promise.all(
+        ranges.slice(index, index + STABLE_LOG_CONCURRENCY)
+          .map(([from, to]) => getStableLogChunk(call, from, to)),
+      );
+      for (const chunk of chunks) out.push(...chunk);
+      if (index + STABLE_LOG_CONCURRENCY < ranges.length) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
     }
+    return out;
+  };
+
+  if (stableUsesPublicPrimary) return scan(STABLE_PUBLIC_LOG_RANGE);
+  try {
+    return await scan(STABLE_PAID_LOG_RANGE);
+  } catch {
+    // If the paid endpoint is unavailable, the same fallback transport can still finish against the
+    // chain-owned endpoint as long as every retry is rebuilt at its 500-block maximum.
+    return scan(STABLE_PUBLIC_LOG_RANGE);
   }
-  return out;
 }
 
 // Real market-cap / price / liquidity / 24h-volume from the DEXScreener pair — the
@@ -409,6 +404,8 @@ export async function isMainnetOwnStackLaunch(address: `0x${string}`): Promise<b
   const a = address.toLowerCase();
   // Base numeraire assets are never a "launch you hold" — exclude fast, before any log query.
   if (a === MAINNET_HOODIE.toLowerCase() || a === ROBINHOOD_MAINNET.weth.toLowerCase()) return false;
+  const cached = readMainnetLaunchCache(MAINNET_LAUNCH_CACHE_MAX_STALE);
+  if (cached?.pools.some((pool) => pool.address.toLowerCase() === a)) return true;
   const tokenTopic = topicForAddress(address);
   const [weth, hoodie] = await Promise.all([
     fetchExplorerLogs(MAINNET_WETH_FACTORY, LAUNCH_CREATED_TOPIC, MAINNET_WETH_FACTORY_BLOCK, { position: 1, value: tokenTopic }).catch(() => []),
@@ -835,7 +832,7 @@ async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerP
  *  `HoodieLaunchCreated`; NO Doppler Airlock (clint: "only our stack"). Bounded from each contract's
  *  deploy block. Same enrichment as the Doppler board (curve % + DEXScreener MCAP/price on graduated
  *  tokens), so only tokens minted through OUR factories ever surface. */
-async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
+async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
   // Blockscout's indexed REST API is browser-safe. Robinhood's public JSON-RPC currently emits
   // duplicate Access-Control-Allow-Origin headers, so using it directly in the SPA fails CORS and
   // previously collapsed the board/Stats into a false zero state.
@@ -921,11 +918,12 @@ async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
 
 const MAINNET_LAUNCH_CACHE_KEY = "hyde_mainnet_launches_v3";
 const MAINNET_LAUNCH_CACHE_TTL = 5 * 60 * 1000;
+const MAINNET_LAUNCH_CACHE_MAX_STALE = 24 * 60 * 60 * 1000;
 let mainnetLaunchMemoryCache: { at: number; pools: DopplerPool[] } | null = null;
 let mainnetLaunchInFlight: Promise<DopplerPool[]> | null = null;
 
-function readMainnetLaunchCache(): { at: number; pools: DopplerPool[] } | null {
-  if (mainnetLaunchMemoryCache && Date.now() - mainnetLaunchMemoryCache.at < MAINNET_LAUNCH_CACHE_TTL) {
+function readMainnetLaunchCache(maxAge = MAINNET_LAUNCH_CACHE_TTL): { at: number; pools: DopplerPool[] } | null {
+  if (mainnetLaunchMemoryCache && Date.now() - mainnetLaunchMemoryCache.at < maxAge) {
     return mainnetLaunchMemoryCache;
   }
   try {
@@ -935,7 +933,7 @@ function readMainnetLaunchCache(): { at: number; pools: DopplerPool[] } | null {
     if (
       typeof cached.at !== "number"
       || !Array.isArray(cached.pools)
-      || Date.now() - cached.at >= MAINNET_LAUNCH_CACHE_TTL
+      || Date.now() - cached.at >= maxAge
     ) return null;
     mainnetLaunchMemoryCache = { at: cached.at, pools: cached.pools };
     return mainnetLaunchMemoryCache;
@@ -944,23 +942,72 @@ function readMainnetLaunchCache(): { at: number; pools: DopplerPool[] } | null {
   }
 }
 
+function isRobinhoodIndexPool(value: unknown): value is DopplerPool {
+  const pool = value as Partial<DopplerPool>;
+  return (
+    pool?.chainId === ROBINHOOD_CHAIN_ID
+    && pool?.launchEngine === "v4-hook"
+    && typeof pool.address === "string"
+    && /^0x[0-9a-fA-F]{40}$/.test(pool.address)
+    && typeof pool.baseToken?.name === "string"
+    && typeof pool.baseToken?.symbol === "string"
+    && typeof pool.baseToken?.decimals === "number"
+    && typeof pool.quoteToken?.address === "string"
+    && [MAINNET_HOODIE.toLowerCase(), ROBINHOOD_MAINNET.weth.toLowerCase()]
+      .includes(pool.quoteToken.address.toLowerCase())
+  );
+}
+
+async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
+  try {
+    const response = await fetch("/api/robinhood-launches");
+    if (!response.ok) throw new Error(`launch index HTTP ${response.status}`);
+    const payload = await response.json() as { pools?: unknown[] };
+    if (!Array.isArray(payload.pools)) throw new Error("launch index payload is malformed");
+    const pools = payload.pools.filter(isRobinhoodIndexPool);
+    if (pools.length !== payload.pools.length) throw new Error("launch index contains an invalid pool");
+    const dex = await fetchDexData(pools.map((pool) => pool.address));
+    return pools.map((pool) => {
+      const data = dex.get(pool.address.toLowerCase());
+      if (!data) return pool;
+      return {
+        ...pool,
+        marketCapUsd: data.marketCapUsd,
+        priceUsd: data.priceUsd,
+        dollarLiquidity: data.liquidityUsd != null ? String(data.liquidityUsd) : pool.dollarLiquidity,
+        volumeUsd: data.volumeUsd != null ? String(data.volumeUsd) : pool.volumeUsd,
+      };
+    });
+  } catch {
+    // Local Vite has no serverless route, and a cold CDN refresh may still fail upstream. Preserve the
+    // direct Blockscout reader as a fallback; the stale cache below prevents a false empty board.
+    return loadMainnetOwnStackPoolsDirect();
+  }
+}
+
 async function fetchMainnetOwnStackPools(force = false): Promise<DopplerPool[]> {
+  const stale = readMainnetLaunchCache(MAINNET_LAUNCH_CACHE_MAX_STALE);
   if (!force) {
     const cached = readMainnetLaunchCache();
     if (cached) return cached.pools;
     if (mainnetLaunchInFlight) return mainnetLaunchInFlight;
   }
 
-  const request = loadMainnetOwnStackPools().then((pools) => {
-    const cached = { at: Date.now(), pools };
-    mainnetLaunchMemoryCache = cached;
-    try {
-      localStorage.setItem(MAINNET_LAUNCH_CACHE_KEY, JSON.stringify(cached));
-    } catch {
-      /* storage unavailable; memory cache still prevents duplicate reads */
-    }
-    return pools;
-  });
+  const request = loadMainnetOwnStackPools()
+    .then((pools) => {
+      const cached = { at: Date.now(), pools };
+      mainnetLaunchMemoryCache = cached;
+      try {
+        localStorage.setItem(MAINNET_LAUNCH_CACHE_KEY, JSON.stringify(cached));
+      } catch {
+        /* storage unavailable; memory cache still prevents duplicate reads */
+      }
+      return pools;
+    })
+    .catch((error) => {
+      if (stale) return stale.pools;
+      throw error;
+    });
   mainnetLaunchInFlight = request;
   try {
     return await request;

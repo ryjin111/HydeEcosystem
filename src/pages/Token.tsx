@@ -22,6 +22,7 @@ import { useTokenPosition } from "../hooks/useTokenPosition";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { HoodieSwapCard } from "../components/HoodieSwapCard";
 import { StableV3SwapCard } from "../components/StableV3SwapCard";
+import { StableV3FeeCollector } from "../components/StableV3FeeCollector";
 import { YourPositionCard } from "../components/YourPositionCard";
 import { TokenImage } from "../components/TokenImage";
 import { LaunchMetadataEditor } from "../components/LaunchMetadataEditor";
@@ -492,6 +493,17 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
         )}
 
         {/* Market — consolidated stats (coin-mockup): real feed values or an honest "—", never fabricated. */}
+        {!isV4Launch && (
+          <StableV3FeeCollector
+            network={network}
+            token={{
+              address: pool.address as `0x${string}`,
+              symbol: sym,
+              decimals: pool.baseToken.decimals,
+            }}
+          />
+        )}
+
         <Card variant="panel">
           <SectionLabel>Market</SectionLabel>
           <div className="mt-3 space-y-2 text-xs">
