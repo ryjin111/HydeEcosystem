@@ -1,5 +1,5 @@
 import type { Address, Hex } from "viem";
-import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, ROBINHOOD_MAINNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS, OPTIMISM_TOKENS, ETHEREUM_TOKENS, UNICHAIN_TOKENS, BNB_TOKENS, XLAYER_TOKENS } from "../tokens";
+import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, ROBINHOOD_MAINNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS, OPTIMISM_TOKENS, ETHEREUM_TOKENS, UNICHAIN_TOKENS, BNB_TOKENS, XLAYER_TOKENS, ARBITRUM_TOKENS } from "../tokens";
 
 export type TokenInfo = {
   symbol: string;
@@ -45,6 +45,11 @@ export type V4Contracts = {
   gateway: Address;
   /** HydeTokenFactory address — present only on chains where it's deployed */
   hydeTokenFactory?: Address;
+  /** Own-stack fee contracts and bounded event-scan origin, when HydeTokenFactory is deployed. */
+  hydeFeeVault?: Address;
+  hydeFeeCollector?: Address;
+  hydeHook?: Address;
+  hydeDeploymentBlock?: bigint;
   /** HOODIE launcher-launcher: the meta-factory (mints launchers) + the shared engine (reads/events). */
   hoodieMetaFactory?: Address;
   hoodieEngine?: Address;
@@ -231,9 +236,25 @@ export const OPTIMISM_MAINNET: NetworkConfig = {
   tokens: OPTIMISM_TOKENS,
 };
 
+// Arbitrum One — canonical Uniswap V4 plus Hydeout's verified WETH launch stack.
+// In-app swaps remain fail-closed until a chain-specific execution gateway is
+// deployed and proven; launching, discovery, profiles and creator claims are live.
+export const ARBITRUM_MAINNET: NetworkConfig = {
+  id: 42161,
+  name: "Arbitrum One",
+  rpcUrl: "https://arb1.arbitrum.io/rpc",
+  explorerUrl: "https://arbiscan.io",
+  currencySymbol: "ETH",
+  factory: PLACEHOLDER_FACTORY,
+  router: PLACEHOLDER_ROUTER,
+  weth: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1" as Address,
+  tokens: ARBITRUM_TOKENS,
+};
+
 export const NETWORKS: NetworkConfig[] = [
   ROBINHOOD_MAINNET,
   STABLE_MAINNET,       // LIVE V3 reach line (988); readiness is generated-evidence gated
+  ARBITRUM_MAINNET,     // LIVE Hyde V4 WETH launch rail; in-app execution gateway remains fail-closed
   // OPTIMISM_MAINNET,  // legacy lane retired 2026-07-03 — Hydeout is Robinhood-only
   // INK_MAINNET,       // hidden — multichain later
   // UNICHAIN_MAINNET,  // dropped
@@ -342,6 +363,22 @@ export const V4_CONTRACTS_BY_CHAIN: Record<number, V4Contracts> = {
     permit2:         "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
     gateway:         PLACEHOLDER_V4_GATEWAY,
     stateView:       "0x7ffe42c4a5deea5b0fec41c94c136cf115597227" as Address,
+  },
+  // Arbitrum One — official canonical Uniswap V4 plus Hydeout WETH launch stack,
+  // deployed and independently manifest-verified at blocks 488965873–488965908.
+  [ARBITRUM_MAINNET.id]: {
+    poolManager:     "0x360e68faccca8ca495c1b759fd9eee466db9fb32" as Address,
+    universalRouter: "0xa51afafe0263b40edaef0df8781ea9aa03e381a3" as Address,
+    quoter:          "0x3972c00f7ed4885e145823eb7c655375d275a1c5" as Address,
+    positionManager: "0xd88f38f930b7952f2db2432cb002e7abbf3dd869" as Address,
+    permit2:         "0x000000000022D473030F116dDEE9F6B43aC78BA3" as Address,
+    gateway:         PLACEHOLDER_V4_GATEWAY,
+    stateView:       "0x76fd297e2d437cd7f76d50f01afe6160f86e9990" as Address,
+    hydeTokenFactory: "0x710fEa288266518528A4230771E07ee310ce509f" as Address,
+    hydeFeeVault:      "0x04C204C264626Ad0067ac4317D54598286d2D791" as Address,
+    hydeFeeCollector:  "0xf36c173E0916057A72CAbd7857aE665742755674" as Address,
+    hydeHook:          "0x126f220b88d3ffa604d206856d1a675efB8aF0C0" as Address,
+    hydeDeploymentBlock: 488965908n,
   },
   [UNICHAIN_MAINNET.id]: {
     poolManager:     "0x1f98400000000000000000000000000000000004" as Address,

@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 import { ConnectorAlreadyConnectedError, useAccount, useConnect } from "wagmi";
 import { useAllHydeLaunches } from "../hooks/useAllHydeLaunches";
 import type { DopplerPool } from "../utils/dopplerConfig";
-import { chainEngineCapabilities, chainV3Capability } from "../utils/chainRegistry";
+import { chainEngineCapabilities, isHydeLaunchLive } from "../utils/chainRegistry";
 import { NETWORKS } from "../utils/constants";
 import { CoinCard } from "./Discover";
 
@@ -82,10 +82,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   const capabilities = chainEngineCapabilities(chainId);
   const capability = capabilities[0];
   const chainName = capability?.name ?? "Robinhood Chain";
-  const v3Capability = chainV3Capability(chainId);
-  // A coming V3 row must not hide a live V4 launcher on the same chain.
-  const launchLive = capabilities.some((item) => item.engine === "v4-hook")
-    || v3Capability?.status === "live";
+  const launchLive = isHydeLaunchLive(chainId);
   const isStableV3 = capabilities.length > 0 && capabilities.every((item) => item.engine === "v3-single-sided");
   const pools = useMemo(
     () => chainScope === "all"
@@ -183,7 +180,13 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
             </span>
           </h1>
           <p className="mt-4 max-w-[610px] text-sm leading-6 text-[var(--term-sub)]">
-            {isStableV3 ? (
+            {!launchLive ? (
+              <>
+                <strong className="font-semibold text-[var(--term-text)]">Uniswap V4 is live on {chainName}.</strong>{" "}
+                Hydeout launches remain disabled until the chain-specific factory, hook, vault, and fee
+                path are deployed and verified.
+              </>
+            ) : isStableV3 ? (
               <>
                 <strong className="font-semibold text-[var(--term-text)]">Live on {chainName} mainnet.</strong>{" "}
                 Single-sided V3 launches route 95% of trading fees to creators and 5% to Hyde. Every
@@ -191,7 +194,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               </>
             ) : (
               <>
-                <strong className="font-semibold text-[var(--term-text)]">Live on Robinhood Chain.</strong>{" "}
+                <strong className="font-semibold text-[var(--term-text)]">Live on {chainName}.</strong>{" "}
                 V4 routes 90% of fees to creators, 5% to Hyde, and 5% into locked auto-compounding LP.
                 Proven in code, not promised.
               </>

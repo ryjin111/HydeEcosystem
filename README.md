@@ -175,7 +175,7 @@ The review was adversarial by design (each finding had to be *refuted or confirm
 - Deployed on **Vercel** (Node 24 runtime); serverless `api/` routes for IPFS pinning + rate limiting
 
 **Chains**
-- Robinhood Chain mainnet (`4663`, V4 launch/trade) · Stable mainnet (`988`, V3 launch/trade) · Robinhood Testnet (`46630`, retained for development)
+- Robinhood Chain mainnet (`4663`, V4 launch/trade) · Stable mainnet (`988`, V3 launch/trade) · Arbitrum One (`42161`, live Hyde V4 WETH launches; in-app execution gateway pending) · Robinhood Testnet (`46630`, retained for development)
 
 ---
 
@@ -203,7 +203,7 @@ npm ci          # installs the exact locked dependencies from package-lock.json 
 npm run dev     # starts the local dev server
 ```
 
-Then open the URL it prints (usually **http://localhost:5173**) in your browser. The default surface is wired to the live Robinhood Chain mainnet deployment; choose Stable in the header for the live V3 launch/trade path.
+Then open the URL it prints (usually **http://localhost:5173**) in your browser. The default surface is wired to the live Robinhood Chain mainnet deployment; choose Stable for the V3 rail or Arbitrum for the live V4 WETH launch rail.
 
 To make a production build instead:
 
@@ -230,8 +230,8 @@ npm run contracts:test  # installs missing deps, then runs the complete Foundry 
 | Variable | Used by | Required? | Purpose |
 |---|---|---|---|
 | `VITE_IPFS_GATEWAY` | frontend | Optional | IPFS read gateway for token art. Defaults to `https://ipfs.io/ipfs/`. |
-| `VITE_ALCHEMY_API_KEY` | frontend | Prod recommended | Public/domain-restricted Alchemy client key for Robinhood + Stable. The chain-owned RPC remains the fallback. |
-| `VITE_ROBINHOOD_MAINNET_RPC_URL` / `VITE_STABLE_MAINNET_RPC_URL` | frontend | Optional | Full paid endpoint overrides; each takes precedence over the shared Alchemy key. |
+| `VITE_ALCHEMY_API_KEY` | frontend | Prod recommended | Public/domain-restricted Alchemy client key for Robinhood, Stable, and Arbitrum. The chain-owned RPC remains the fallback. |
+| `VITE_ROBINHOOD_MAINNET_RPC_URL` / `VITE_STABLE_MAINNET_RPC_URL` / `VITE_ARBITRUM_MAINNET_RPC_URL` | frontend | Optional | Full paid endpoint overrides; each takes precedence over the shared Alchemy key. |
 | `ROBINHOOD_RPC_URL` / `STABLE_RPC_URL` | Vercel serverless | Prod recommended | Secret server-side RPCs for creator-signed metadata verification. Never prefix the secret values with `VITE_`. |
 | `TESTNET_RPC` | contract fork tests | Optional | RPC URL for the on-chain fork tests. Unset → those tests skip cleanly. |
 | `PINATA_JWT` / `PINATA_PIN_ENDPOINT` | Vercel serverless (`api/pin-image`) | Prod only / optional endpoint | Scoped Pinata pinning JWT and optional upload endpoint. Never prefix the JWT with `VITE_`. |
@@ -284,6 +284,6 @@ api/                  # Vercel routes (metadata, IPFS pinning, cached launch ind
 
 ## Status & Disclaimers
 
-- Contracts are deployed on Robinhood Chain mainnet (V4) and Stable mainnet (V3), internally reviewed, and **not externally audited**. Live deployment does not remove smart-contract, chain, RPC, or market risk.
+- Contracts are deployed on Robinhood Chain mainnet (V4), Stable mainnet (V3), and Arbitrum One (V4 WETH launch rail), internally reviewed, and **not externally audited**. Live deployment does not remove smart-contract, chain, RPC, or market risk.
 - WETH on Robinhood Chain 4663 is an upgradeable proxy — an external trust assumption, disclosed. (USDG is no longer a dependency — the launch fee is native ETH.)
 - Nothing here is financial advice. Launching or trading tokens carries risk.

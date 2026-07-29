@@ -5,14 +5,13 @@ import toast from "react-hot-toast";
 import { WETH_CONTAINMENT } from "../utils/containment";
 import { simulateHydeLaunch, executeHydeLaunch, type HydeLaunchStep } from "../utils/hydeLaunch";
 import { simulateHoodieLaunch, executeHoodieLaunch, type HoodieLaunchStep } from "../utils/hoodieLaunch";
-import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
+import { NETWORKS, ROBINHOOD_MAINNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import { preCheckImageFile, AVATAR_SIZE } from "../utils/imageValidation";
 import { saveLaunchMeta } from "../utils/launchMeta";
 import { TokenImage } from "./TokenImage";
 
 /* ─── component ────────────────────────────────────────────────────────────── */
 
-const RH_TESTNET_ID = ROBINHOOD_TESTNET.id;
 const ROBINHOOD_CHAIN_ID = ROBINHOOD_MAINNET.id;
 
 /**
@@ -58,7 +57,14 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   // Own-stack launch lane: a chain uses OUR HydeTokenFactory (not Doppler) whenever one is configured.
   // Both testnet (46630) and mainnet (4663, deployed 2026-07-21) now have one → mainnet WETH launches
   // route through our factory `0x710f…509f`, same as testnet. Everything below flips by this one flag.
-  const usesOwnStack = !!V4_CONTRACTS_BY_CHAIN[chainId]?.hydeTokenFactory;
+  const ownStack = V4_CONTRACTS_BY_CHAIN[chainId];
+  const usesOwnStack = !!ownStack?.hydeTokenFactory;
+  const supportsHoodiePair = !!(
+    ownStack?.hoodieSharedLauncher
+    && ownStack.hoodieEngine
+    && ownStack.hoodieHook
+    && ownStack.hoodieNumeraire
+  );
   const { address, chainId: walletChainId, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient({ chainId });
@@ -68,7 +74,10 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
   // HOODIE routes through the ONE shared launcher (clint 23752) — a single-tx launch, same flow shape as
   // WETH, just $HOODIE-based; the engine attributes the actual caller as the creator.
   const [pair, setPair] = useState<"weth" | "hoodie">("weth");
-  const isHoodie = pair === "hoodie";
+  const isHoodie = supportsHoodiePair && pair === "hoodie";
+  useEffect(() => {
+    if (!supportsHoodiePair && pair !== "weth") setPair("weth");
+  }, [pair, supportsHoodiePair]);
 
   // WETH-ONLY CONTAINMENT (clint 24004 / kami 24005+24008). Pause ONLY the own-stack WETH factory launch —
   // its numeraire-agnostic preset seeds the ~$1.9T pool (RCA: containment.ts). HOODIE launches (isHoodie) are
@@ -248,9 +257,9 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
     }
   };
 
-  const isRhTestnet = chainId === RH_TESTNET_ID;
-  const explorer = isRhTestnet ? ROBINHOOD_TESTNET.explorerUrl : ROBINHOOD_MAINNET.explorerUrl;
-  const targetName = isRhTestnet ? ROBINHOOD_TESTNET.name : ROBINHOOD_MAINNET.name;
+  const targetNetwork = NETWORKS.find((network) => network.id === chainId) ?? ROBINHOOD_MAINNET;
+  const explorer = targetNetwork.explorerUrl;
+  const targetName = targetNetwork.name;
   const identityReady = !!name.trim() && !!symbol.trim();
   const diveProgress = Math.min(
     100,
@@ -349,7 +358,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
       <section className="launch-console">
       {/* Pair selector (clint 23448) — the base a launch pairs against. WETH = the standard rail;
           HOODIE = the HOODIE-native launcher-launcher. Segmented pill, matching the page's tab style. */}
-      <div className="grid grid-cols-2 gap-1 rounded-xl p-1" style={{ background: "#0E1014", border: "1px solid #22252D" }}>
+      {supportsHoodiePair && <div className="grid grid-cols-2 gap-1 rounded-xl p-1" style={{ background: "#0E1014", border: "1px solid #22252D" }}>
         {([
           { key: "weth",   label: "WETH PAIR",   accent: "#4FE3BE", tint: "rgba(42,212,166,0.14)" },
           { key: "hoodie", label: "HOODIE PAIR", accent: "#E0A32E", tint: "rgba(224,163,46,0.14)" },
@@ -368,7 +377,7 @@ export function LaunchTokenForm({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: nu
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {/* WETH-only containment (kami 24019): when the WETH own-stack launch is paused, do NOT present a
           live-looking / editable WETH form — surface the warning immediately below the pair selector and hide

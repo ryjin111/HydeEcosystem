@@ -8,3 +8,4 @@ export { ETHEREUM_TOKENS } from "./ethereum";
 export { UNICHAIN_TOKENS } from "./unichain";
 export { BNB_TOKENS } from "./bnb";
 export { XLAYER_TOKENS } from "./xlayer";
+export { ARBITRUM_TOKENS } from "./arbitrum";

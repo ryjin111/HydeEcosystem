@@ -15,7 +15,14 @@ import {
   UserGroupIcon,
 } from "@heroicons/react/24/outline";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
-import { isGatewayLive, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
+import {
+  ARBITRUM_MAINNET,
+  isGatewayLive,
+  NETWORKS,
+  ROBINHOOD_MAINNET,
+  STABLE_MAINNET,
+  V4_CONTRACTS_BY_CHAIN,
+} from "../utils/constants";
 import { WETH_CONTAINMENT } from "../utils/containment";
 import { useHydeLaunches, useHydeToken } from "../hooks/useDopplerTokens";
 import { useTokenPosition } from "../hooks/useTokenPosition";
@@ -37,28 +44,70 @@ type Props = { network: NetworkConfig; tokens: TokenInfo[]; onAddCustomToken: (t
 // surface a mainnet pair/chart/holders and even mark a testnet token "Graduated" (kami A-blocker #2).
 const ROBINHOOD_MAINNET_ID = 4663;
 
-// resolve the DEXScreener robinhood pair (fail neutral → null; never a wrong pair)
-function useDexPair(address?: string, chainId?: number): { pair: string | null; checked: boolean } {
+type LiveDexMarket = {
+  pair: string | null;
+  priceUsd: number | null;
+  marketCapUsd: number | null;
+  liquidityUsd: number | null;
+  volumeUsd: number | null;
+  checked: boolean;
+};
+
+// Resolve a fresh DEXScreener market snapshot independently from the launch-list
+// cache. This lets a newly traded pool show price immediately.
+function useDexPair(address?: string, chainId?: number): LiveDexMarket {
   const [pair, setPair] = useState<string | null>(null);
+  const [market, setMarket] = useState<Omit<LiveDexMarket, "pair" | "checked">>({
+    priceUsd: null,
+    marketCapUsd: null,
+    liquidityUsd: null,
+    volumeUsd: null,
+  });
   const [checked, setChecked] = useState(false);
   useEffect(() => {
-    setChecked(false); setPair(null);
+    setChecked(false);
+    setPair(null);
+    setMarket({ priceUsd: null, marketCapUsd: null, liquidityUsd: null, volumeUsd: null });
     if (!address || chainId !== ROBINHOOD_MAINNET_ID) { setChecked(true); return; } // mainnet-only source
     let cancelled = false;
     fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        // only robinhood/uniswap pairs; if several, pick highest USD liquidity
-        // (the canonical/graduated pair) — deterministic, never a constructed addr.
-        const cands: { pairAddress?: string; liquidity?: { usd?: number } }[] =
-          (d?.pairs ?? []).filter((x: { chainId?: string; dexId?: string }) => x.chainId === "robinhood" && x.dexId === "uniswap");
+        // DEXScreener's priceUsd belongs to baseToken, so require the requested
+        // token to be the base before accepting the number.
+        type Pair = {
+          chainId?: string;
+          dexId?: string;
+          pairAddress?: string;
+          baseToken?: { address?: string };
+          priceUsd?: string;
+          marketCap?: number;
+          fdv?: number;
+          liquidity?: { usd?: number };
+          volume?: { h24?: number };
+        };
+        const cands: Pair[] = (d?.pairs ?? []).filter((x: Pair) => (
+          x.chainId === "robinhood"
+          && x.dexId === "uniswap"
+          && x.baseToken?.address?.toLowerCase() === address.toLowerCase()
+        ));
         cands.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0));
-        if (!cancelled) { setPair(cands[0]?.pairAddress ?? null); setChecked(true); }
+        const best = cands[0];
+        if (!cancelled) {
+          setPair(best?.pairAddress ?? null);
+          setMarket({
+            priceUsd: best?.priceUsd != null ? Number(best.priceUsd) : null,
+            marketCapUsd: best?.marketCap ?? best?.fdv ?? null,
+            liquidityUsd: best?.liquidity?.usd ?? null,
+            volumeUsd: best?.volume?.h24 ?? null,
+          });
+          setChecked(true);
+        }
       })
       .catch(() => { if (!cancelled) setChecked(true); });
     return () => { cancelled = true; };
   }, [address, chainId]);
-  return { pair, checked };
+  return { pair, ...market, checked };
 }
 
 /** Compact USD for MCAP/volume/liquidity — only called with a real number ≥ ~1. */
@@ -141,7 +190,8 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   // Chain-scoped to the active network (clint #4): testnet and mainnet each read only their configured
   // own-stack launch sources — never cross-chain data.
   const { pools } = useHydeLaunches(network.id);
-  const { pair } = useDexPair(address, network.id);
+  const liveMarket = useDexPair(address, network.id);
+  const { pair } = liveMarket;
   const { holders, loading: holdersLoading } = useTopHolders(address, network.id);
   const [copied, setCopied] = useState(false);
   const [feedTab, setFeedTab] = useState<"trades" | "holders">("trades"); // coin-mockup: Trades/Holders tabs
@@ -157,8 +207,28 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   // Prefer the board pool (richer: precise graduation %); else read the token
   // directly by address so launches OUTSIDE the newest-60 page still render.
   const boardPool = useMemo(() => pools.find((p) => p.address.toLowerCase() === address.toLowerCase()), [pools, address]);
-  const { pool: fetchedPool, loading: tokenLoading, error: tokenError } = useHydeToken(address, network.id);
+  // Resolve both live launch rails explicitly. The selected chain stays the
+  // authority for actions; another-chain result only powers a safe notice.
+  const robinhoodLookup = useHydeToken(address, ROBINHOOD_MAINNET.id);
+  const stableLookup = useHydeToken(address, STABLE_MAINNET.id);
+  const arbitrumLookup = useHydeToken(address, ARBITRUM_MAINNET.id);
+  const selectedLookup = network.id === ROBINHOOD_MAINNET.id
+    ? robinhoodLookup
+    : network.id === STABLE_MAINNET.id
+      ? stableLookup
+      : network.id === ARBITRUM_MAINNET.id
+        ? arbitrumLookup
+        : null;
+  const fetchedPool = selectedLookup?.pool ?? null;
   const pool = boardPool ?? fetchedPool;
+  const wrongChainPool = pool || selectedLookup?.loading
+    ? null
+    : [robinhoodLookup.pool, stableLookup.pool, arbitrumLookup.pool]
+      .find((candidate) => candidate && candidate.chainId !== network.id) ?? null;
+  const locatingToken = !pool && !wrongChainPool && (
+    robinhoodLookup.loading || stableLookup.loading || arbitrumLookup.loading || (selectedLookup?.loading ?? false)
+  );
+  const tokenError = selectedLookup?.error ?? null;
 
   // HOODIE-numeraire own-stack pool → live in-app Buy/Sell + per-wallet PnL via the canonical UniversalRouter
   // (the Hyde gateway isn't deployed on 4663). Detected by the pool's quote token matching the configured
@@ -170,10 +240,45 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const { address: walletAddress, isConnected } = useAccount();
   const { position, error: positionError } = useTokenPosition(pool?.address ?? "", network.id, isHoodiePair);
 
-  if (tokenLoading && !boardPool) {
+  if (locatingToken && !boardPool) {
     return (
       <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
         <div className="py-12 text-center text-pcs-textSub">Loading token…</div>
+      </div>
+    );
+  }
+  if (wrongChainPool) {
+    const actualNetwork = NETWORKS.find((candidate) => candidate.id === wrongChainPool.chainId);
+    const actualName = actualNetwork?.name ?? `Chain ${wrongChainPool.chainId}`;
+    const actualEngine = ENGINE_META[wrongChainPool.launchEngine];
+    return (
+      <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · chain signal">
+        <Card variant="panel" className="mx-auto max-w-xl text-center" data-testid="wrong-chain-token">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-pcs-primary/25 bg-pcs-primary/[0.08] font-display text-lg font-bold text-pcs-primary">
+            {wrongChainPool.baseToken.symbol.slice(0, 1)}
+          </div>
+          <p className="mt-4 font-display text-xl font-semibold text-pcs-text">
+            {wrongChainPool.baseToken.name} lives on {actualName}.
+          </p>
+          <p className="mt-2 text-sm leading-6 text-pcs-textSub">
+            You’re currently viewing {network.name}. Hydeout keeps price, trade, position, and fee
+            reads chain-scoped so the wrong network can never show misleading token data.
+          </p>
+          <div className="mx-auto mt-4 flex w-fit flex-wrap justify-center gap-2">
+            <span className="rounded-md border border-pcs-primary/25 bg-pcs-primary/[0.06] px-2 py-1 font-code text-[10px] text-pcs-primary">
+              {actualEngine.title}
+            </span>
+            <span className="rounded-md border border-pcs-border px-2 py-1 font-code text-[10px] text-pcs-textSub">
+              {actualEngine.feeSplitLabel}
+            </span>
+          </div>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <Link to={`/token/${address}?network=${wrongChainPool.chainId}`}>
+              <Button variant="primary">View on {actualName}</Button>
+            </Link>
+            <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+          </div>
+        </Card>
       </div>
     );
   }
@@ -208,6 +313,12 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const wethContained = isV4Launch && !isHoodiePair && WETH_CONTAINMENT.active;
   const creatorAddr = (pool as { creator?: string }).creator;
   const launchedAgo = timeAgo(pool.createdAt);
+  const priceUsd = liveMarket.priceUsd ?? pool.priceUsd;
+  const marketCapUsd = liveMarket.marketCapUsd ?? pool.marketCapUsd;
+  const liquidityUsd = liveMarket.liquidityUsd
+    ?? (pool.dollarLiquidity != null ? Number(pool.dollarLiquidity) : null);
+  const volumeUsd = liveMarket.volumeUsd
+    ?? (pool.volumeUsd != null ? Number(pool.volumeUsd) : null);
 
   return (
     <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
@@ -240,12 +351,15 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                     <span className="rounded-md border border-pcs-primary/25 bg-pcs-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-pcs-primaryBright">
                       {engineMeta.title}
                     </span>
+                    <span className="rounded-md border border-pcs-border bg-white/[0.025] px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-pcs-textSub">
+                      {network.name} · {network.id}
+                    </span>
                     <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>LIVE</span>
                   </div>
                 </div>
               </div>
               <div className="shrink-0 text-right">
-                <div className="font-mono text-xl font-bold text-pcs-text">{pool.priceUsd != null && pool.priceUsd > 0 ? fmtPrice(pool.priceUsd) : "—"}</div>
+                <div data-testid="token-price" className="font-mono text-xl font-bold text-pcs-text">{priceUsd != null && priceUsd > 0 ? fmtPrice(priceUsd) : "—"}</div>
                 <a href={`${network.explorerUrl}/address/${pool.address}`} target="_blank" rel="noreferrer" className="text-[11px] text-pcs-textDim transition hover:text-pcs-textSub">Explorer ↗</a>
               </div>
             </div>
@@ -508,10 +622,10 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
           <SectionLabel>Market</SectionLabel>
           <div className="mt-3 space-y-2 text-xs">
             {([
-              ["Market cap", pool.marketCapUsd != null && pool.marketCapUsd > 0 ? fmtUsd(pool.marketCapUsd) : "—"],
-              ["Price", pool.priceUsd != null && pool.priceUsd > 0 ? fmtPrice(pool.priceUsd) : "—"],
-              ["24h volume", pool.volumeUsd != null && parseFloat(pool.volumeUsd) > 0 ? fmtUsd(parseFloat(pool.volumeUsd)) : "—"],
-              ["Liquidity", pool.dollarLiquidity != null && parseFloat(pool.dollarLiquidity) > 0 ? fmtUsd(parseFloat(pool.dollarLiquidity)) : "—"],
+              ["Market cap", marketCapUsd != null && marketCapUsd > 0 ? fmtUsd(marketCapUsd) : "—"],
+              ["Price", priceUsd != null && priceUsd > 0 ? fmtPrice(priceUsd) : "—"],
+              ["24h volume", volumeUsd != null && volumeUsd > 0 ? fmtUsd(volumeUsd) : "—"],
+              ["Liquidity", liquidityUsd != null && liquidityUsd > 0 ? fmtUsd(liquidityUsd) : "—"],
               ["Total supply", OWN_STACK_SUPPLY],
             ] as [string, string][]).map(([label, value]) => (
               <div key={label} className="flex items-center justify-between">

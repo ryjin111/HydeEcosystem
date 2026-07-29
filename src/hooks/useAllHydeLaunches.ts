@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { ROBINHOOD_MAINNET, STABLE_MAINNET } from "../utils/constants";
+import { ARBITRUM_MAINNET, ROBINHOOD_MAINNET, STABLE_MAINNET } from "../utils/constants";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { useHydeLaunches } from "./useDopplerTokens";
 
@@ -13,7 +13,7 @@ export type HydeLaunchSource = {
 };
 
 /**
- * Read-only discovery aggregate for Hydeout's two live mainnets.
+ * Read-only discovery aggregate for Hydeout's live mainnets.
  *
  * Transaction surfaces remain chain-scoped. This hook exists only for browse
  * surfaces, where every card carries its chain id into the token route.
@@ -29,6 +29,7 @@ export function useAllHydeLaunches(): {
   // Keep these calls explicit: hooks cannot be created dynamically from NETWORKS.
   const robinhood = useHydeLaunches(ROBINHOOD_MAINNET.id);
   const stable = useHydeLaunches(STABLE_MAINNET.id);
+  const arbitrum = useHydeLaunches(ARBITRUM_MAINNET.id);
 
   const sources = useMemo<HydeLaunchSource[]>(
     () => [
@@ -48,6 +49,14 @@ export function useAllHydeLaunches(): {
         error: stable.error,
         refetch: stable.refetch,
       },
+      {
+        chainId: ARBITRUM_MAINNET.id,
+        name: ARBITRUM_MAINNET.name,
+        pools: arbitrum.pools,
+        loading: arbitrum.loading,
+        error: arbitrum.error,
+        refetch: arbitrum.refetch,
+      },
     ],
     [
       robinhood.error,
@@ -56,6 +65,9 @@ export function useAllHydeLaunches(): {
       stable.error,
       stable.loading,
       stable.pools,
+      arbitrum.error,
+      arbitrum.loading,
+      arbitrum.pools,
     ],
   );
 

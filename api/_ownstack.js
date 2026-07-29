@@ -30,6 +30,14 @@ export const OWNSTACK = {
     v3Locker: "0xE43314319675eF26724a7d4381D95ac31c246d90",
     v3DeploymentBlock: 33271478n,
   },
+  42161: {
+    // Prefer the paid Arbitrum endpoint server-side; public RPC is the safe fallback.
+    rpc: process.env.ARBITRUM_RPC_URL
+      || process.env.VITE_ARBITRUM_MAINNET_RPC_URL
+      || "https://arb1.arbitrum.io/rpc",
+    factory: "0x710fEa288266518528A4230771E07ee310ce509f",
+    deploymentBlock: 488965908n,
+  },
 };
 
 export function ownstackChain(chainId) {

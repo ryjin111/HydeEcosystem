@@ -4,10 +4,11 @@ import { V4LiquidityCard } from "../components/V4LiquidityCard";
 import { ComingChainNotice } from "../components/ComingChainNotice";
 import { TokenImage } from "../components/TokenImage";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
-import { chainV3Capability } from "../utils/chainRegistry";
+import { chainV3Capability, isHydeLaunchLive } from "../utils/chainRegistry";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
+import { isGatewayLive } from "../utils/constants";
 
 type Props = {
   network: NetworkConfig;
@@ -122,6 +123,20 @@ export function AddLiquidityPage({ network, tokens, onAddCustomToken }: Props) {
   const [mode, setMode] = useState<"add" | "remove">("add");
 
   const v3Capability = chainV3Capability(network.id);
+  if (!isHydeLaunchLive(network.id) || (!v3Capability && !isGatewayLive(network.id))) {
+    return (
+      <div className="pt-8">
+        <ComingChainNotice
+          chainName={network.name}
+          feature="Adding liquidity"
+          engine={v3Capability ? "v3-single-sided" : "v4-hook"}
+          detail={!v3Capability && isHydeLaunchLive(network.id)
+            ? `${network.name}'s Hydeout launch contracts are live. External liquidity controls remain hidden until the in-app V4 execution gateway is deployed and verified.`
+            : undefined}
+        />
+      </div>
+    );
+  }
   if (v3Capability?.status === "live") {
     return <StableLiquidityPage network={network} />;
   }
