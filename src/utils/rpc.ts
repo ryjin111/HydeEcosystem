@@ -4,11 +4,13 @@ import type { NetworkConfig } from "./constants";
 const ALCHEMY_HOST_BY_CHAIN: Record<number, string | undefined> = {
   4663: "robinhood-mainnet.g.alchemy.com",
   988: "stable-mainnet.g.alchemy.com",
+  42161: "arb-mainnet.g.alchemy.com",
 };
 
 const EXPLICIT_RPC_BY_CHAIN: Record<number, string | undefined> = {
   4663: import.meta.env.VITE_ROBINHOOD_MAINNET_RPC_URL,
   988: import.meta.env.VITE_STABLE_MAINNET_RPC_URL,
+  42161: import.meta.env.VITE_ARBITRUM_MAINNET_RPC_URL,
 };
 
 function cleanHttpsUrl(value?: string): string | null {

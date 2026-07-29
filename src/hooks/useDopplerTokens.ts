@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
-import { createPublicClient, defineChain, parseAbiItem } from "viem";
+import { createPublicClient, defineChain, parseAbiItem, type PublicClient } from "viem";
 import type { TokenInfo } from "../utils/constants";
-import { ROBINHOOD_MAINNET, ROBINHOOD_TESTNET, STABLE_MAINNET, DOPPLER_CONTRACTS_BY_CHAIN, ROBINHOOD_TESTNET_VAULT, hydeVaultAbi } from "../utils/constants";
+import {
+  ARBITRUM_MAINNET,
+  ROBINHOOD_MAINNET,
+  ROBINHOOD_TESTNET,
+  STABLE_MAINNET,
+  DOPPLER_CONTRACTS_BY_CHAIN,
+  ROBINHOOD_TESTNET_VAULT,
+  V4_CONTRACTS_BY_CHAIN,
+  hydeVaultAbi,
+} from "../utils/constants";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { v3ChainRow } from "../utils/chainRegistry";
 import { rpcTransportForNetwork, rpcUrlsForNetwork } from "../utils/rpc";
@@ -638,6 +647,8 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
         ? fetchTestnetLaunchToken
         : chainId === ROBINHOOD_CHAIN_ID
           ? fetchMainnetLaunchToken
+          : chainId === ARBITRUM_CHAIN_ID
+            ? fetchArbitrumLaunchToken
           : chainId === STABLE_CHAIN_ID
             ? fetchStableV3LaunchToken
           : null;
@@ -686,21 +697,71 @@ const rhTestnetChain = defineChain({
 const testnetClient = createPublicClient({ chain: rhTestnetChain, transport: rpcTransportForNetwork(ROBINHOOD_TESTNET) });
 
 type LaunchLog = { args: { token: `0x${string}`; creator: `0x${string}` }; blockNumber: bigint | null };
+type OwnStackSource = {
+  chainId: number;
+  network: typeof ROBINHOOD_TESTNET | typeof ARBITRUM_MAINNET;
+  client: PublicClient;
+  factory: `0x${string}`;
+  vault: `0x${string}`;
+  poolManager: `0x${string}`;
+  deploymentBlock: bigint;
+};
+
+const TESTNET_OWN_STACK: OwnStackSource = {
+  chainId: RH_TESTNET_ID,
+  network: ROBINHOOD_TESTNET,
+  client: testnetClient,
+  factory: HYDE_TESTNET_FACTORY,
+  vault: ROBINHOOD_TESTNET_VAULT,
+  poolManager: POOL_MANAGER,
+  deploymentBlock: HYDE_TESTNET_FACTORY_DEPLOY_BLOCK,
+};
+
+const ARBITRUM_CHAIN_ID = ARBITRUM_MAINNET.id;
+const arbitrumV4 = V4_CONTRACTS_BY_CHAIN[ARBITRUM_CHAIN_ID];
+const arbitrumChain = defineChain({
+  id: ARBITRUM_CHAIN_ID,
+  name: ARBITRUM_MAINNET.name,
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: { default: { http: rpcUrlsForNetwork(ARBITRUM_MAINNET) } },
+  blockExplorers: { default: { name: "Arbiscan", url: ARBITRUM_MAINNET.explorerUrl } },
+  contracts: { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } },
+});
+const arbitrumClient = createPublicClient({
+  chain: arbitrumChain,
+  transport: rpcTransportForNetwork(ARBITRUM_MAINNET),
+});
+const ARBITRUM_OWN_STACK: OwnStackSource = {
+  chainId: ARBITRUM_CHAIN_ID,
+  network: ARBITRUM_MAINNET,
+  client: arbitrumClient,
+  factory: arbitrumV4.hydeTokenFactory as `0x${string}`,
+  vault: arbitrumV4.hydeFeeVault as `0x${string}`,
+  poolManager: arbitrumV4.poolManager,
+  deploymentBlock: arbitrumV4.hydeDeploymentBlock ?? 488965908n,
+};
 
 /** Own-stack launches on 46630 — from `LaunchCreated` off our factory. Same enrichment shape as the
  *  Doppler board (name/symbol/curve %), minus third-party price data (testnet isn't indexed → null). */
-async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
-  const latest = await testnetClient.getBlockNumber();
+async function fetchOwnStackFactoryPools(source: OwnStackSource): Promise<DopplerPool[]> {
+  const latest = await source.client.getBlockNumber();
   const collected: LaunchLog[] = [];
   let toB = latest;
   // The own-stack factory is recently deployed → all launches are in recent blocks. Bounded scan
   // (not the mainnet 80-chunk walk): stop once we've found launches and then hit an older empty chunk,
   // hard-capped at 20 chunks so a near-empty testnet resolves fast (no 80-chunk timeout).
-  for (let guard = 0; guard < 20 && collected.length < MAX_SHOWN && toB > 0n; guard++) {
-    const fromB = toB > RANGE ? toB - RANGE + 1n : 0n;
-    const chunk = await testnetClient.getLogs({ address: HYDE_TESTNET_FACTORY, event: LAUNCH_CREATED, fromBlock: fromB, toBlock: toB });
+  for (let guard = 0; guard < 20 && collected.length < MAX_SHOWN && toB >= source.deploymentBlock; guard++) {
+    const fromB = toB - source.deploymentBlock + 1n > RANGE
+      ? toB - RANGE + 1n
+      : source.deploymentBlock;
+    const chunk = await source.client.getLogs({
+      address: source.factory,
+      event: LAUNCH_CREATED,
+      fromBlock: fromB,
+      toBlock: toB,
+    });
     collected.unshift(...(chunk as unknown as LaunchLog[]));
-    if (fromB === 0n) break;
+    if (fromB === source.deploymentBlock) break;
     if (chunk.length === 0 && collected.length > 0) break; // passed the factory's active range
     toB = fromB - 1n;
   }
@@ -712,7 +773,13 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
 
   // curve baseline: tokens transferred INTO the PoolManager in each token's create block
   const seedTransfers = await getLogsChunked(
-    (f, t) => testnetClient.getLogs({ address: tokens, event: TRANSFER_EVENT, args: { to: POOL_MANAGER }, fromBlock: f, toBlock: t }),
+    (f, t) => source.client.getLogs({
+      address: tokens,
+      event: TRANSFER_EVENT,
+      args: { to: source.poolManager },
+      fromBlock: f,
+      toBlock: t,
+    }),
     fromB, latest
   );
   const initialCurve = new Map<string, bigint>();
@@ -722,23 +789,23 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
     initialCurve.set(asset, (initialCurve.get(asset) ?? 0n) + (t.args.value as bigint));
   }
 
-  const meta = await testnetClient.multicall({
+  const meta = await source.client.multicall({
     contracts: tokens.flatMap((token) => [
       { address: token, abi: ERC20_META_ABI, functionName: "name" } as const,
       { address: token, abi: ERC20_META_ABI, functionName: "symbol" } as const,
-      { address: token, abi: ERC20_META_ABI, functionName: "balanceOf", args: [POOL_MANAGER] } as const,
+      { address: token, abi: ERC20_META_ABI, functionName: "balanceOf", args: [source.poolManager] } as const,
     ]),
   });
   // Creator-claimable WETH per token from the fresh vault — ONE batched multicall (no per-render RPC
   // waterfall), fail-neutral: any read failure leaves that token's claimable null, never fabricated.
-  const claimRes = await testnetClient.multicall({
+  const claimRes = await source.client.multicall({
     contracts: tokens.map((token) => ({
-      address: ROBINHOOD_TESTNET_VAULT, abi: hydeVaultAbi, functionName: "creatorClaimable", args: [token],
+      address: source.vault, abi: hydeVaultAbi, functionName: "creatorClaimable", args: [token],
     } as const)),
   }).catch(() => null);
   const uniqueBlocks = [...new Set(logs.map((l) => l.blockNumber ?? 0n))];
   const blockTimes = new Map(
-    (await Promise.all(uniqueBlocks.map((bn) => testnetClient.getBlock({ blockNumber: bn })))).map((b) => [b.number, Number(b.timestamp)])
+    (await Promise.all(uniqueBlocks.map((bn) => source.client.getBlock({ blockNumber: bn })))).map((b) => [b.number, Number(b.timestamp)])
   );
 
   const pools = logs.map((log, i): DopplerPool | null => {
@@ -758,9 +825,9 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
     const claim = claimRes?.[i];
     return {
       address: token,
-      chainId: RH_TESTNET_ID,
+      chainId: source.chainId,
       baseToken: { address: token, name, symbol, decimals: 18 },
-      quoteToken: { address: ROBINHOOD_TESTNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+      quoteToken: { address: source.network.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
       launchEngine: "v4-hook",
       type: "v4",
       dollarLiquidity: null,
@@ -786,20 +853,26 @@ async function fetchHydeFactoryPools(): Promise<DopplerPool[]> {
 /** Single own-stack (46630) launch read for /token/:address — reads name/symbol via the TESTNET
  *  client so a testnet token page never falls back to mainnet data (clint #4 cross-chain bleed).
  *  Testnet isn't third-party indexed → price/graduation stay null (honest). Fails to null. */
-export async function fetchTestnetLaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
+const fetchHydeFactoryPools = () => fetchOwnStackFactoryPools(TESTNET_OWN_STACK);
+const fetchArbitrumFactoryPools = () => fetchOwnStackFactoryPools(ARBITRUM_OWN_STACK);
+
+async function fetchOwnStackLaunchToken(
+  source: OwnStackSource,
+  address: `0x${string}`,
+): Promise<DopplerPool | null> {
   // Authoritative attribution (kami A-blocker #1): must be a token minted by OUR factory — proven by an
   // indexed LaunchCreated(token=address) event — NOT merely any 46630 ERC-20 that exposes name()/symbol().
   // Bounded from the factory deploy block (never fromBlock 0).
-  const created = await testnetClient.getLogs({
-    address: HYDE_TESTNET_FACTORY,
+  const created = await source.client.getLogs({
+    address: source.factory,
     event: LAUNCH_CREATED,
     args: { token: address },
-    fromBlock: HYDE_TESTNET_FACTORY_DEPLOY_BLOCK,
+    fromBlock: source.deploymentBlock,
     toBlock: "latest",
   }).catch(() => null);
   if (!created || created.length === 0) return null; // not a Hyde own-stack launch → honest not-found
 
-  const meta = await testnetClient.multicall({
+  const meta = await source.client.multicall({
     contracts: [
       { address, abi: ERC20_META_ABI, functionName: "name" } as const,
       { address, abi: ERC20_META_ABI, functionName: "symbol" } as const,
@@ -809,9 +882,9 @@ export async function fetchTestnetLaunchToken(address: `0x${string}`): Promise<D
   const symbol = meta?.[1]?.result as string | undefined;
   if (!name || !symbol) return null;
   return {
-    address, chainId: RH_TESTNET_ID,
+    address, chainId: source.chainId,
     baseToken: { address, name, symbol, decimals: 18 },
-    quoteToken: { address: ROBINHOOD_TESTNET.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
+    quoteToken: { address: source.network.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
     launchEngine: "v4-hook",
     type: "v4", dollarLiquidity: null, volumeUsd: null, marketCapUsd: null, priceUsd: null,
     createdAt: new Date(0).toISOString(), // exact create time unindexed on the single-read path
@@ -823,6 +896,11 @@ export async function fetchTestnetLaunchToken(address: `0x${string}`): Promise<D
  *  `LaunchCreated` (WETH factory) OR `HoodieLaunchCreated` (HOODIE engine) event, bounded from each
  *  deploy block. Mirrors the testnet reader so a mainnet token page resolves OUR launches (not the
  *  old Doppler clone-impl check). Fails to null (honest not-found); the page refines graduation/price. */
+export const fetchTestnetLaunchToken = (address: `0x${string}`) =>
+  fetchOwnStackLaunchToken(TESTNET_OWN_STACK, address);
+export const fetchArbitrumLaunchToken = (address: `0x${string}`) =>
+  fetchOwnStackLaunchToken(ARBITRUM_OWN_STACK, address);
+
 async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
   const boardPool = (await fetchMainnetOwnStackPools().catch(() => []))
     .find((pool) => pool.address.toLowerCase() === address.toLowerCase());
@@ -1078,6 +1156,8 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
         ? fetchHydeFactoryPools
         : chainId === ROBINHOOD_CHAIN_ID
           ? () => fetchMainnetOwnStackPools(tick > 0)
+          : chainId === ARBITRUM_CHAIN_ID
+            ? fetchArbitrumFactoryPools
           : chainId === STABLE_CHAIN_ID
             ? () => fetchStableV3Pools(tick > 0)
           : null;

@@ -5,7 +5,7 @@ import { useAccount, useBalance, useConnect, useDisconnect, useSwitchChain } fro
 import { ConnectorAlreadyConnectedError } from "wagmi";
 import type { NetworkConfig } from "../utils/constants";
 import { shortenAddress } from "../utils/format";
-import { chainEngineCapabilities } from "../utils/chainRegistry";
+import { chainEngineCapabilities, isHydeLaunchLive } from "../utils/chainRegistry";
 
 type HeaderProps = {
   selectedNetwork: NetworkConfig;
@@ -27,8 +27,10 @@ const NAV: { label: string; to: string; match: (p: string, s: string) => boolean
 
 function launchRouteComing(chainId: number): boolean {
   const capabilities = chainEngineCapabilities(chainId);
-  return capabilities.length > 0
-    && capabilities.every((capability) => capability.engine === "v3-single-sided" && capability.status !== "live");
+  const hasLaunchRoute = capabilities.some(
+    (capability) => capability.role === "launch" || capability.role === "launch+trade",
+  );
+  return hasLaunchRoute && !isHydeLaunchLive(chainId);
 }
 
 export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderProps) {

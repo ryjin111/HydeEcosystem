@@ -7,15 +7,24 @@
 import { useState } from "react";
 import { LaunchTokenForm } from "./LaunchTokenForm";
 import { StableV3LaunchForm } from "./StableV3LaunchForm";
-import { chainEngineCapabilities, ENGINE_META, type LaunchEngine } from "../utils/chainRegistry";
+import { chainEngineCapabilities, ENGINE_META, isHydeLaunchLive, type LaunchEngine } from "../utils/chainRegistry";
 import { Button, SectionLabel } from "./ui/kit";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
-/** Fail-closed V3/coming launch panel — Stable-V3 copy from ENGINE_META (95/5 · locked), the Stable seed
- *  FDV/launch cost, and a DISABLED CTA. No fabricated numbers; nothing executes until deploy. */
-function ComingLaunchBody({ chainId, chainName }: { chainId: number; chainName: string }) {
-  const meta = ENGINE_META["v3-single-sided"];
+/** Fail-closed launch panel. It names the intended engine but never exposes a
+ * transaction control before Hydeout's chain-specific contracts are deployed. */
+function ComingLaunchBody({
+  chainId,
+  chainName,
+  engine,
+}: {
+  chainId: number;
+  chainName: string;
+  engine: LaunchEngine;
+}) {
+  const meta = ENGINE_META[engine];
+  const isV4 = engine === "v4-hook";
   return (
     <div className="term-panel mx-auto w-full max-w-[680px] rounded-lg p-6 sm:p-8">
       <div className="mb-1 flex items-center justify-between">
@@ -36,15 +45,19 @@ function ComingLaunchBody({ chainId, chainName }: { chainId: number; chainName: 
       </div>
 
       <div className="flex flex-col gap-2 rounded-lg border border-pcs-border bg-white/[0.02] px-4 py-4 text-xs">
-        <div className="flex justify-between text-pcs-textDim"><span>Starting FDV</span><span className="font-mono text-pcs-text">$5,000</span></div>
+        <div className="flex justify-between text-pcs-textDim"><span>Protocol rail</span><span className="text-pcs-text">{isV4 ? "Canonical Uniswap V4" : meta.title}</span></div>
         <div className="flex justify-between text-pcs-textDim"><span>Fee split</span><span className="text-pcs-text">{meta.feeSplitLabel}</span></div>
-        <div className="flex justify-between text-pcs-textDim"><span>Launch cost</span><span className="font-mono text-pcs-text">1 USDT0</span></div>
+        <div className="flex justify-between text-pcs-textDim"><span>Hydeout contracts</span><span className="font-mono text-pcs-text">Awaiting deploy</span></div>
       </div>
 
       <Button variant="primary" size="lg" className="mt-5 w-full" disabled>
         Launch on {chainName} — Coming soon
       </Button>
-      <p className="mt-3 text-center text-[11px] text-pcs-textDim">🔒 {meta.trustLine}</p>
+      <p className="mt-3 text-center text-[11px] leading-5 text-pcs-textDim">
+        {isV4
+          ? "Uniswap V4 is available on this chain. Hydeout's factory, hook, vault, and fee path must be deployed and verified before launches open."
+          : meta.trustLine}
+      </p>
     </div>
   );
 }
@@ -63,10 +76,12 @@ function EngineBody({
   onLaunched?: () => void;
 }) {
   if (engine === "v3-single-sided") {
-    const capability = chainEngineCapabilities(chainId).find((item) => item.engine === engine);
-    return capability?.status === "live"
+    return isHydeLaunchLive(chainId, engine)
       ? <StableV3LaunchForm chainId={chainId} chainName={chainName} onLaunched={onLaunched} />
-      : <ComingLaunchBody chainId={chainId} chainName={chainName} />;
+      : <ComingLaunchBody chainId={chainId} chainName={chainName} engine={engine} />;
+  }
+  if (!isHydeLaunchLive(chainId, engine)) {
+    return <ComingLaunchBody chainId={chainId} chainName={chainName} engine={engine} />;
   }
   return (
     <div className="terminal-launch-form">
@@ -75,12 +90,12 @@ function EngineBody({
   );
 }
 
-function EngineRouteBanner({ engine }: { engine: LaunchEngine }) {
+function EngineRouteBanner({ engine, live }: { engine: LaunchEngine; live: boolean }) {
   const meta = ENGINE_META[engine];
   return (
     <div className="engine-identity-bar">
       <div>
-        <p className="commandbar-label">Detected launcher</p>
+        <p className="commandbar-label">{live ? "Detected launcher" : "Planned launcher"}</p>
         <p className="mt-1 font-display text-sm font-semibold text-pcs-text">{meta.title}</p>
       </div>
       <div className="min-w-0 sm:text-right">
@@ -122,7 +137,7 @@ function MultiEngineLaunch({
           </button>
         ))}
       </div>
-      <EngineRouteBanner engine={picked} />
+      <EngineRouteBanner engine={picked} live={isHydeLaunchLive(chainId, picked)} />
       <EngineBody engine={picked} chainId={chainId} chainName={chainName} onLaunched={onLaunched} />
     </div>
   );
@@ -157,7 +172,7 @@ export function EngineAwareLaunch({
   if (engines.length === 1) {
     return (
       <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3">
-        <EngineRouteBanner engine={engines[0].engine} />
+        <EngineRouteBanner engine={engines[0].engine} live={isHydeLaunchLive(chainId, engines[0].engine)} />
         <EngineBody engine={engines[0].engine} chainId={chainId} chainName={chainName} onLaunched={onLaunched} />
       </div>
     );

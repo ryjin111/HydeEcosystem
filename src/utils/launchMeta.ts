@@ -6,7 +6,7 @@ import type { WalletClient } from "viem";
 /** Chains whose Hyde launch tokens carry off-chain metadata (HydeERC20 stores only name/symbol).
  *  Robinhood V4 and Stable V3 share the same creator-signed image/description store. The backend
  *  independently proves the creator from that chain's canonical launch event before accepting a write. */
-export const OWNSTACK_META_CHAINS = new Set<number>([46630, 4663, 988]);
+export const OWNSTACK_META_CHAINS = new Set<number>([46630, 4663, 988, 42161]);
 export function chainSupportsLaunchMeta(chainId: number): boolean {
   return OWNSTACK_META_CHAINS.has(chainId);
 }

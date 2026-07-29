@@ -42,6 +42,25 @@ const CHAINS = [
     ],
   },
   {
+    key: "arbitrum", id: 42161, name: "Arbitrum One",
+    rpcs: [process.env.ARBITRUM_RPC_URL, "https://arb1.arbitrum.io/rpc", "https://arbitrum-one-rpc.publicnode.com"].filter(Boolean),
+    v4: {
+      poolManager: "0x360e68faccca8ca495c1b759fd9eee466db9fb32",
+      universalRouter: "0xa51afafe0263b40edaef0df8781ea9aa03e381a3",
+      positionManager: "0xd88f38f930b7952f2db2432cb002e7abbf3dd869",
+      stateView: "0x76fd297e2d437cd7f76d50f01afe6160f86e9990",
+      quoter: "0x3972c00f7ed4885e145823eb7c655375d275a1c5",
+      permit2: CANONICAL_PERMIT2,
+    },
+    wrappedNative: { addr: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", expectSymbol: "WETH" },
+    tokens: [
+      { symbol: "USDC", addr: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 },
+      { symbol: "USD₮0", addr: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", decimals: 6 },
+      { symbol: "ARB", addr: "0x912CE59144191C1204E64559FE8253a0e49E6548", decimals: 18 },
+      { symbol: "WBTC", addr: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f", decimals: 8 },
+    ],
+  },
+  {
     key: "optimism", id: 10, name: "Optimism",
     rpcs: ["https://mainnet.optimism.io", "https://optimism-rpc.publicnode.com"],
     v4: {
@@ -175,7 +194,16 @@ function decodeString(hex) {
   return Buffer.from(h.slice(128, 128 + len * 2), "hex").toString("utf8");
 }
 
-for (const chain of CHAINS) {
+const requestedChain = process.argv[2]?.toLowerCase();
+const selectedChains = requestedChain
+  ? CHAINS.filter((chain) => chain.key === requestedChain || String(chain.id) === requestedChain)
+  : CHAINS;
+if (requestedChain && selectedChains.length === 0) {
+  console.error(`Unknown chain "${requestedChain}". Available: ${CHAINS.map((chain) => `${chain.key} (${chain.id})`).join(", ")}`);
+  process.exit(1);
+}
+
+for (const chain of selectedChains) {
   console.log(`\n── ${chain.name} (${chain.id}) ──`);
   const url = await pickRpc(chain);
   check(`${chain.key}: reachable RPC agrees chainId=${chain.id}`, !!url, url ?? "no RPC reachable");

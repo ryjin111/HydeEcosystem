@@ -22,10 +22,11 @@ import { isMainnetOwnStackLaunch, useHydeLaunches } from "../hooks/useDopplerTok
 import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { ROBINHOOD_MAINNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import type { NetworkConfig } from "../utils/constants";
-import { chainV3Capability } from "../utils/chainRegistry";
+import { chainV3Capability, isHydeLaunchLive } from "../utils/chainRegistry";
 import { Card, Button, Stat, VerifiedBadge, SectionLabel } from "../components/ui/kit";
 import { TokenImage } from "../components/TokenImage";
 import { StableV3FeeCollector } from "../components/StableV3FeeCollector";
+import { ComingChainNotice } from "../components/ComingChainNotice";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import type { DopplerPool } from "../utils/dopplerConfig";
 
@@ -93,7 +94,7 @@ function useHydeHoldings(address?: string, enabled = true): { holdings: Holding[
 
 /** Stable has no Blockscout-dependent portfolio adapter. Read balances directly from the verified
  * HydeV3Pad launch set, so creator and public wallet profiles are live as soon as a launch confirms. */
-function useStableV3Holdings(
+function useDirectLaunchHoldings(
   address: string,
   chainId: number,
   pools: DopplerPool[],
@@ -166,13 +167,15 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
   const address = (routeAddr || connected || "").toLowerCase();
   const [copied, setCopied] = useState(false);
   const isV3Chain = !!chainV3Capability(network.id);
+  const launchLive = isHydeLaunchLive(network.id);
   const { pools, loading: launchesLoading } = useHydeLaunches(network.id);
-  const robinhoodPortfolio = useHydeHoldings(address, !isV3Chain);
-  const stablePortfolio = useStableV3Holdings(address, network.id, pools, isV3Chain);
-  const holdings = isV3Chain ? stablePortfolio.holdings : robinhoodPortfolio.holdings;
-  const loading = isV3Chain
-    ? launchesLoading || stablePortfolio.loading
-    : robinhoodPortfolio.loading;
+  const isRobinhood = network.id === ROBINHOOD_MAINNET.id;
+  const robinhoodPortfolio = useHydeHoldings(address, isRobinhood && launchLive);
+  const directPortfolio = useDirectLaunchHoldings(address, network.id, pools, !isRobinhood && launchLive);
+  const holdings = isRobinhood ? robinhoodPortfolio.holdings : directPortfolio.holdings;
+  const loading = isRobinhood
+    ? robinhoodPortfolio.loading
+    : launchesLoading || directPortfolio.loading;
   const myLaunches = address
     ? pools.filter((pool) => pool.creator?.toLowerCase() === address)
     : [];
@@ -189,6 +192,18 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
       toast.error("Wallet connection failed");
     }
   };
+
+  if (!launchLive) {
+    return (
+      <div className="hyde-page hyde-profile mx-auto w-full max-w-[1040px] pt-8" data-depth-label="Hideout · wallet depth">
+        <ComingChainNotice
+          chainName={network.name}
+          feature="Portfolio tracking and fee claims"
+          engine={isV3Chain ? "v3-single-sided" : "v4-hook"}
+        />
+      </div>
+    );
+  }
 
   if (!address) {
     return (
@@ -362,9 +377,9 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
           </div>
         ) : (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {holdings.map((h) => isV3Chain
-              ? <StableHoldingRow key={h.address} h={h} />
-              : <RobinhoodHoldingRow key={h.address} h={h} />)}
+            {holdings.map((h) => isRobinhood
+              ? <RobinhoodHoldingRow key={h.address} h={h} />
+              : <ChainHoldingRow key={h.address} h={h} network={network} isV3={isV3Chain} />)}
           </div>
         )}
       </div>
@@ -384,18 +399,26 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
   );
 }
 
-function StableHoldingRow({ h }: { h: Holding }) {
+function ChainHoldingRow({
+  h,
+  network,
+  isV3,
+}: {
+  h: Holding;
+  network: NetworkConfig;
+  isV3: boolean;
+}) {
   const [image, setImage] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetchLaunchMeta(988, h.address).then((meta) => {
+    fetchLaunchMeta(network.id, h.address).then((meta) => {
       if (!cancelled) setImage(meta?.image || null);
     });
     return () => { cancelled = true; };
-  }, [h.address]);
+  }, [h.address, network.id]);
 
   return (
-    <Link to={`/token/${h.address}?network=988`} className="block">
+    <Link to={`/token/${h.address}?network=${network.id}`} className="block">
       <Card variant="token" interactive>
         <div className="flex items-center gap-3">
           <TokenImage
@@ -408,7 +431,7 @@ function StableHoldingRow({ h }: { h: Holding }) {
               {h.name} <span className="font-mono text-xs text-pcs-textSub">${h.symbol}</span>
             </p>
             <p className="mt-1 font-code text-[9px] uppercase tracking-wider text-pcs-primary">
-              Stable · V3 launch
+              {network.name} · {isV3 ? "V3" : "V4"} launch
             </p>
           </div>
           <span className="font-mono text-sm text-pcs-text">{fmtBalance(h.value, h.decimals)}</span>

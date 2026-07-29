@@ -26,6 +26,7 @@ import {
   ETHEREUM_MAINNET,
   BNB_MAINNET,
   XLAYER_MAINNET,
+  ARBITRUM_MAINNET,
 } from "./constants";
 import { CHAIN_EVIDENCE, type ChainEvidence, type MarketEvidence } from "./chainEvidence";
 import { CHAIN_EVIDENCE_V3, type V3ChainEvidence } from "./chainEvidenceV3";
@@ -99,11 +100,11 @@ export type TradeConfig =
       numeraire: NumeraireInfo;
     };
 
-/** The 7 clint-locked chains (msg 23047/23064): Robinhood = launch+trade, the
- *  rest = curated-markets trade venues. Order = kami's rollout waves. */
-// logo paths = the 7 shipped assets in /public/chains (kami 23091 cleanup).
+/** Registry candidates. A selectable chain can remain fail-closed "coming":
+ * canonical DEX infrastructure alone never implies a live Hydeout launcher. */
 const CANDIDATES: Array<{ net: NetworkConfig; shortName: string; role: ChainRole; logo: string }> = [
   { net: ROBINHOOD_MAINNET, shortName: "RH", role: "launch+trade", logo: "/chains/rh.svg" },
+  { net: ARBITRUM_MAINNET, shortName: "ARB", role: "launch+trade", logo: "/chains/arb.svg" },
   { net: OPTIMISM_MAINNET, shortName: "OP", role: "trade", logo: "/chains/op.svg" },
   { net: INK_MAINNET, shortName: "INK", role: "trade", logo: "/chains/ink.svg" },
   { net: UNICHAIN_MAINNET, shortName: "UNI", role: "trade", logo: "/chains/uni.svg" },
@@ -469,4 +470,22 @@ export function chainCapability(chainId: number): ChainCapability | { id: number
  *  Returns the V3 capability so callers can read its `status` (coming vs live). */
 export function chainV3Capability(chainId: number): ChainCapability | undefined {
   return chainEngineCapabilities(chainId).find((c) => c.engine === "v3-single-sided");
+}
+
+/** Whether Hydeout can create launches on this chain today.
+ *
+ * V4 requires Hydeout's own deployed factory in addition to canonical Uniswap
+ * infrastructure. V3 requires the generated deployment/binding evidence gate.
+ * This is separate from `status`, whose in-app trade smoke gate is stricter
+ * than launch readiness.
+ */
+export function isHydeLaunchLive(chainId: number, engine?: LaunchEngine): boolean {
+  const capabilities = chainEngineCapabilities(chainId)
+    .filter((capability) => !engine || capability.engine === engine)
+    .filter((capability) => capability.role === "launch" || capability.role === "launch+trade");
+
+  return capabilities.some((capability) => {
+    if (capability.engine === "v3-single-sided") return capability.status === "live";
+    return isRealAddress(V4_CONTRACTS_BY_CHAIN[chainId]?.hydeTokenFactory);
+  });
 }

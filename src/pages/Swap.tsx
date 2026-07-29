@@ -3,7 +3,7 @@ import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive } from "../utils/constants";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { ComingChainNotice } from "../components/ComingChainNotice";
-import { chainV3Capability } from "../utils/chainRegistry";
+import { chainV3Capability, isHydeLaunchLive } from "../utils/chainRegistry";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { TokenDetail } from "./Token";
@@ -18,8 +18,8 @@ function timeAgo(iso: string): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-function RecentlyLaunched({ onSelect }: { onSelect: (pool: DopplerPool) => void }) {
-  const { pools, loading } = useHydeLaunches();
+function RecentlyLaunched({ chainId, onSelect }: { chainId: number; onSelect: (pool: DopplerPool) => void }) {
+  const { pools, loading } = useHydeLaunches(chainId);
   const navigate = useNavigate();
 
   const recent = pools.slice(0, 8);
@@ -143,8 +143,9 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
               >
                 <h2 className="font-display text-lg font-semibold text-pcs-text">Exchange</h2>
                 <p className="text-sm text-pcs-textDim">
-                  In-app swap is coming to Robinhood Chain shortly. Every HOODIE launch
-                  trades live now in its locked-liquidity pool — pick one below to open its page.
+                  {isHydeLaunchLive(network.id)
+                    ? `In-app swap is coming to ${network.name} shortly. Hydeout launches continue trading in their locked-liquidity pools.`
+                    : `Canonical Uniswap V4 is available on ${network.name}, but Hydeout's launcher and execution path are not deployed here yet.`}
                 </p>
                 <p className="text-xs text-pcs-textDim">
                   Pick a token from Trending or Recently Launched to open its full page —
@@ -162,7 +163,7 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
             >
               <p className="text-xs text-pcs-textDim">Select a token to view its page</p>
             </div>
-            <RecentlyLaunched onSelect={(pool) => selectToken(pool.baseToken.address)} />
+            <RecentlyLaunched chainId={network.id} onSelect={(pool) => selectToken(pool.baseToken.address)} />
           </div>
         </div>
       )}

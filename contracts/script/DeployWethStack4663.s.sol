@@ -58,7 +58,7 @@ contract HydeStackCoordinator {
     function deploy(Codes calldata c) external returns (address vault_, address collector_, address hook_, address factory_) {
         require(msg.sender == OWNER, "ONLY_OWNER");
         require(!finalized, "FINALIZED");
-        require(block.chainid == 4663, "WRONG_CHAIN");
+        require(block.chainid == _expectedChainId(), "WRONG_CHAIN");
         finalized = true;
 
         impl = _create(c.implCode); // nonce 1
@@ -97,6 +97,12 @@ contract HydeStackCoordinator {
     /// @dev CREATE address of THIS coordinator's nonce `n` (n in [1,0x7f]).
     function _create1(uint8 n) internal view returns (address) {
         return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xd6), bytes1(0x94), address(this), bytes1(n))))));
+    }
+
+    /// @dev Virtual only so chain-specific coordinators can reuse the audited
+    /// deployment/one-shot/address guards without weakening the 4663 default.
+    function _expectedChainId() internal pure virtual returns (uint256) {
+        return 4663;
     }
 }
 

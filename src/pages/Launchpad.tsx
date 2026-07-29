@@ -6,7 +6,8 @@ import toast from "react-hot-toast";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { EngineAwareLaunch } from "../components/EngineAwareLaunch";
-import { chainEngineCapabilities, ENGINE_META } from "../utils/chainRegistry";
+import { chainEngineCapabilities, ENGINE_META, isHydeLaunchLive } from "../utils/chainRegistry";
+import { ComingChainNotice } from "../components/ComingChainNotice";
 import { TokenImage } from "../components/TokenImage";
 import { StableV3FeeCollector } from "../components/StableV3FeeCollector";
 import { fetchLaunchMeta } from "../utils/launchMeta";
@@ -16,6 +17,7 @@ import {
   MAINNET_WETH_FEE_VAULT,
   NETWORKS,
   ROBINHOOD_TESTNET_VAULT,
+  V4_CONTRACTS_BY_CHAIN,
   type NetworkConfig,
 } from "../utils/constants";
 import { isClaimConfirmed, type ReplacedReason } from "../utils/txStatus";
@@ -28,6 +30,8 @@ const RH_TESTNET_CHAIN_ID = 46630;
  *  pairs, WETH vault for WETH pairs, testnet vault on 46630. `claimCreator(token)` pays the creator. */
 function feeVaultFor(pool: DopplerPool): `0x${string}` {
   if (pool.chainId === RH_TESTNET_CHAIN_ID) return ROBINHOOD_TESTNET_VAULT as `0x${string}`;
+  const chainVault = V4_CONTRACTS_BY_CHAIN[pool.chainId]?.hydeFeeVault;
+  if (chainVault) return chainVault;
   return (pool.quoteToken?.symbol === "HOODIE" ? MAINNET_HOODIE_FEE_VAULT : MAINNET_WETH_FEE_VAULT) as `0x${string}`;
 }
 
@@ -84,6 +88,7 @@ const CHAIN_LABELS: Record<number, string> = {
   988: "Stable",
   4663: "Robinhood Chain",
   46630: "Robinhood Testnet",
+  42161: "Arbitrum One",
 };
 
 /** Bigger launch card (clint 21605): the token NAME + $TICKER read in full (no more "A…" crush),
@@ -496,6 +501,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   const navigate = useNavigate();
   const { address } = useAccount();
   const engineCapabilities = chainEngineCapabilities(chainId);
+  const launchLive = isHydeLaunchLive(chainId);
   const engineLabels = engineCapabilities.map((capability) => ENGINE_META[capability.engine]);
   const creatorShares = [...new Set(engineLabels.map((meta) => meta.creatorShare))].sort((a, b) => a - b);
   const creatorShareLabel = creatorShares.length === 0
@@ -556,8 +562,10 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
 
         <div className="relative z-10 max-w-2xl">
           <div className="protocol-kicker">
-            <span className="live-ping" />
-            Hydeout protocol · depth {chainId.toLocaleString()}
+            <span
+              className={launchLive ? "live-ping" : "h-2 w-2 rounded-full bg-pcs-textDim"}
+            />
+            Hydeout protocol · depth {chainId.toLocaleString()} · {launchLive ? "live" : "coming"}
           </div>
           <h1 className="mt-3 font-display text-4xl font-semibold leading-[0.98] tracking-[-0.04em] text-[var(--term-text)] sm:text-5xl lg:text-6xl">
             Launch from
@@ -580,7 +588,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
           <img src="/logo/trademark-shark-light.png" alt="" />
           <div className="guardian-readout">
             <span>Route</span>
-            <strong>{isTestnet ? "V4 sandbox" : routeLabel}</strong>
+            <strong>{isTestnet ? "V4 sandbox" : `${routeLabel}${launchLive ? "" : " · coming"}`}</strong>
           </div>
         </div>
       </section>
@@ -605,7 +613,9 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         <p className="mt-1 text-sm text-[var(--term-sub)]">
           {isTestnet
             ? "Live launches on Robinhood Testnet — custody-locked liquidity."
-            : engineCapabilities[0]?.engine === "v3-single-sided"
+            : !launchLive
+              ? `Uniswap V4 is available on ${engineCapabilities[0]?.name ?? "this chain"}; Hydeout's launcher contracts are awaiting deployment.`
+              : engineCapabilities[0]?.engine === "v3-single-sided"
               ? `Single-sided launches on ${engineCapabilities[0]?.name ?? "this chain"} — liquidity permanently locked.`
               : `Live token launches on ${engineCapabilities[0]?.name ?? "Robinhood Chain"}.`}
         </p>
@@ -636,7 +646,14 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
           4663 WETH factory + HOODIE engine, testnet 46630 factory), and BOTH carry indexed `creator` in
           their launch events, so "yours" is computable on either — no more testnet-only gate (clint 23887 /
           kami 23889: mainnet launches weren't reflecting because this was hidden off-testnet). */}
-      {tab === "mine" && (
+      {tab === "mine" && !launchLive && (
+        <ComingChainNotice
+          chainName={network?.name ?? `Chain ${chainId}`}
+          feature="Launch history and fee claims"
+          engine={engineCapabilities[0]?.engine ?? "v4-hook"}
+        />
+      )}
+      {tab === "mine" && launchLive && (
         <div>
           {/* Sort + refresh */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">

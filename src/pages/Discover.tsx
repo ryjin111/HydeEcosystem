@@ -131,7 +131,7 @@ function ChainBadge({ chainId }: { chainId: number }) {
       }}
     >
       <span className="h-1 w-1 rounded-full" style={{ background: isStable ? C.green : C.blueH }} />
-      {isStable ? "Stable" : "Robinhood"}
+      {networkName(chainId)}
     </span>
   );
 }

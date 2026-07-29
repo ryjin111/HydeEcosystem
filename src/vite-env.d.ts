@@ -9,6 +9,7 @@ interface ImportMetaEnv {
   /** Optional full-endpoint overrides. These take precedence over VITE_ALCHEMY_API_KEY. */
   readonly VITE_ROBINHOOD_MAINNET_RPC_URL?: string;
   readonly VITE_STABLE_MAINNET_RPC_URL?: string;
+  readonly VITE_ARBITRUM_MAINNET_RPC_URL?: string;
 }
 
 interface ImportMeta {
