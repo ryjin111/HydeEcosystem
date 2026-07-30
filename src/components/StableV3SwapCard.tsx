@@ -127,12 +127,6 @@ export function StableV3SwapCard({ network, token }: Props) {
       setQuoting(false);
       return;
     }
-    if (balance !== null && amountIn > balance) {
-      setQuoteOut(null);
-      setQuoteError(`Insufficient ${input.symbol}`);
-      setQuoting(false);
-      return;
-    }
     setQuoting(true);
     setQuoteError(null);
     const timer = window.setTimeout(() => {

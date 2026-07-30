@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { chainEngineCapabilities, ENGINE_META } from "../utils/chainRegistry";
+import { protocolVersionOf } from "../utils/dopplerConfig";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 
@@ -57,6 +58,8 @@ function ChainStats({ chainId }: { chainId: number }) {
   const wethPaired = pools.filter((p) => p.quoteToken.symbol.toUpperCase() === "WETH").length;
   const hoodiePaired = pools.filter((p) => p.quoteToken.symbol.toUpperCase() === "HOODIE").length;
   const v4Launches = pools.filter((p) => p.launchEngine === "v4-hook").length;
+  const v5Launches = pools.filter((p) => protocolVersionOf(p) === "v5-trench").length;
+  const legacyLaunches = pools.length - v5Launches;
 
   return (
     <div className="hyde-page hyde-stats mx-auto w-full max-w-6xl px-4" data-depth-label="Protocol sonar · live reads">
@@ -64,61 +67,61 @@ function ChainStats({ chainId }: { chainId: number }) {
         <h1 className="font-display text-2xl font-semibold text-pcs-text">Hydeout Stats</h1>
         <p className="mt-1 text-sm text-pcs-textSub">
           {isStableV3
-            ? "Live HydeV3Pad launch activity on Stable mainnet."
-            : "Live own-stack launch activity on Robinhood Chain. Doppler tokens are excluded."}
+            ? "V5 Trench Curve and legacy Hyde V3 activity on Stable mainnet."
+            : "V5 Trench Curve and legacy own-stack activity. Doppler tokens are excluded."}
         </p>
       </div>
 
       <div className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-pcs-textDim">
         <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#34C77B" }} />
-        {isStableV3 ? "Live · Stable HydeV3Pad" : "Live · WETH factory + HOODIE engine"}
+        {isStableV3 ? "Stable · V5 + legacy V3" : "V5 + legacy V4"}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {isStableV3 ? (
           <>
             <Metric
-              label="Tracked V3 launches"
+              label="Tracked launches"
               value={loading || error ? "—" : pools.length.toLocaleString("en-US")}
-              detail="Confirmed LaunchCreated events read from the live Stable pad."
+              detail="Confirmed V5 and legacy LaunchCreated events on Stable."
             />
             <Metric
-              label="Permanent LP positions"
-              value={loading || error ? "—" : pools.length.toLocaleString("en-US")}
-              detail="Each Hyde V3 launch transfers its concentrated position into permanent custody."
+              label="V5 Trench Curves"
+              value={loading || error ? "—" : v5Launches.toLocaleString("en-US")}
+              detail="80% live curve, 20% graduation reserve, then permanent V3 custody."
             />
             <Metric
-              label="Creator fee share"
-              value="95%"
-              detail="Collected pool fees are paid to the immutable creator in both pool assets."
+              label="Legacy instant"
+              value={loading || error ? "—" : legacyLaunches.toLocaleString("en-US")}
+              detail="Existing positions remain tradeable and claimable without fabricated curve state."
             />
             <Metric
-              label="Canonical pool fee"
-              value="1%"
-              detail="Stable launches use the verified canonical V3 factory and fixed fee tier."
+              label="Creator / Hyde"
+              value="95% / 5%"
+              detail="Both pool assets are claimable independently."
             />
           </>
         ) : (
           <>
             <Metric
-              label="Tracked own-stack launches"
+              label="Tracked launches"
               value={loading || error ? "—" : pools.length.toLocaleString("en-US")}
-              detail="Recent on-chain launch events loaded from Hydeout's two production stacks."
+              detail="Confirmed V5 and legacy on-chain launch events."
             />
             <Metric
-              label="V4 hook launches"
-              value={loading || error ? "—" : v4Launches.toLocaleString("en-US")}
-              detail="90% creator · 5% Hyde · 5% auto-compounding locked LP."
+              label="V5 Trench Curves"
+              value={loading || error ? "—" : v5Launches.toLocaleString("en-US")}
+              detail="Live V4 curves with delayed, oracle-gated graduation."
             />
             <Metric
-              label="WETH-paired V4"
-              value={loading || error ? "—" : wethPaired.toLocaleString("en-US")}
-              detail="V4 launches paired against wrapped ETH."
+              label="Legacy instant"
+              value={loading || error ? "—" : legacyLaunches.toLocaleString("en-US")}
+              detail={`${v4Launches.toLocaleString("en-US")} total V4 launches remain indexed.`}
             />
             <Metric
-              label="HOODIE-paired V4"
-              value={loading || error ? "—" : hoodiePaired.toLocaleString("en-US")}
-              detail="V4 launches paired against the HOODIE numeraire."
+              label="Pair routes"
+              value={loading || error ? "—" : `${wethPaired} / ${hoodiePaired}`}
+              detail="WETH / HOODIE pairs. V5 uses the chain's verified WETH rail."
             />
           </>
         )}
@@ -156,7 +159,7 @@ function ChainStats({ chainId }: { chainId: number }) {
             <button
               key={`${pool.chainId}-${pool.address}`}
               onClick={() => navigate(`/token/${pool.address}?network=${pool.chainId}`)}
-              className="grid w-full grid-cols-[1fr_92px_96px] items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.03]"
+              className="grid w-full grid-cols-[1fr_150px_96px] items-center gap-3 px-4 py-3 text-left transition hover:bg-white/[0.03]"
               style={{ borderBottom: index < pools.length - 1 ? "1px solid #16191F" : "none" }}
             >
               <span className="min-w-0">
@@ -164,7 +167,7 @@ function ChainStats({ chainId }: { chainId: number }) {
                 <span className="block truncate font-mono text-[11px] text-pcs-textDim">${pool.baseToken.symbol}</span>
               </span>
               <span className="text-right text-[11px] font-semibold text-pcs-textSub">
-                {ENGINE_META[pool.launchEngine].title.split(" · ")[0]} · /{pool.quoteToken.symbol}
+                {protocolVersionOf(pool) === "v5-trench" ? "V5" : "Legacy"} · {ENGINE_META[pool.launchEngine].title.split(" · ")[0]} · /{pool.quoteToken.symbol}
               </span>
               <span className="text-right text-xs text-pcs-textDim">{timeAgo(pool.createdAt)}</span>
             </button>

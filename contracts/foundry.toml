@@ -35,3 +35,36 @@ optimizer = true
 optimizer_runs = 200
 via_ir = true
 bytecode_hash = "none"
+
+# Hydeout V5 Trench Curve deployment profiles. V3 and V4 intentionally remain separate compiler
+# domains: Stable's V3 rail is pinned to the audited 0.8.24/Cancun toolchain, while the V4 rail is
+# pinned to 0.8.26 because the canonical V4 PoolManager test/deployment artifacts require it.
+# Deployment commands:
+#   FOUNDRY_PROFILE=v5v3 forge build
+#   FOUNDRY_PROFILE=v5v4 forge build
+[profile.v5v3]
+src = "src/v5v3"
+test = "test/v5v3"
+script = "script/v5v3"
+out = "out-v5v3"
+libs = ["lib"]
+solc = "0.8.24"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+bytecode_hash = "none"
+
+[profile.v5v4]
+src = "src/v5v4"
+test = "test/v5v4"
+script = "script/v5v4"
+out = "out-v5v4"
+libs = ["lib"]
+solc = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+bytecode_hash = "none"
+fs_permissions = [{ access = "read", path = "./out-v5v4" }]

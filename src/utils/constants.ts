@@ -26,6 +26,10 @@ export type NetworkConfig = {
   wssUrl?: string;
   explorerUrl: string;
   currencySymbol: string;
+  /** Wallet display decimals for the native gas asset. Defaults to 18. */
+  currencyDecimals?: number;
+  /** Explicit network phase. Omitted networks are treated as production mainnets. */
+  testnet?: boolean;
   factory: Address;
   router: Address;
   /** Router for Doppler-graduated (V2) tokens — uses Doppler's factory (standard Uni V2 hash). */
@@ -100,6 +104,7 @@ export const ROBINHOOD_TESTNET: NetworkConfig = {
   rpcUrl: "https://rpc.testnet.chain.robinhood.com",
   explorerUrl: "https://explorer.testnet.chain.robinhood.com",
   currencySymbol: "ETH",
+  testnet: true,
   // LIVE Hyde OWN-STACK factory (deployed 46630). The launchpad reads its LaunchCreated events here —
   // this is our own contracts, NOT Doppler. (mainnet still rides the Doppler rail until its own deploy.)
   factory: "0x6607BE76A0F8C44AadB5DF3bb13AcD29fb3Ade2C" as Address,
@@ -140,6 +145,22 @@ export const STABLE_MAINNET: NetworkConfig = {
   tokens: [],
   // Stable's fail-closed behavior is DERIVED from its V3 capability (chainRegistry `chainV3Capability`),
   // not a flag here — Robinhood's existing gates stay untouched (kami 24334).
+};
+
+// Arc mainnet (5042). Arc uses USDC as its native gas asset; the EVM-native balance has 18-decimal
+// precision while the V3 pair-token facade exposes 6 decimals. V5 remains fail-closed until the
+// Arc factory/graduator/locker runtime manifest is configured and verified.
+export const ARC_MAINNET: NetworkConfig = {
+  id: 5042,
+  name: "Arc",
+  rpcUrl: "https://rpc.blockdaemon.mainnet.arc.io",
+  explorerUrl: "https://arc.exploreme.pro",
+  currencySymbol: "USDC",
+  currencyDecimals: 18,
+  factory: PLACEHOLDER_FACTORY,
+  router: PLACEHOLDER_ROUTER,
+  weth: PLACEHOLDER_WETH,
+  tokens: [],
 };
 
 export const PHAROS_ATLANTIC_TESTNET: NetworkConfig = {
@@ -255,6 +276,7 @@ export const NETWORKS: NetworkConfig[] = [
   ROBINHOOD_MAINNET,
   STABLE_MAINNET,       // LIVE V3 reach line (988); readiness is generated-evidence gated
   ARBITRUM_MAINNET,     // LIVE Hyde V4 WETH launch rail; in-app execution gateway remains fail-closed
+  ARC_MAINNET,           // V5 V3 rail is runtime-manifest gated and fails closed on RPC/hash drift
   // OPTIMISM_MAINNET,  // legacy lane retired 2026-07-03 — Hydeout is Robinhood-only
   // INK_MAINNET,       // hidden — multichain later
   // UNICHAIN_MAINNET,  // dropped

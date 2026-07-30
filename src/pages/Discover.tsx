@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { Link } from "react-router-dom";
 import { useAllHydeLaunches } from "../hooks/useAllHydeLaunches";
 import { TokenImage } from "../components/TokenImage";
-import type { DopplerPool } from "../utils/dopplerConfig";
+import { protocolVersionOf, type DopplerPool } from "../utils/dopplerConfig";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import { chainEngineCapabilities, ENGINE_META, type LaunchEngine } from "../utils/chainRegistry";
 import { NETWORKS } from "../utils/constants";
@@ -105,7 +105,7 @@ function CreatorFeeChip({ engine }: { engine: LaunchEngine }) {
   );
 }
 
-function EngineBadge({ engine }: { engine: LaunchEngine }) {
+function EngineBadge({ engine, v5 = false }: { engine: LaunchEngine; v5?: boolean }) {
   const isV4 = engine === "v4-hook";
   return (
     <span
@@ -114,7 +114,7 @@ function EngineBadge({ engine }: { engine: LaunchEngine }) {
         ? { background: "rgba(42,212,166,0.10)", color: "#4FE3BE", border: "1px solid rgba(42,212,166,0.25)" }
         : { background: "rgba(46,159,230,0.10)", color: C.blueH, border: `1px solid ${C.blue}40` }}
     >
-      {isV4 ? "V4 hook" : "V3"}
+      {v5 ? `V5 · ${isV4 ? "V4" : "V3"}` : `Legacy · ${isV4 ? "V4" : "V3"}`}
     </span>
   );
 }
@@ -170,6 +170,7 @@ function LaunchTokenImage({
 
 export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }) {
   const sym = p.baseToken.symbol || "?";
+  const isV5 = protocolVersionOf(p) === "v5-trench";
   const hasMarketCap = p.marketCapUsd != null && Number.isFinite(p.marketCapUsd);
   const hasPrice = p.priceUsd != null && Number.isFinite(p.priceUsd) && p.priceUsd > 0;
   return (
@@ -192,7 +193,7 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
 
           <div className="absolute left-2.5 top-2.5 flex max-w-[calc(100%-4.75rem)] flex-wrap gap-1.5">
             <ChainBadge chainId={p.chainId} />
-            <EngineBadge engine={p.launchEngine} />
+            <EngineBadge engine={p.launchEngine} v5={isV5} />
           </div>
 
           <span
@@ -200,7 +201,13 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
             style={{ background: "rgba(4,12,11,0.72)", color: C.green, border: `1px solid ${C.green}40` }}
           >
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: C.green }} />
-            Live
+            {isV5
+              ? p.curveState === "graduated"
+                ? "LP locked"
+                : p.curveState === "graduation-signaled"
+                  ? "Queued"
+                  : "Curve live"
+              : "Legacy"}
           </span>
 
         {trending && (
@@ -214,7 +221,7 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
           {p.progress != null && (
             <div className="absolute inset-x-2.5 bottom-2.5">
               <div className="mb-1 flex items-center justify-between font-mono text-[9px] text-white/75">
-                <span>Launch progress</span>
+                <span>{isV5 ? "Trench fill" : "Inventory level"}</span>
                 <span>{p.progress.toFixed(0)}%</span>
               </div>
               <CurveBar pct={p.progress} tone="#2AD4A6" />
@@ -264,6 +271,7 @@ export function CoinCard({ p, trending }: { p: DopplerPool; trending?: boolean }
 function LatestSignal({ p }: { p: DopplerPool }) {
   const sym = p.baseToken.symbol || "?";
   const meta = ENGINE_META[p.launchEngine];
+  const isV5 = protocolVersionOf(p) === "v5-trench";
   return (
     <LaunchLink p={p} className="block">
       <div
@@ -277,7 +285,7 @@ function LatestSignal({ p }: { p: DopplerPool }) {
           <span className="protocol-kicker"><span className="live-ping" />Latest signal</span>
           <span className="flex flex-wrap items-center justify-end gap-1.5">
             <ChainBadge chainId={p.chainId} />
-            <EngineBadge engine={p.launchEngine} />
+            <EngineBadge engine={p.launchEngine} v5={isV5} />
           </span>
         </div>
         <div className="flex items-center gap-4">
@@ -293,7 +301,10 @@ function LatestSignal({ p }: { p: DopplerPool }) {
           </div>
         </div>
         <p className="mt-4 text-xs leading-5" style={{ color: C.muted }}>
-          {meta.subtitle} <span style={{ color: C.green }}>{meta.feeSplitLabel}.</span>
+          {isV5
+            ? `Pool-native curve graduates into permanently locked ${p.launchEngine === "v4-hook" ? "V4" : "V3"} liquidity.`
+            : "Legacy instant launch with no graduation event."}{" "}
+          <span style={{ color: C.green }}>{meta.feeSplitLabel}.</span>
         </p>
       </div>
     </LaunchLink>
@@ -353,7 +364,7 @@ function RecentLaunches({ pools }: { pools: DopplerPool[] }) {
       {items.map((p) => (
           <span key={`${p.chainId}-${p.address}`} className="shrink-0 whitespace-nowrap font-mono text-[11px]" style={{ color: C.muted }}>
             🚀 <span style={{ color: C.blue }}>${p.baseToken.symbol}</span>
-            <span style={{ color: C.faint }}> · {networkName(p.chainId)} · {p.launchEngine === "v4-hook" ? "V4" : "V3"} · {ageOf(p.createdAt)} ago</span>
+            <span style={{ color: C.faint }}> · {networkName(p.chainId)} · {protocolVersionOf(p) === "v5-trench" ? "V5" : "Legacy"} / {p.launchEngine === "v4-hook" ? "V4" : "V3"} · {ageOf(p.createdAt)} ago</span>
           </span>
       ))}
     </div>
@@ -434,8 +445,8 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
             One trench. <span className="trench-title-accent">Every Hydeout launch.</span>
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-pcs-textSub">
-            Browse Robinhood and Stable together without hiding the route. Every card carries its
-            chain, V3 or V4 engine, creator share, and chain-safe token link.
+            Browse Robinhood, Stable, and Arbitrum together without hiding the route. Every card
+            identifies its chain, V3 or V4 rail, and whether it is a V5 Trench Curve or legacy instant launch.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {supportedEngines.map((engine) => {

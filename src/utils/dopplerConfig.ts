@@ -1,5 +1,11 @@
 import type { LaunchEngine } from "./chainRegistry";
 
+export type LaunchProtocolVersion = "legacy-instant" | "v5-trench";
+export type TrenchCurveState =
+  | "curve-active"
+  | "graduation-signaled"
+  | "graduated";
+
 /** Shared pool type used by Hyde launch UI and trending components. */
 export type DopplerPool = {
   address: string;
@@ -21,6 +27,12 @@ export type DopplerPool = {
   /** Contract architecture that created this launch. This is deliberately separate from `type`,
    * which is legacy market-stage data (`v4` curve / `v2` migrated) and must never drive fee copy. */
   launchEngine: LaunchEngine;
+  /** Contract generation is independent of the DEX rail. Existing deployments are legacy instant
+   *  launches; only launches emitted by a verified V5 factory may claim `v5-trench`. Optional for
+   *  cached pre-V5 records, which are treated as legacy by every render helper. */
+  protocolVersion?: LaunchProtocolVersion;
+  /** Authoritative V5 graduator state. Absent for legacy launches. */
+  curveState?: TrenchCurveState | null;
   type: string;
   dollarLiquidity: string | null;
   volumeUsd: string | null;
@@ -39,3 +51,7 @@ export type DopplerPool = {
    *  not own-stack or the read failed (fail-neutral, never fabricated). */
   creatorClaimable?: string | null;
 };
+
+export function protocolVersionOf(pool: DopplerPool): LaunchProtocolVersion {
+  return pool.protocolVersion === "v5-trench" ? "v5-trench" : "legacy-instant";
+}

@@ -1,0 +1,87 @@
+{
+  "version": "Hydeout V5 Trench Curve",
+  "network": "Robinhood Chain",
+  "chainId": 4663,
+  "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+  "explorerUrl": "https://robinhoodchain.blockscout.com",
+  "deployer": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "owner": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "hydeTreasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "launchFeeTreasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "transactions": {
+    "coordinator": "0x2f267c6f6f0c5e7f093ceb0ec598a799f3832efa608b52c99761793157d38f39",
+    "stackDeployment": "0x3583aded550778cffd033b31ab41559f949b89038bf1ac92c28b7cb3e13f9921"
+  },
+  "deploymentBlocks": {
+    "coordinator": 23198897,
+    "stack": 23198932
+  },
+  "contracts": {
+    "coordinator": {
+      "address": "0xD38544b02Ac2f127445613610B85C13689813Ceb",
+      "runtimeCodeBytes": 2678,
+      "runtimeCodeHash": "0xe2d20ae3d1ea67e1fdfe92743e864bca2186417db21c71a7ab5deeb762670c50"
+    },
+    "implementation": {
+      "address": "0xfeE7a8C364770c6615083348a08d209Ef7B8b27A",
+      "runtimeCodeBytes": 4702,
+      "runtimeCodeHash": "0xb963d4d054241cb40f5bd81fe7c7d274fe607a009059780e8a9f1399704c4de9"
+    },
+    "hook": {
+      "address": "0x046dEb34ad0785C2bF1d9858D0d47d756FE5b0C0",
+      "runtimeCodeBytes": 7411,
+      "runtimeCodeHash": "0xdda6a5a6aa6656953341b01240d7cb969b21a23102050412008ca4a119b0ac61"
+    },
+    "factory": {
+      "address": "0x55957848ECeF5Ef38E527596Fd1E7eB583A46579",
+      "runtimeCodeBytes": 11395,
+      "runtimeCodeHash": "0x3e12b4e743f502f9b2e28df0ed975cbdbdccc722c9b16470a6bdc096e774b520"
+    },
+    "graduator": {
+      "address": "0xa5dC3CD280592abD9237C83Ce296a8504031F378",
+      "runtimeCodeBytes": 20359,
+      "runtimeCodeHash": "0x97b8626b409d1851c49c5f438bc4d7d3be895f688d5d6da3df9504a6c85e30d4"
+    },
+    "locker": {
+      "address": "0x1016A8fEd8da59f6A8542c8886f4b4e2A94eBf3f",
+      "runtimeCodeBytes": 11743,
+      "runtimeCodeHash": "0xba128751193aa0af33259b7876001b4b3322ca0d242961add1932f916072cd6f"
+    }
+  },
+  "dependencies": {
+    "numeraire": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+    "poolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "positionManager": "0x58daec3116aae6D93017bAAea7749052E8a04fA7",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "stateView": "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b",
+    "universalRouter": "0x8876789976dEcBfCbBbe364623C63652db8C0904"
+  },
+  "configuration": {
+    "dynamicFee": true,
+    "tickSpacing": 60,
+    "targetStartFdvWeth": "1",
+    "targetGraduationFdvWeth": "16",
+    "realizedStartFdvRaw": "1000302013468478961",
+    "realizedGraduationFdvRaw": "15993195925080524633",
+    "expectedTerminalProceedsRaw": "3199802602476988727",
+    "minimumProceedsRaw": "3000000000000000000",
+    "launchFeeWei": "400000000000000",
+    "creatorFeeBps": 9000,
+    "hydeFeeBps": 500,
+    "autoLpFeeBps": 500,
+    "maxWalletBps": 100,
+    "maxWalletWindowSeconds": 300,
+    "graduationDelaySeconds": 300,
+    "twapTickTolerance": 60
+  },
+  "verification": {
+    "verifiedAtBlock": 23199860,
+    "receiptStatuses": [1, 1],
+    "deployerNonceAfter": 24,
+    "runtimeCodeHashesMatched": 6,
+    "bindingsPassed": true,
+    "paused": false,
+    "tokenLaunchPerformed": false,
+    "deploymentCostEth": "0.000267396479812"
+  }
+}

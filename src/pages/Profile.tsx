@@ -22,13 +22,14 @@ import { isMainnetOwnStackLaunch, useHydeLaunches } from "../hooks/useDopplerTok
 import { useVerifiedStatus } from "../hooks/useVerifiedStatus";
 import { ROBINHOOD_MAINNET, V4_CONTRACTS_BY_CHAIN } from "../utils/constants";
 import type { NetworkConfig } from "../utils/constants";
-import { chainV3Capability, isHydeLaunchLive } from "../utils/chainRegistry";
+import { chainEngineCapabilities, chainV3Capability, isHydeLaunchLive } from "../utils/chainRegistry";
 import { Card, Button, Stat, VerifiedBadge, SectionLabel } from "../components/ui/kit";
 import { TokenImage } from "../components/TokenImage";
 import { StableV3FeeCollector } from "../components/StableV3FeeCollector";
+import { TrenchV5FeeCollector } from "../components/TrenchV5FeeCollector";
 import { ComingChainNotice } from "../components/ComingChainNotice";
 import { fetchLaunchMeta } from "../utils/launchMeta";
-import type { DopplerPool } from "../utils/dopplerConfig";
+import { protocolVersionOf, type DopplerPool } from "../utils/dopplerConfig";
 
 // Base numeraire assets are pool pairs, never "a launch you hold" — excluded from Hyde holdings so
 // launching LILHOODIE never surfaces $HOODIE as a holding (kami 23886).
@@ -167,6 +168,7 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
   const address = (routeAddr || connected || "").toLowerCase();
   const [copied, setCopied] = useState(false);
   const isV3Chain = !!chainV3Capability(network.id);
+  const hasEngine = chainEngineCapabilities(network.id).length > 0;
   const launchLive = isHydeLaunchLive(network.id);
   const { pools, loading: launchesLoading } = useHydeLaunches(network.id);
   const isRobinhood = network.id === ROBINHOOD_MAINNET.id;
@@ -200,6 +202,9 @@ export function ProfilePage({ network }: { network: NetworkConfig }) {
           chainName={network.name}
           feature="Portfolio tracking and fee claims"
           engine={isV3Chain ? "v3-single-sided" : "v4-hook"}
+          detail={!hasEngine
+            ? `${network.name} is connected for wallet and explorer context. Hydeout portfolio reads and fee claims remain disabled until a launch engine and indexer are deployed and verified.`
+            : undefined}
         />
       </div>
     );
@@ -443,6 +448,7 @@ function ChainHoldingRow({
 
 function ProfileLaunchRow({ pool, network }: { pool: DopplerPool; network: NetworkConfig }) {
   const [image, setImage] = useState<string | null>(null);
+  const isV5 = protocolVersionOf(pool) === "v5-trench";
   useEffect(() => {
     let cancelled = false;
     fetchLaunchMeta(pool.chainId, pool.address).then((meta) => {
@@ -469,15 +475,25 @@ function ProfileLaunchRow({ pool, network }: { pool: DopplerPool; network: Netwo
               <span className="font-mono text-xs text-pcs-textSub">${pool.baseToken.symbol}</span>
             </p>
             <p className="mt-1 text-[10px] text-pcs-textDim">
-              {pool.launchEngine === "v3-single-sided" ? "V3 · 95% creator" : "V4 · 90% creator"}
+              {isV5 ? "V5 · Trench Curve" : "Legacy · Instant"} · {pool.launchEngine === "v3-single-sided" ? "V3 · 95% creator" : "V4 · 90% creator"}
             </p>
           </div>
           <span className="rounded-md border border-pcs-primary/20 bg-pcs-primary/[0.07] px-2 py-1 font-code text-[9px] uppercase tracking-wider text-pcs-primary">
-            Live
+            {isV5 ? pool.curveState === "graduated" ? "LP locked" : "Curve live" : "Legacy"}
           </span>
         </div>
       </Link>
-      {pool.launchEngine === "v3-single-sided" && (
+      {isV5 ? (
+        <TrenchV5FeeCollector
+          network={network}
+          token={{
+            address: pool.address as `0x${string}`,
+            symbol: pool.baseToken.symbol,
+            decimals: pool.baseToken.decimals,
+          }}
+          compact
+        />
+      ) : pool.launchEngine === "v3-single-sided" && (
         <StableV3FeeCollector
           network={network}
           token={{
