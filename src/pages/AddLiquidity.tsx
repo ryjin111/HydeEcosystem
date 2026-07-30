@@ -4,7 +4,7 @@ import { V4LiquidityCard } from "../components/V4LiquidityCard";
 import { ComingChainNotice } from "../components/ComingChainNotice";
 import { TokenImage } from "../components/TokenImage";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
-import { chainV3Capability, isHydeLaunchLive } from "../utils/chainRegistry";
+import { chainEngineCapabilities, chainV3Capability, isHydeLaunchLive } from "../utils/chainRegistry";
 import { fetchLaunchMeta } from "../utils/launchMeta";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import type { NetworkConfig, TokenInfo } from "../utils/constants";
@@ -123,6 +123,7 @@ export function AddLiquidityPage({ network, tokens, onAddCustomToken }: Props) {
   const [mode, setMode] = useState<"add" | "remove">("add");
 
   const v3Capability = chainV3Capability(network.id);
+  const hasEngine = chainEngineCapabilities(network.id).length > 0;
   if (!isHydeLaunchLive(network.id) || (!v3Capability && !isGatewayLive(network.id))) {
     return (
       <div className="pt-8">
@@ -130,7 +131,9 @@ export function AddLiquidityPage({ network, tokens, onAddCustomToken }: Props) {
           chainName={network.name}
           feature="Adding liquidity"
           engine={v3Capability ? "v3-single-sided" : "v4-hook"}
-          detail={!v3Capability && isHydeLaunchLive(network.id)
+          detail={!hasEngine
+            ? `${network.name} has no verified Hydeout launch or liquidity engine yet. This control remains disabled until the Arc deployment is complete and verified.`
+            : !v3Capability && isHydeLaunchLive(network.id)
             ? `${network.name}'s Hydeout launch contracts are live. External liquidity controls remain hidden until the in-app V4 execution gateway is deployed and verified.`
             : undefined}
         />

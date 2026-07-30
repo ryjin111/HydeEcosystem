@@ -356,9 +356,41 @@ export function deriveV3Capability(
   };
 }
 
-/** V3-only chains (canonical Uniswap V3, no V4). Stable's deployment addresses and runtime hashes are
+/** V3-only chains (canonical Uniswap V3, no V4). Deployment addresses and runtime hashes are
  *  registry-pinned; live status still derives from generated on-chain evidence, never this row alone. */
 export const V3_CANDIDATES: V3ChainRow[] = [
+  {
+    id: 5042,
+    name: "Arc",
+    shortName: "ARC",
+    rpcUrl: "https://rpc.blockdaemon.mainnet.arc.io",
+    explorer: "https://arc.exploreme.pro",
+    nativeSymbol: "USDC",
+    v3Factory: "0xf0db7b58379503491d857dB50AC9ece64c653918",
+    positionManager: "0x39654A85A4C05127f5Fd6ED22CAeC077A0fB1377",
+    swapRouter: "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77",
+    quoter: "0x7dfd4f31be6814d2906bde155c3e1b146eac1468",
+    swapRouterCodeHash: "0xc53680bc70e67f7e8818a0e1302e9b70a4460493bc6dd6db056575b17cb3af25",
+    quoterCodeHash: "0xf222999269407743c526ee7c9d0c9b4fabec26773d48fd6fd257c5ebca976ea7",
+    numeraire: {
+      address: "0x3600000000000000000000000000000000000000",
+      symbol: "USDC",
+      decimals: 6,
+      displayDecimals: 4,
+      usdPegged: true,
+    },
+    feeTier: 10000,
+    launchpad: {
+      implementation: ZERO,
+      pad: ZERO,
+      locker: ZERO,
+      implementationCodeHash: `0x${"0".repeat(64)}`,
+      padCodeHash: `0x${"0".repeat(64)}`,
+      lockerCodeHash: `0x${"0".repeat(64)}`,
+      deploymentBlock: 0n,
+    },
+    role: "launch+trade",
+  },
   {
     id: 988,
     name: "Stable",
@@ -412,19 +444,19 @@ export interface EngineMeta {
 }
 export const ENGINE_META: Record<LaunchEngine, EngineMeta> = {
   "v3-single-sided": {
-    title: "V3 · Single-sided",
-    subtitle: "Concentrated single-sided LP, permanently locked.",
+    title: "Uniswap V3 rail",
+    subtitle: "Stablecoin settlement and permanent V3 custody.",
     feeSplitLabel: "95% creator • 5% Hyde", // kami 24242 — matches _split BPS exactly
-    trustLine: "Liquidity permanently locked; principal cannot be removed.",
+    trustLine: "V5 graduates into locked V3 positions; legacy instant positions remain locked.",
     creatorShare: 95,
     hydeShare: 5,
     lockedLpShare: 0,
   },
   "v4-hook": {
-    title: "V4 · Hook pool",
-    subtitle: "Dynamic-fee hook + auto-compound.",
+    title: "Uniswap V4 rail",
+    subtitle: "Dynamic-fee hook and permanent V4 custody.",
     feeSplitLabel: "90% creator • 5% Hyde • 5% locked LP",
-    trustLine: "Liquidity locked; 5% of every fee auto-compounds into locked LP.",
+    trustLine: "V5 graduates into locked V4 positions; 5% of fees auto-compounds.",
     creatorShare: 90,
     hydeShare: 5,
     lockedLpShare: 5,

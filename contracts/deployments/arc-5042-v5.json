@@ -1,0 +1,88 @@
+{
+  "version": "Hydeout V5 Trench Curve",
+  "network": "Arc Mainnet",
+  "chainId": 5042,
+  "rpcUrl": "https://rpc.blockdaemon.mainnet.arc.io",
+  "explorerUrl": "https://arc.exploreme.pro",
+  "deployer": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "owner": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "hydeTreasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "launchFeeTreasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "contracts": {
+    "implementation": {
+      "name": "HydeERC20",
+      "address": "0xCA5C4C7cc97C9aA3ea56B5F3a5c50Eb1c086615b",
+      "deploymentTransaction": "0x5e9c1d6d94e67a6c4cfe2b47d62305a478cf15750758d3f47f36b94d572ba04f",
+      "deploymentBlock": 12959698,
+      "runtimeCodeBytes": 4650,
+      "runtimeCodeHash": "0xce745b5eba4a683f85e250477ced81eb3f04e5ba9a7ed705ef117e2acad6f012"
+    },
+    "factory": {
+      "name": "TrenchV3Factory",
+      "address": "0xE79F17Fe61F9c76824D74C496f122f0AB483ec6A",
+      "deploymentTransaction": "0xe2bc5a96d4e6bfaaebfac2b7d1448d73bc45b3a0de01fe6ce85ddc75c4916aec",
+      "deploymentBlock": 12959704,
+      "runtimeCodeBytes": 11491,
+      "runtimeCodeHash": "0x12a6ffbe4c4caafb5ed334e72d93b85eaa466f367a1547149c8c8796e537feb1"
+    },
+    "graduator": {
+      "name": "TrenchV3Graduator",
+      "address": "0x94Aaf8D4548D957deB8618fcAb5c21577002036E",
+      "deploymentTransaction": "0xe2bc5a96d4e6bfaaebfac2b7d1448d73bc45b3a0de01fe6ce85ddc75c4916aec",
+      "deploymentBlock": 12959704,
+      "runtimeCodeBytes": 16048,
+      "runtimeCodeHash": "0x17efcc3e3cb575f546f8ad77d8005c794b24e88762bcf0812e9f8437cd51173e"
+    },
+    "locker": {
+      "name": "TrenchV3Locker",
+      "address": "0xE43314319675eF26724a7d4381D95ac31c246d90",
+      "deploymentTransaction": "0xe2bc5a96d4e6bfaaebfac2b7d1448d73bc45b3a0de01fe6ce85ddc75c4916aec",
+      "deploymentBlock": 12959704,
+      "runtimeCodeBytes": 5050,
+      "runtimeCodeHash": "0xd0e2468f6b8fde8d0d19f89d4f4f3bb665525596e49e94041ffa14c144fd470d"
+    }
+  },
+  "dependencies": {
+    "numeraire": {
+      "symbol": "USDC",
+      "address": "0x3600000000000000000000000000000000000000",
+      "decimals": 6
+    },
+    "v3Factory": "0xf0db7b58379503491d857dB50AC9ece64c653918",
+    "positionManager": "0x39654A85A4C05127f5Fd6ED22CAeC077A0fB1377",
+    "swapRouter02": "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77",
+    "quoterV2": "0x7dfd4f31be6814d2906bde155c3e1b146eac1468"
+  },
+  "configuration": {
+    "v3FeeTier": 10000,
+    "tickSpacing": 200,
+    "observationCardinality": 512,
+    "tickFloor": -398400,
+    "tickGraduation": -375400,
+    "targetStartFdvUsd": 5000,
+    "targetGraduationFdvUsd": 50000,
+    "realizedStartFdvRaw": "4995430232",
+    "realizedGraduationFdvRaw": "49819603381",
+    "expectedTerminalProceedsRaw": "12620500222",
+    "minimumProceedsRaw": "12000000000",
+    "launchFeeRaw": "1000000",
+    "launchFeeDisplay": "1 USDC",
+    "creatorFeeBps": 9500,
+    "hydeFeeBps": 500,
+    "maxWalletBps": 200,
+    "maxWalletWindowSeconds": 300,
+    "graduationDelaySeconds": 300,
+    "twapTickTolerance": 200
+  },
+  "verification": {
+    "verifiedAtBlock": 12959979,
+    "receiptStatuses": [1, 1],
+    "deployerNonceAfter": 2,
+    "runtimeCodeHashesMatched": 4,
+    "bindingChecksPassed": 13,
+    "testsPassed": 20,
+    "testsFailed": 0,
+    "tokenLaunchPerformed": false,
+    "deploymentCostNativeUsdc": "0.3379198"
+  }
+}

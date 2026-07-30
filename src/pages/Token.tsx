@@ -25,16 +25,24 @@ import {
 } from "../utils/constants";
 import { WETH_CONTAINMENT } from "../utils/containment";
 import { useHydeLaunches, useHydeToken } from "../hooks/useDopplerTokens";
+import {
+  useGeckoPoolActivity,
+  type GeckoCandle,
+  type GeckoRange,
+} from "../hooks/useGeckoPoolActivity";
 import { useTokenPosition } from "../hooks/useTokenPosition";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { HoodieSwapCard } from "../components/HoodieSwapCard";
 import { StableV3SwapCard } from "../components/StableV3SwapCard";
 import { StableV3FeeCollector } from "../components/StableV3FeeCollector";
+import { TrenchV5FeeCollector } from "../components/TrenchV5FeeCollector";
+import { TrenchV5V4SwapCard } from "../components/TrenchV5V4SwapCard";
 import { YourPositionCard } from "../components/YourPositionCard";
 import { TokenImage } from "../components/TokenImage";
 import { LaunchMetadataEditor } from "../components/LaunchMetadataEditor";
 import { fetchLaunchMeta, type LaunchMeta } from "../utils/launchMeta";
 import { chainV3Capability, ENGINE_META } from "../utils/chainRegistry";
+import { protocolVersionOf } from "../utils/dopplerConfig";
 import { Card, Button, Stat, SectionLabel } from "../components/ui/kit";
 
 type Props = { network: NetworkConfig; tokens: TokenInfo[]; onAddCustomToken: (t: { address: `0x${string}`; symbol: string; name: string; decimals: number }) => void };
@@ -180,6 +188,43 @@ function timeAgo(iso: string): string | null {
   return `${Math.floor(h / 24)}d ago`;
 }
 // Own-stack Hyde launches are a fixed 1,000,000,000 supply (protocol constant — not fabricated).
+function buildChartGeometry(candles: GeckoCandle[]) {
+  const width = 800;
+  const height = 220;
+  const xPad = 18;
+  const yPad = 18;
+  const chartBottom = 174;
+  if (candles.length === 0) return null;
+  const min = Math.min(...candles.map((candle) => candle.low));
+  const max = Math.max(...candles.map((candle) => candle.high));
+  const spread = Math.max(max - min, Math.max(max, 1) * 0.002);
+  const point = (candle: GeckoCandle, index: number) => {
+    const x = candles.length === 1
+      ? width / 2
+      : xPad + (index / (candles.length - 1)) * (width - xPad * 2);
+    const y = yPad + ((max - candle.close) / spread) * (chartBottom - yPad);
+    return { x, y };
+  };
+  const points = candles.map(point);
+  const line = points.map(({ x, y }, index) => `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
+  const area = `${line} L${points[points.length - 1]?.x ?? width - xPad},${chartBottom} L${points[0]?.x ?? xPad},${chartBottom} Z`;
+  const maxVolume = Math.max(...candles.map((candle) => candle.volumeUsd), 1);
+  const barWidth = Math.max(2, Math.min(16, (width - xPad * 2) / Math.max(candles.length, 1) - 3));
+  const volumes = candles.map((candle, index) => {
+    const { x } = point(candle, index);
+    const barHeight = Math.max(1.5, (candle.volumeUsd / maxVolume) * 28);
+    return { x: x - barWidth / 2, y: height - 10 - barHeight, width: barWidth, height: barHeight };
+  });
+  return { width, height, line, area, min, max, volumes };
+}
+
+function fmtCompactToken(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
+  return n.toLocaleString("en-US", { maximumFractionDigits: n < 1 ? 4 : 2 });
+}
+
 const OWN_STACK_SUPPLY = "1,000,000,000";
 
 /**
@@ -195,6 +240,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const { holders, loading: holdersLoading } = useTopHolders(address, network.id);
   const [copied, setCopied] = useState(false);
   const [feedTab, setFeedTab] = useState<"trades" | "holders">("trades"); // coin-mockup: Trades/Holders tabs
+  const [chartRange, setChartRange] = useState<GeckoRange>("24h");
   // Off-chain metadata (own-stack tokens store no tokenURI) — fetched by (chain, address); fail-neutral.
   const [meta, setMeta] = useState<LaunchMeta | null>(null);
   useEffect(() => {
@@ -209,26 +255,36 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const boardPool = useMemo(() => pools.find((p) => p.address.toLowerCase() === address.toLowerCase()), [pools, address]);
   // Resolve both live launch rails explicitly. The selected chain stays the
   // authority for actions; another-chain result only powers a safe notice.
-  const robinhoodLookup = useHydeToken(address, ROBINHOOD_MAINNET.id);
-  const stableLookup = useHydeToken(address, STABLE_MAINNET.id);
-  const arbitrumLookup = useHydeToken(address, ARBITRUM_MAINNET.id);
-  const selectedLookup = network.id === ROBINHOOD_MAINNET.id
-    ? robinhoodLookup
-    : network.id === STABLE_MAINNET.id
-      ? stableLookup
-      : network.id === ARBITRUM_MAINNET.id
-        ? arbitrumLookup
-        : null;
-  const fetchedPool = selectedLookup?.pool ?? null;
+  const selectedLookup = useHydeToken(address, network.id);
+  const searchOtherChains = !selectedLookup.loading && !selectedLookup.pool && !selectedLookup.error;
+  const robinhoodLookup = useHydeToken(
+    address,
+    ROBINHOOD_MAINNET.id,
+    searchOtherChains && network.id !== ROBINHOOD_MAINNET.id,
+  );
+  const stableLookup = useHydeToken(
+    address,
+    STABLE_MAINNET.id,
+    searchOtherChains && network.id !== STABLE_MAINNET.id,
+  );
+  const arbitrumLookup = useHydeToken(
+    address,
+    ARBITRUM_MAINNET.id,
+    searchOtherChains && network.id !== ARBITRUM_MAINNET.id,
+  );
+  const fetchedPool = selectedLookup.pool;
   const pool = boardPool ?? fetchedPool;
-  const wrongChainPool = pool || selectedLookup?.loading
+  const geckoPoolAddress = pool?.poolAddress ?? pair;
+  const gecko = useGeckoPoolActivity(network.id, geckoPoolAddress, address, chartRange);
+  const wrongChainPool = pool || selectedLookup.loading
     ? null
     : [robinhoodLookup.pool, stableLookup.pool, arbitrumLookup.pool]
       .find((candidate) => candidate && candidate.chainId !== network.id) ?? null;
   const locatingToken = !pool && !wrongChainPool && (
-    robinhoodLookup.loading || stableLookup.loading || arbitrumLookup.loading || (selectedLookup?.loading ?? false)
+    selectedLookup.loading
+    || (searchOtherChains && (robinhoodLookup.loading || stableLookup.loading || arbitrumLookup.loading))
   );
-  const tokenError = selectedLookup?.error ?? null;
+  const tokenError = selectedLookup.error;
 
   // HOODIE-numeraire own-stack pool → live in-app Buy/Sell + per-wallet PnL via the canonical UniversalRouter
   // (the Hyde gateway isn't deployed on 4663). Detected by the pool's quote token matching the configured
@@ -306,6 +362,14 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const sym = pool.baseToken.symbol || "?";
   const engineMeta = ENGINE_META[pool.launchEngine];
   const isV4Launch = pool.launchEngine === "v4-hook";
+  const isV5 = protocolVersionOf(pool) === "v5-trench";
+  const curveState = pool.curveState ?? "curve-active";
+  const curveProgress = Math.max(0, Math.min(100, pool.progress ?? 0));
+  const curveStatusLabel = curveState === "graduated"
+    ? "GRADUATED · LP LOCKED"
+    : curveState === "graduation-signaled"
+      ? "GRADUATION QUEUED"
+      : `CURVE LIVE · ${curveProgress.toFixed(curveProgress >= 10 ? 1 : 2)}% FILLED`;
   const stableV3SwapReady = chainV3Capability(network.id)?.trade?.engine === "v3-single-sided";
   // WETH-only containment (kami 24019): a non-HOODIE (WETH-paired) token while WETH_CONTAINMENT is active.
   // Its chart/Trades empty-states must NOT claim "trading is live on-chain" (contradicts the amber pause card),
@@ -313,12 +377,13 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const wethContained = isV4Launch && !isHoodiePair && WETH_CONTAINMENT.active;
   const creatorAddr = (pool as { creator?: string }).creator;
   const launchedAgo = timeAgo(pool.createdAt);
-  const priceUsd = liveMarket.priceUsd ?? pool.priceUsd;
-  const marketCapUsd = liveMarket.marketCapUsd ?? pool.marketCapUsd;
-  const liquidityUsd = liveMarket.liquidityUsd
+  const priceUsd = liveMarket.priceUsd ?? gecko.priceUsd ?? pool.priceUsd;
+  const marketCapUsd = liveMarket.marketCapUsd ?? gecko.marketCapUsd ?? pool.marketCapUsd;
+  const liquidityUsd = liveMarket.liquidityUsd ?? gecko.liquidityUsd
     ?? (pool.dollarLiquidity != null ? Number(pool.dollarLiquidity) : null);
-  const volumeUsd = liveMarket.volumeUsd
+  const volumeUsd = liveMarket.volumeUsd ?? gecko.volumeUsd
     ?? (pool.volumeUsd != null ? Number(pool.volumeUsd) : null);
+  const chart = buildChartGeometry(gecko.candles);
 
   return (
     <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
@@ -343,7 +408,6 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 )}
                 <div className="min-w-0">
                   <h1 className="truncate font-display text-2xl font-bold text-pcs-text">{pool.baseToken.name} <span className="font-mono text-sm text-pcs-textSub">${sym}</span></h1>
-                  {/* Own-stack Hyde/HOODIE launch — no auction curve / graduation / "Verified" badge. */}
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-pcs-textDim">
                     {creatorAddr && <span>by {short(creatorAddr)}</span>}
                     {launchedAgo && <span>· {launchedAgo}</span>}
@@ -351,10 +415,15 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                     <span className="rounded-md border border-pcs-primary/25 bg-pcs-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-pcs-primaryBright">
                       {engineMeta.title}
                     </span>
+                    <span className="rounded-md border border-pcs-primary/25 bg-pcs-primary/[0.07] px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-pcs-primary">
+                      {isV5 ? "V5 · Trench Curve" : "Legacy · Instant"}
+                    </span>
                     <span className="rounded-md border border-pcs-border bg-white/[0.025] px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-pcs-textSub">
                       {network.name} · {network.id}
                     </span>
-                    <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>LIVE</span>
+                    <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>
+                      {isV5 ? curveStatusLabel : "LEGACY · LIVE"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -368,7 +437,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             )}
           </Card>
 
-          {!isV4Launch && creatorAddr && walletAddress?.toLowerCase() === creatorAddr.toLowerCase() && (
+          {creatorAddr && walletAddress?.toLowerCase() === creatorAddr.toLowerCase() && (
             <LaunchMetadataEditor
               chainId={network.id}
               token={pool.address}
@@ -379,55 +448,108 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             />
           )}
 
-        {/* Chart — self-hosted price history (candles from on-chain PoolManager Swap events) is a
-            separate post-swap task (gojo/kami 23826-23829); no GeckoTerminal dependency/ETA on 4663.
-            Until that feed ships, an honest "warming up" state: LIVE on-chain, a NEUTRAL decorative
-            shimmer skeleton (never fabricated candles/axes/numbers), no external-indexer claim, and no
-            CTA to a not-yet-enabled swap. */}
+        {/* Canonical-pool OHLCV. Gecko is display-only; trading still routes through Hydeout's
+            verified contracts and the selected chain remains authoritative for every action. */}
         <Card className="p-0 overflow-hidden">
-          {/* Timeframe chrome (coin-mockup) — NON-interactive until a price-history feed exists, so they're
-              not dead controls that change nothing (kami 23949 #6). "1h" shown as the eventual default. */}
-          <div className="flex items-center gap-1 px-4 pt-4" title="Price history begins with on-chain swaps">
+          <div className="flex items-center justify-between gap-3 px-4 pt-4">
+            <div className="flex items-center gap-1" aria-label="Chart range">
             {(["5m", "1h", "24h", "7d"] as const).map((tf) => (
-              <span key={tf} aria-disabled className="select-none rounded-lg px-2.5 py-1 text-[11px] font-semibold opacity-70"
-                style={tf === "1h" ? { background: "rgba(46,159,230,0.10)", color: "#54B4F0" } : { color: "#5D6470" }}>{tf}</span>
+                <button
+                  key={tf}
+                  type="button"
+                  disabled={!gecko.url || wethContained}
+                  onClick={() => setChartRange(tf)}
+                  className="rounded-lg px-2.5 py-1 text-[11px] font-semibold transition disabled:cursor-default disabled:opacity-50"
+                  style={chartRange === tf
+                    ? { background: "rgba(52,199,123,0.10)", color: "#34C77B" }
+                    : { color: "#707784" }}
+                >
+                  {tf}
+                </button>
             ))}
-          </div>
-          <div
-            className="relative flex h-[250px] flex-col items-center justify-center gap-3 px-6 text-center"
-            style={{ background: "radial-gradient(120% 90% at 50% 0%, rgba(46,159,230,0.05), transparent 60%), #0E1013" }}
-          >
-            <div
-              className="pointer-events-none absolute inset-0 opacity-[0.05]"
-              style={{ backgroundImage: "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)", backgroundSize: "34px 34px" }}
-            />
-            <span
-              className="relative z-10 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide"
-              style={wethContained
-                ? { background: "rgba(232,163,61,0.10)", color: "#E0A32E", border: "1px solid rgba(232,163,61,0.28)" }
-                : { background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}
-            >
-              {!wethContained && <span className="hyde-pulse inline-block h-1.5 w-1.5 rounded-full" style={{ background: "#34C77B" }} />}
-              {wethContained ? "PAUSED · PRICE UNDER REVIEW" : "LIVE · LOCKED LIQUIDITY"}
-            </span>
-            <div className="relative z-10 flex h-16 items-end gap-1.5" aria-hidden="true">
-              {[9, 5, 12, 7, 14, 6, 11, 8, 13, 5, 10, 7].map((h, i) => (
-                <span key={i} className="hyde-shimmer w-2 rounded-sm" style={{ height: `${h * 4}px`, background: "rgba(255,255,255,0.06)", animationDelay: `${i * 90}ms` }} />
-              ))}
             </div>
-            <div className="relative z-10">
-              <p className="font-display text-sm font-semibold text-pcs-text">{wethContained ? "Chart paused" : "Chart warming up"}</p>
-              <p className="mt-1 max-w-sm text-xs text-pcs-textSub">{wethContained ? "Trading is paused while this pool’s launch price is under review." : "Trading is live on-chain. Price history begins with on-chain swaps."}</p>
-            </div>
+            {gecko.url && (
+              <a
+                href={gecko.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-code text-[9px] uppercase tracking-wider text-pcs-textDim transition hover:text-pcs-primary"
+              >
+                GeckoTerminal <ArrowTopRightOnSquareIcon className="h-3 w-3" />
+              </a>
+            )}
           </div>
-          {/* Curve/liquidity label — own-stack launches straight into a locked-liquidity pool (no graduation). */}
-          <div className="flex items-center gap-2 border-t px-4 py-2.5" style={{ borderColor: "#1C1F26" }}>
+          {chart && !wethContained ? (
+            <div className="relative mt-2 h-[250px] overflow-hidden bg-[#0E1013]">
+              <div className="pointer-events-none absolute inset-0 opacity-[0.05]"
+                style={{ backgroundImage: "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)", backgroundSize: "52px 44px" }} />
+              <div className="absolute left-4 top-3 z-10">
+                <p className="font-code text-[9px] uppercase tracking-wider text-pcs-textDim">{chartRange} pool price</p>
+                <p className="mt-1 font-mono text-sm font-semibold text-pcs-text">
+                  {gecko.candles[gecko.candles.length - 1]?.close
+                    ? fmtPrice(gecko.candles[gecko.candles.length - 1].close)
+                    : "—"}
+                </p>
+              </div>
+              <div className="absolute right-4 top-3 z-10 text-right font-code text-[9px] text-pcs-textDim">
+                <p>{fmtPrice(chart.max)}</p>
+                <p className="mt-[138px]">{fmtPrice(chart.min)}</p>
+              </div>
+              <svg
+                className="absolute inset-x-0 bottom-0 h-[220px] w-full"
+                viewBox={`0 0 ${chart.width} ${chart.height}`}
+                preserveAspectRatio="none"
+                role="img"
+                aria-label={`${pool.baseToken.symbol} ${chartRange} price chart`}
+              >
+                <defs>
+                  <linearGradient id="gecko-price-fill" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stopColor="#34C77B" stopOpacity="0.24" />
+                    <stop offset="100%" stopColor="#34C77B" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <path d={chart.area} fill="url(#gecko-price-fill)" />
+                <path d={chart.line} fill="none" stroke="#34C77B" strokeWidth="2.2" vectorEffect="non-scaling-stroke" />
+                {chart.volumes.map((bar, index) => (
+                  <rect key={index} {...bar} rx="1" fill="#34C77B" opacity="0.22" />
+                ))}
+              </svg>
+            </div>
+          ) : (
+            <div className="relative flex h-[250px] flex-col items-center justify-center gap-3 px-6 text-center"
+              style={{ background: "radial-gradient(120% 90% at 50% 0%, rgba(52,199,123,0.05), transparent 60%), #0E1013" }}>
+              <div className="flex h-12 items-end gap-1.5" aria-hidden="true">
+                {[9, 5, 12, 7, 14, 6, 11, 8].map((h, index) => (
+                  <span key={index} className={gecko.loading ? "hyde-shimmer w-2 rounded-sm" : "w-2 rounded-sm"}
+                    style={{ height: `${h * 3}px`, background: "rgba(255,255,255,0.06)", animationDelay: `${index * 90}ms` }} />
+                ))}
+              </div>
+              <div>
+                <p className="font-display text-sm font-semibold text-pcs-text">
+                  {wethContained ? "Chart paused" : gecko.loading ? "Loading pool history…" : "Pool history unavailable"}
+                </p>
+                <p className="mt-1 max-w-sm text-xs text-pcs-textSub">
+                  {wethContained
+                    ? "Trading is paused while this pool’s launch price is under review."
+                    : gecko.error ?? "No indexed OHLCV candles were returned for this canonical pool yet."}
+                </p>
+              </div>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3 border-t px-4 py-2.5" style={{ borderColor: "#1C1F26" }}>
+            <div className="flex min-w-0 items-center gap-2">
             <span className="inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: "#34C77B" }} />
-            <p className="font-mono text-[11px] text-pcs-textDim">
-              {isV4Launch
-                ? "V4 hook liquidity locked · 5% of fees auto-compounds into locked LP."
-                : "V3 single-sided liquidity · principal permanently locked."}
+              <p className="truncate font-mono text-[11px] text-pcs-textDim">
+              {isV5
+                ? curveState === "graduated"
+                  ? `${isV4Launch ? "V4" : "V3"} graduated liquidity is permanently custodied; principal cannot be withdrawn.`
+                  : `V5 ${isV4Launch ? "V4" : "V3"} Trench Curve · 80% curve allocation · 20% graduation reserve.`
+                : isV4Launch
+                  ? "Legacy V4 instant pool · 5% of fees auto-compounds into locked LP."
+                  : "Legacy V3 instant pool · principal permanently locked."}
             </p>
+            </div>
+            {gecko.url && <span className="shrink-0 font-code text-[8px] uppercase tracking-wider text-pcs-textDim">Market data: GeckoTerminal</span>}
           </div>
         </Card>
 
@@ -465,27 +587,84 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
 
           <div className="min-h-[178px] p-4">
             {feedTab === "trades" ? (
-              <div className="token-feed-empty">
-                <div className="token-feed-radar" aria-hidden="true">
-                  <ArrowsRightLeftIcon className="h-5 w-5" />
+              wethContained ? (
+                <div className="token-feed-empty">
+                  <div className="token-feed-radar" aria-hidden="true">
+                    <ArrowsRightLeftIcon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-pcs-text">Trade feed paused</p>
+                    <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
+                      Activity is hidden while this pool’s launch price is under review.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-pcs-text">
-                    {wethContained ? "Trade feed paused" : "Trade tape warming up"}
-                  </p>
-                  <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
-                    {wethContained
-                      ? "Activity is hidden while this pool’s launch price is under review."
-                      : "Swaps are live on-chain. Indexed activity will appear here when the trade feed is connected."}
+              ) : gecko.loading && gecko.trades.length === 0 ? (
+                <div className="space-y-2">
+                  {[0, 1, 2].map((row) => (
+                    <div key={row} className="h-[48px] animate-pulse rounded-lg border border-pcs-border bg-white/[0.02]" />
+                  ))}
+                </div>
+              ) : gecko.trades.length > 0 ? (
+                <div className="space-y-2">
+                  {gecko.trades.slice(0, 12).map((trade) => (
+                    <a
+                      key={`${trade.txHash}-${trade.timestamp}`}
+                      href={`${network.explorerUrl}/tx/${trade.txHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="token-holder-row group"
+                    >
+                      <span
+                        className="w-10 shrink-0 rounded-md border px-1.5 py-1 text-center font-code text-[9px] font-semibold uppercase"
+                        style={trade.kind === "buy"
+                          ? { color: "#34C77B", borderColor: "rgba(52,199,123,0.25)", background: "rgba(52,199,123,0.07)" }
+                          : { color: "#F06A6A", borderColor: "rgba(240,106,106,0.25)", background: "rgba(240,106,106,0.07)" }}
+                      >
+                        {trade.kind}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-code text-xs font-semibold tabular-nums text-pcs-text">
+                          {fmtCompactToken(trade.tokenAmount)} {sym}
+                        </span>
+                        <span className="mt-0.5 block truncate font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
+                          {trade.trader ? short(trade.trader) : short(trade.txHash)} · {timeAgo(trade.timestamp) ?? "on-chain"}
+                        </span>
+                      </span>
+                      <span className="text-right">
+                        <span className="block font-code text-xs font-semibold tabular-nums text-pcs-text">
+                          {fmtUsd(trade.volumeUsd)}
+                        </span>
+                        <span className="mt-0.5 block font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
+                          {trade.priceUsd ? fmtPrice(trade.priceUsd) : "indexed swap"}
+                        </span>
+                      </span>
+                      <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 text-pcs-textDim transition group-hover:text-pcs-primary" />
+                    </a>
+                  ))}
+                  <p className="pt-1 text-right font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
+                    Recent pool swaps via GeckoTerminal
                   </p>
                 </div>
-                {!wethContained && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-pcs-primary/20 bg-pcs-primary/[0.06] px-2.5 py-1 font-code text-[9px] uppercase tracking-wider text-pcs-primary">
-                    <span className="hyde-pulse h-1.5 w-1.5 rounded-full bg-pcs-primary" />
-                    Pool live
-                  </span>
-                )}
-              </div>
+              ) : (
+                <div className="token-feed-empty">
+                  <div className="token-feed-radar" aria-hidden="true">
+                    <ArrowsRightLeftIcon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-pcs-text">No indexed swaps yet</p>
+                    <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
+                      {gecko.error ?? "No recent trades were returned for this canonical pool."}
+                    </p>
+                  </div>
+                  {gecko.url && (
+                    <a href={gecko.url} target="_blank" rel="noreferrer"
+                      className="font-code text-[9px] uppercase tracking-wider text-pcs-primary transition hover:text-pcs-primaryBright">
+                      Open market ↗
+                    </a>
+                  )}
+                </div>
+              )
             ) : holdersLoading ? (
               <div className="space-y-2">
                 {[0, 1, 2].map((row) => (
@@ -500,9 +679,19 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <div>
                   <p className="text-sm font-semibold text-pcs-text">Holder snapshot unavailable</p>
                   <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
-                    No holder rows were returned by the selected chain’s explorer.
+                    {network.id === STABLE_MAINNET.id
+                      ? "Stable’s current public explorer feeds do not return ranked ERC-20 holder rows yet."
+                      : "No holder rows were returned by the selected chain’s explorer."}
                   </p>
                 </div>
+                <a
+                  href={`${network.explorerUrl}/address/${pool.address}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-code text-[9px] uppercase tracking-wider text-pcs-primary transition hover:text-pcs-primaryBright"
+                >
+                  View contract ↗
+                </a>
               </div>
             ) : (
               <div className="space-y-2">
@@ -547,7 +736,12 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
            V4SwapCard executes; otherwise the primary action routes to the live pair and the
            in-app Buy/Sell is shown REFERENCE-ONLY (dimmed, non-interactive) — never implying
            Hyde submits/pre-fills an order it can't carry. Graduation is NEVER cited as a reason. */}
-        {!isV4Launch && stableV3SwapReady ? (
+        {isV5 && isV4Launch ? (
+          <TrenchV5V4SwapCard
+            network={network}
+            token={{ address: pool.address as `0x${string}`, symbol: sym, name: pool.baseToken.name, decimals: pool.baseToken.decimals }}
+          />
+        ) : !isV4Launch && stableV3SwapReady ? (
           <StableV3SwapCard
             network={network}
             token={{ address: pool.address as `0x${string}`, symbol: sym, name: pool.baseToken.name, decimals: pool.baseToken.decimals }}
@@ -607,7 +801,16 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
         )}
 
         {/* Market — consolidated stats (coin-mockup): real feed values or an honest "—", never fabricated. */}
-        {!isV4Launch && (
+        {isV5 ? (
+          <TrenchV5FeeCollector
+            network={network}
+            token={{
+              address: pool.address as `0x${string}`,
+              symbol: sym,
+              decimals: pool.baseToken.decimals,
+            }}
+          />
+        ) : !isV4Launch && (
           <StableV3FeeCollector
             network={network}
             token={{
@@ -616,6 +819,38 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
               decimals: pool.baseToken.decimals,
             }}
           />
+        )}
+
+        {isV5 && (
+          <Card variant="panel">
+            <SectionLabel>Trench Curve</SectionLabel>
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-pcs-textDim">State</span>
+                <span className="font-code text-pcs-primary">{curveStatusLabel}</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+                <div
+                  className="h-full rounded-full bg-pcs-primary transition-[width]"
+                  style={{ width: `${curveState === "graduated" ? 100 : curveProgress}%` }}
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+                <div className="rounded-lg border border-pcs-border bg-white/[0.02] px-2 py-2">
+                  <p className="font-mono text-sm font-semibold text-pcs-text">80%</p>
+                  <p className="mt-0.5 text-[10px] text-pcs-textDim">Live curve</p>
+                </div>
+                <div className="rounded-lg border border-pcs-border bg-white/[0.02] px-2 py-2">
+                  <p className="font-mono text-sm font-semibold text-pcs-text">20%</p>
+                  <p className="mt-0.5 text-[10px] text-pcs-textDim">LP reserve</p>
+                </div>
+              </div>
+              <p className="mt-3 text-[11px] leading-relaxed text-pcs-textSub">
+                Graduation is permissionless after the terminal price, delay, and TWAP checks pass.
+                The resulting {isV4Launch ? "V4" : "V3"} LP remains permanently custodied.
+              </p>
+            </div>
+          </Card>
         )}
 
         <Card variant="panel">
@@ -640,16 +875,21 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             honest about uncovered/unprovable basis. Only for HOODIE pairs (the reconcilable own-stack pool). */}
         {isHoodiePair && <YourPositionCard connected={isConnected} position={position} error={positionError} symbol={sym} />}
 
-        {/* Trust card — the Hyde stack is LIVE now (no Doppler rail, no COMING/future-tense; kami 23836). */}
         <Card variant="panel">
           <SectionLabel>Trust</SectionLabel>
           <div className="mt-2 space-y-2 text-xs">
             <div className="flex items-center gap-2">
-              <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>HYDE STACK · LIVE</span>
+              <span className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: "rgba(52,199,123,0.12)", color: "#34C77B", border: "1px solid #34C77B40" }}>
+                {isV5 ? "V5 TRENCH CURVE" : "LEGACY INSTANT"}
+              </span>
             </div>
             <p className="font-mono text-[11px] text-pcs-text">{engineMeta.feeSplitLabel}</p>
-            <p className="text-[11px] leading-relaxed text-pcs-textSub">{engineMeta.trustLine}</p>
-            {isV4Launch && (
+            <p className="text-[11px] leading-relaxed text-pcs-textSub">
+              {isV5
+                ? `80% begins in the live curve; 20% is reserved for graduation. ${engineMeta.trustLine}`
+                : engineMeta.trustLine}
+            </p>
+            {isV4Launch && !isV5 && (
               <p className="text-[11px] leading-relaxed text-pcs-textDim">
                 <span className="font-semibold text-pcs-textSub">Launch protection:</span> swap fee decays 3%→1% over 5 minutes; 1% max-wallet for 5 minutes. Selling remains unrestricted.
               </p>

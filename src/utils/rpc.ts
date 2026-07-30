@@ -11,6 +11,7 @@ const EXPLICIT_RPC_BY_CHAIN: Record<number, string | undefined> = {
   4663: import.meta.env.VITE_ROBINHOOD_MAINNET_RPC_URL,
   988: import.meta.env.VITE_STABLE_MAINNET_RPC_URL,
   42161: import.meta.env.VITE_ARBITRUM_MAINNET_RPC_URL,
+  5042: import.meta.env.VITE_ARC_MAINNET_RPC_URL,
 };
 
 function cleanHttpsUrl(value?: string): string | null {

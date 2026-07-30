@@ -1,0 +1,87 @@
+{
+  "version": "Hydeout V5 Trench Curve",
+  "network": "Arbitrum One",
+  "chainId": 42161,
+  "rpcUrl": "https://arb1.arbitrum.io/rpc",
+  "explorerUrl": "https://arbiscan.io",
+  "deployer": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "owner": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "hydeTreasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "launchFeeTreasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "transactions": {
+    "coordinator": "0x950c3cb23b95613574811e216d9dbfad3f7e599615aee15be9f974d6baa77489",
+    "stackDeployment": "0xd9b29dd6f12d804aa3444a3a4bf9c96a213eda32e2831cdb5ad4664988c4c38a"
+  },
+  "deploymentBlocks": {
+    "coordinator": 489243621,
+    "stack": 489243637
+  },
+  "contracts": {
+    "coordinator": {
+      "address": "0x144Ee4A0B605B038F085518231A414b0BD00ef23",
+      "runtimeCodeBytes": 2678,
+      "runtimeCodeHash": "0x3d41b1f8ed74a22e8259847798efed93841e6dc3a114021c85e391c13adf16d4"
+    },
+    "implementation": {
+      "address": "0xaa0069e82F616e60B0376f569F75b5B2114Fd6EE",
+      "runtimeCodeBytes": 4702,
+      "runtimeCodeHash": "0xb963d4d054241cb40f5bd81fe7c7d274fe607a009059780e8a9f1399704c4de9"
+    },
+    "hook": {
+      "address": "0xE490d9991Fe22052f820aC5059Cb438a8AC730c0",
+      "runtimeCodeBytes": 7411,
+      "runtimeCodeHash": "0xbdf9ceb186dad23e0dbf61411f10efe09028451f128b130f25b4f3fd9d9f0a61"
+    },
+    "factory": {
+      "address": "0x1713FCC00dD51d88B6124419Fac0B8025CC84e6a",
+      "runtimeCodeBytes": 11395,
+      "runtimeCodeHash": "0x6e4ab47371bf7cc8788731594c90dc79daefdcabe9019bfc115cc60a813c2b50"
+    },
+    "graduator": {
+      "address": "0x159A616E885955F5463D70E4807d1D71568d76AC",
+      "runtimeCodeBytes": 20359,
+      "runtimeCodeHash": "0xe9ab56c04211244c869cba5d62fefd4c2d4f3712c6572060598eb077933da6a8"
+    },
+    "locker": {
+      "address": "0x08610aE598a24799e1843C683695B0Fc63b1bd6f",
+      "runtimeCodeBytes": 11743,
+      "runtimeCodeHash": "0x1a52cf57cb3b75bb8c23924df2fdb666edd223edbae1d2b26b7181efe5c11650"
+    }
+  },
+  "dependencies": {
+    "numeraire": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    "poolManager": "0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32",
+    "positionManager": "0xd88F38F930b7952f2DB2432Cb002E7abbF3dD869",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "stateView": "0x76Fd297e2D437cd7f76d50F01AfE6160f86e9990",
+    "universalRouter": "0xA51afAFe0263b40EdaEf0Df8781eA9aa03E381a3"
+  },
+  "configuration": {
+    "dynamicFee": true,
+    "tickSpacing": 60,
+    "targetStartFdvWeth": "1",
+    "targetGraduationFdvWeth": "16",
+    "realizedStartFdvRaw": "1000302013468478961",
+    "realizedGraduationFdvRaw": "15993195925080524633",
+    "expectedTerminalProceedsRaw": "3199802602476988727",
+    "minimumProceedsRaw": "3000000000000000000",
+    "launchFeeWei": "400000000000000",
+    "creatorFeeBps": 9000,
+    "hydeFeeBps": 500,
+    "autoLpFeeBps": 500,
+    "maxWalletBps": 100,
+    "maxWalletWindowSeconds": 300,
+    "graduationDelaySeconds": 300,
+    "twapTickTolerance": 60
+  },
+  "verification": {
+    "verifiedAtBlock": 489245182,
+    "receiptStatuses": [1, 1],
+    "deployerNonceAfter": 4,
+    "runtimeCodeHashesMatched": 6,
+    "bindingsPassed": true,
+    "paused": false,
+    "tokenLaunchPerformed": false,
+    "deploymentCostEth": "0.00026728386"
+  }
+}

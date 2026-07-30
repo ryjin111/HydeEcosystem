@@ -7,6 +7,7 @@ import type { DopplerPool } from "../utils/dopplerConfig";
 import { chainEngineCapabilities, isHydeLaunchLive } from "../utils/chainRegistry";
 import { NETWORKS } from "../utils/constants";
 import { CoinCard } from "./Discover";
+import { useTrenchV5Ready } from "../hooks/useTrenchV5Ready";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 const MARKET_ROW_COUNT = 6;
@@ -81,8 +82,12 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
 
   const capabilities = chainEngineCapabilities(chainId);
   const capability = capabilities[0];
-  const chainName = capability?.name ?? "Robinhood Chain";
+  const chainName = capability?.name
+    ?? NETWORKS.find((network) => network.id === chainId)?.name
+    ?? `Chain ${chainId}`;
+  const hasEngine = capabilities.length > 0;
   const launchLive = isHydeLaunchLive(chainId);
+  const { ready: v5Ready } = useTrenchV5Ready(chainId);
   const isStableV3 = capabilities.length > 0 && capabilities.every((item) => item.engine === "v3-single-sided");
   const pools = useMemo(
     () => chainScope === "all"
@@ -171,7 +176,9 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
       {/* Reference hero band: copy on the left, protocol-volume stage on the right. */}
       <section className="surface-hero term-panel mb-6 grid overflow-hidden rounded-lg lg:grid-cols-[1.08fr,0.92fr]">
         <div className="relative z-[1] px-5 py-6 sm:px-7 sm:py-8">
-          <p className="term-label mb-3">{launchLive ? "Live launch protocol" : "Launch rail coming soon"}</p>
+          <p className="term-label mb-3">
+            {v5Ready ? "V5 Trench Curve · live" : launchLive ? "Legacy markets live · V5 pending" : "Launch rail coming soon"}
+          </p>
           <h1 className="font-display text-[34px] font-bold leading-[1.03] text-[var(--term-text)] sm:text-[44px]">
             Launch a token.
             <br />
@@ -180,7 +187,19 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
             </span>
           </h1>
           <p className="mt-4 max-w-[610px] text-sm leading-6 text-[var(--term-sub)]">
-            {!launchLive ? (
+            {v5Ready ? (
+              <>
+                <strong className="font-semibold text-[var(--term-text)]">V5 Trench Curve is verified on {chainName}.</strong>{" "}
+                80% enters a live pool-native curve and 20% is reserved for graduation into permanently
+                custodied {isStableV3 ? "V3" : "V4"} liquidity.
+              </>
+            ) : !launchLive && !hasEngine ? (
+              <>
+                <strong className="font-semibold text-[var(--term-text)]">{chainName} network access is connected.</strong>{" "}
+                Wallet, RPC, and explorer context are available. Launches, swaps, claims, and liquidity
+                remain disabled until Hydeout deploys and verifies a chain-specific engine.
+              </>
+            ) : !launchLive ? (
               <>
                 <strong className="font-semibold text-[var(--term-text)]">Uniswap V4 is live on {chainName}.</strong>{" "}
                 Hydeout launches remain disabled until the chain-specific factory, hook, vault, and fee
@@ -188,26 +207,24 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               </>
             ) : isStableV3 ? (
               <>
-                <strong className="font-semibold text-[var(--term-text)]">Live on {chainName} mainnet.</strong>{" "}
-                Single-sided V3 launches route 95% of trading fees to creators and 5% to Hyde. Every
-                canonical pool position enters permanent custody at launch.
+                <strong className="font-semibold text-[var(--term-text)]">Legacy Stable markets remain live.</strong>{" "}
+                Existing instant V3 launches keep trading and fee claims while V5 deployment is pending.
               </>
             ) : (
               <>
-                <strong className="font-semibold text-[var(--term-text)]">Live on {chainName}.</strong>{" "}
-                V4 routes 90% of fees to creators, 5% to Hyde, and 5% into locked auto-compounding LP.
-                Proven in code, not promised.
+                <strong className="font-semibold text-[var(--term-text)]">Legacy {chainName} markets remain live.</strong>{" "}
+                Existing instant V4 launches keep trading and fee claims while V5 deployment is pending.
               </>
             )}
           </p>
           <div className="mt-5 flex flex-wrap gap-2.5">
-            {launchLive ? (
+            {v5Ready ? (
               <NavLink to="/launchpad?tab=launch" className="btn-terminal px-5 py-2.5">
                 Launch a Token
               </NavLink>
             ) : (
               <button type="button" className="btn-terminal px-5 py-2.5" disabled>
-                Launch — Coming soon
+                V5 deployment pending
               </button>
             )}
             <a href="#live-market" className="btn-ghost-term px-5 py-2.5">

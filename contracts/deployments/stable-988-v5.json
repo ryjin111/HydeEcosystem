@@ -1,0 +1,81 @@
+{
+  "version": "Hydeout V5 Trench Curve",
+  "network": "Stable Mainnet",
+  "chainId": 988,
+  "rpcUrl": "https://rpc.stable.xyz",
+  "explorerUrl": "https://stablescan.xyz",
+  "deployer": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "owner": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "hydeTreasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "launchFeeTreasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "contracts": {
+    "implementation": {
+      "address": "0x384951F77BD07bb3eCa992fcffb0AaDF972C2b1f",
+      "deploymentTransaction": "0xc11c2aee4916c74642df93cd5d20bdc8744b4925e579bc678e95b817f512ac46",
+      "deploymentBlock": 33659978,
+      "runtimeCodeBytes": 4650,
+      "runtimeCodeHash": "0xce745b5eba4a683f85e250477ced81eb3f04e5ba9a7ed705ef117e2acad6f012"
+    },
+    "factory": {
+      "address": "0xCf9023b509bf2c1FD53b3FF7Cd9dD5D1E88A5458",
+      "deploymentTransaction": "0xe71be7f18fa33d0ca7e017187c253acb51d2f0c1bb92ea88e3b86976f3fa7998",
+      "deploymentBlock": 33659980,
+      "runtimeCodeBytes": 11491,
+      "runtimeCodeHash": "0x15a6b4f1479e17251779dabc168f975c12561962c4f8eea41116bc407115ca08"
+    },
+    "graduator": {
+      "address": "0x81d5A6B7433420F7011612771eA74Ef71e239206",
+      "deploymentTransaction": "0xe71be7f18fa33d0ca7e017187c253acb51d2f0c1bb92ea88e3b86976f3fa7998",
+      "deploymentBlock": 33659980,
+      "runtimeCodeBytes": 16048,
+      "runtimeCodeHash": "0x3622e55d835552656aee12bbea6f81255708e757b588a95fdc4360c7d167c564"
+    },
+    "locker": {
+      "address": "0x6422E1C4F696C17BA740595C17F6355496492751",
+      "deploymentTransaction": "0xe71be7f18fa33d0ca7e017187c253acb51d2f0c1bb92ea88e3b86976f3fa7998",
+      "deploymentBlock": 33659980,
+      "runtimeCodeBytes": 5050,
+      "runtimeCodeHash": "0x50640fd8908094ba882f305abd8b80e5d28c03318b55ea2137de72dde39193b6"
+    }
+  },
+  "dependencies": {
+    "numeraire": {
+      "symbol": "USDT0",
+      "address": "0x779Ded0c9e1022225f8E0630b35a9b54bE713736",
+      "decimals": 6
+    },
+    "v3Factory": "0x88F0a512eF09175D456bc9547f914f48C013E4aA",
+    "positionManager": "0x3BdC3437405f7D801b6036532713fc1F179136a6",
+    "swapRouter02": "0x32eaf9B5d5F2CD7361c5012890C943D7de84C22a",
+    "quoterV2": "0xb070179E7032CdA868b53e6C1742F80c9e940d1A"
+  },
+  "configuration": {
+    "v3FeeTier": 10000,
+    "tickSpacing": 200,
+    "observationCardinality": 512,
+    "targetStartFdvUsd": 5000,
+    "targetGraduationFdvUsd": 50000,
+    "realizedStartFdvRaw": "4995430232",
+    "realizedGraduationFdvRaw": "49819603381",
+    "expectedTerminalProceedsRaw": "12620500222",
+    "minimumProceedsRaw": "12000000000",
+    "launchFeeRaw": "1000000",
+    "launchFeeDisplay": "1 USDT0",
+    "creatorFeeBps": 9500,
+    "hydeFeeBps": 500,
+    "maxWalletBps": 200,
+    "maxWalletWindowSeconds": 300,
+    "graduationDelaySeconds": 300,
+    "twapTickTolerance": 200
+  },
+  "verification": {
+    "verifiedAtBlock": 33660316,
+    "receiptStatuses": [1, 1],
+    "deployerNonceAfter": 6,
+    "runtimeCodeHashesMatched": 4,
+    "bindingsPassed": true,
+    "paused": false,
+    "tokenLaunchPerformed": false,
+    "deploymentCostNativeUsdt0": "0.008448451008448451"
+  }
+}

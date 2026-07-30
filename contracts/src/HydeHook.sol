@@ -326,9 +326,14 @@ contract HydeHook is IHooks, IHydeHook {
         Obs memory b = obs[id][uint16((uint256(oldest) + lo) % card)]; // beforeOrAt (older)
         Obs memory a = obs[id][uint16((uint256(oldest) + lo + 1) % card)]; // atOrAfter (newer)
         if (target == b.ts) return (true, b.cum);
-        int56 span = int56(uint56(a.ts - b.ts));
-        int56 into = int56(uint56(target - b.ts));
-        return (true, b.cum + (a.cum - b.cum) * into / span);
+        // Widen before multiplying. `a.cum - b.cum` is an int56 cumulative delta, but a long
+        // idle gap can make `(delta * secondsIntoGap)` overflow int56 even though the final
+        // interpolated cumulative is necessarily bounded by the two int56 endpoints.
+        int256 span = int256(uint256(a.ts - b.ts));
+        int256 into = int256(uint256(target - b.ts));
+        int256 interpolated =
+            int256(b.cum) + (int256(a.cum) - int256(b.cum)) * into / span;
+        return (true, int56(interpolated));
     }
 
     /* ─────────────────────── unused hooks (mined out; revert) ───────────────── */

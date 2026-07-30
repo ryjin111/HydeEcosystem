@@ -4,7 +4,7 @@ import { useAccount, usePublicClient, useWalletClient } from "wagmi";
 import { formatEther } from "viem";
 import toast from "react-hot-toast";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
-import type { DopplerPool } from "../utils/dopplerConfig";
+import { protocolVersionOf, type DopplerPool } from "../utils/dopplerConfig";
 import { EngineAwareLaunch } from "../components/EngineAwareLaunch";
 import { chainEngineCapabilities, ENGINE_META, isHydeLaunchLive } from "../utils/chainRegistry";
 import { ComingChainNotice } from "../components/ComingChainNotice";
@@ -16,12 +16,14 @@ import {
   MAINNET_HOODIE_FEE_VAULT,
   MAINNET_WETH_FEE_VAULT,
   NETWORKS,
+  ARBITRUM_MAINNET,
   ROBINHOOD_TESTNET_VAULT,
   V4_CONTRACTS_BY_CHAIN,
   type NetworkConfig,
 } from "../utils/constants";
 import { isClaimConfirmed, type ReplacedReason } from "../utils/txStatus";
 import { readFeeState, runHarvest, feeDisplayState, nextHarvestStep, type FeeState, type HarvestStep, type StepStatus } from "../utils/hoodieFees";
+import { useTrenchV5Ready } from "../hooks/useTrenchV5Ready";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 const RH_TESTNET_CHAIN_ID = 46630;
@@ -113,7 +115,8 @@ export function PoolCard({
   const opensDetailOnly = pool.launchEngine === "v3-single-sided";
   const chainLabel = CHAIN_LABELS[pool.chainId] ?? `chain ${pool.chainId}`;
   const engineMeta = ENGINE_META[pool.launchEngine];
-  const showV4Claimable = showClaimable && pool.launchEngine === "v4-hook";
+  const isV5 = protocolVersionOf(pool) === "v5-trench";
+  const showV4Claimable = showClaimable && pool.launchEngine === "v4-hook" && !isV5;
   const hasMcap = pool.marketCapUsd != null && pool.marketCapUsd > 0;
   const hasPrice = pool.priceUsd != null && pool.priceUsd > 0;
   const hasVol = pool.volumeUsd != null && parseFloat(pool.volumeUsd) > 0;
@@ -277,7 +280,13 @@ export function PoolCard({
           className="absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide"
           style={{ background: "rgba(42,212,166,0.92)", color: "#0B0D10" }}
         >
-          Live
+          {isV5
+            ? pool.curveState === "graduated"
+              ? "LP locked"
+              : pool.curveState === "graduation-signaled"
+                ? "Graduation queued"
+                : "Curve live"
+            : "Legacy"}
         </span>
       </div>
 
@@ -288,7 +297,9 @@ export function PoolCard({
           <p className="text-xs text-pcs-textDim mt-0.5">${bt.symbol}</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <span className="rounded-md border border-pcs-primary/25 bg-pcs-primary/10 px-1.5 py-0.5 font-code text-[9px] uppercase tracking-wide text-pcs-primaryBright">
-              {engineMeta.title}
+              {isV5
+                ? "V5 · Trench Curve"
+                : `Legacy · ${pool.launchEngine === "v4-hook" ? "Instant V4" : "Instant V3"}`}
             </span>
             <span className="rounded-md border border-white/10 px-1.5 py-0.5 font-code text-[9px] text-pcs-textSub">
               {engineMeta.creatorShare}% creator
@@ -423,7 +434,7 @@ export function PoolCard({
           </div>
         )}
 
-        {showClaimable && pool.launchEngine === "v3-single-sided" && network && (
+        {showClaimable && pool.launchEngine === "v3-single-sided" && network && !isV5 && (
           <div className="relative z-20">
             <StableV3FeeCollector
               network={network}
@@ -440,9 +451,9 @@ export function PoolCard({
         {/* Curve progress — real % of the launch inventory BOUGHT, on-chain. Tooltip
             flags it's a live two-way level (rises on net buys, dips on net sells) — shiro 21736. */}
         {pool.progress !== null && (
-          <div title="% of the launch curve bought so far — rises on net buys, dips on net sells (a live level, not a one-way counter)">
+          <div title={isV5 ? "Principal-only Trench Curve progress; fees and volume cannot trigger graduation." : "Legacy inventory level; this launch has no graduation event."}>
             <div className="flex justify-between text-[10px] text-pcs-textDim mb-1">
-              <span>Curve bought</span>
+              <span>{isV5 ? "Trench fill" : "Legacy inventory bought"}</span>
               <span className="tabular-nums">{pool.progress < 1 && pool.progress > 0 ? "<1" : Math.round(pool.progress)}%</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
@@ -502,6 +513,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   const { address } = useAccount();
   const engineCapabilities = chainEngineCapabilities(chainId);
   const launchLive = isHydeLaunchLive(chainId);
+  const { ready: v5Ready } = useTrenchV5Ready(chainId);
   const engineLabels = engineCapabilities.map((capability) => ENGINE_META[capability.engine]);
   const creatorShares = [...new Set(engineLabels.map((meta) => meta.creatorShare))].sort((a, b) => a - b);
   const creatorShareLabel = creatorShares.length === 0
@@ -511,7 +523,9 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       : `${creatorShares[0]}–${creatorShares[creatorShares.length - 1]}%`;
   const routeLabel = engineCapabilities.length === 1
     ? (engineCapabilities[0].engine === "v4-hook" ? "V4 hook" : "V3 single")
-    : `${engineCapabilities.length} engines`;
+    : engineCapabilities.length > 1
+      ? `${engineCapabilities.length} engines`
+      : "engine pending";
 
   // My Launches = the connected wallet's own-stack launches (creator/creatorClaimable are null on the
   // Doppler mainnet rail, so it's empty there). Sorted by claimable fees (desc) or market cap.
@@ -545,7 +559,12 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
     // Hyde launches live on Robinhood mainnet (4663) OR the testnet own-stack (46630) — allow both;
     // Stable V3 uses the same token-detail design, with an honest external-routing notice instead of
     // pretending the V4 swap widget supports it.
-    if (poolChainId !== ROBINHOOD_CHAIN_ID && poolChainId !== RH_TESTNET_ID && poolChainId !== 988) return;
+    if (
+      poolChainId !== ROBINHOOD_CHAIN_ID
+      && poolChainId !== RH_TESTNET_ID
+      && poolChainId !== 988
+      && poolChainId !== ARBITRUM_MAINNET.id
+    ) return;
     navigate(`/token/${tokenAddress}?network=${poolChainId}`);
   };
 
@@ -563,9 +582,9 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         <div className="relative z-10 max-w-2xl">
           <div className="protocol-kicker">
             <span
-              className={launchLive ? "live-ping" : "h-2 w-2 rounded-full bg-pcs-textDim"}
+              className={v5Ready ? "live-ping" : "h-2 w-2 rounded-full bg-pcs-textDim"}
             />
-            Hydeout protocol · depth {chainId.toLocaleString()} · {launchLive ? "live" : "coming"}
+            Hydeout V5 · depth {chainId.toLocaleString()} · {v5Ready ? "deployment verified" : "deployment pending"}
           </div>
           <h1 className="mt-3 font-display text-4xl font-semibold leading-[0.98] tracking-[-0.04em] text-[var(--term-text)] sm:text-5xl lg:text-6xl">
             Launch from
@@ -575,7 +594,8 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             Build quietly. Surface with impact. Shape a token, verify its route, and release it through Hydeout.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
-            <span className="hero-proof"><strong>1B</strong> single-sided supply</span>
+            <span className="hero-proof"><strong>80%</strong> Trench Curve</span>
+            <span className="hero-proof"><strong>20%</strong> graduation reserve</span>
             <span className="hero-proof"><strong>{creatorShareLabel}</strong> creator fees</span>
             <span className="hero-proof"><strong>∞</strong> locked liquidity</span>
           </div>
@@ -588,7 +608,13 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
           <img src="/logo/trademark-shark-light.png" alt="" />
           <div className="guardian-readout">
             <span>Route</span>
-            <strong>{isTestnet ? "V4 sandbox" : `${routeLabel}${launchLive ? "" : " · coming"}`}</strong>
+            <strong>
+              {isTestnet
+                ? "V4 sandbox"
+                : engineCapabilities.length === 0
+                  ? "Network connected · engine pending"
+                  : `V5 → ${routeLabel}${v5Ready ? "" : " · pending"}`}
+            </strong>
           </div>
         </div>
       </section>
@@ -611,13 +637,11 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         <p className="term-label mb-2">Hydeout protocol</p>
         <h1 className="font-display text-2xl font-semibold text-[var(--term-text)]">Launchpad</h1>
         <p className="mt-1 text-sm text-[var(--term-sub)]">
-          {isTestnet
-            ? "Live launches on Robinhood Testnet — custody-locked liquidity."
-            : !launchLive
-              ? `Uniswap V4 is available on ${engineCapabilities[0]?.name ?? "this chain"}; Hydeout's launcher contracts are awaiting deployment.`
-              : engineCapabilities[0]?.engine === "v3-single-sided"
-              ? `Single-sided launches on ${engineCapabilities[0]?.name ?? "this chain"} — liquidity permanently locked.`
-              : `Live token launches on ${engineCapabilities[0]?.name ?? "Robinhood Chain"}.`}
+          {engineCapabilities.length === 0
+            ? `${network?.name ?? `Chain ${chainId}`} is connected for wallet, RPC, and explorer context. Hydeout protocol actions stay disabled until a launch engine is deployed and verified.`
+            : v5Ready
+            ? `V5 Trench Curve is verified on ${engineCapabilities[0]?.name ?? "this chain"} · 80% live curve, 20% graduation reserve.`
+            : `V5 Trench Curve is implemented for ${engineCapabilities[0]?.name ?? "this chain"} and remains transaction-locked until its deployment manifest is verified.`}
         </p>
       </div>
 
@@ -651,6 +675,9 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
           chainName={network?.name ?? `Chain ${chainId}`}
           feature="Launch history and fee claims"
           engine={engineCapabilities[0]?.engine ?? "v4-hook"}
+          detail={engineCapabilities.length === 0
+            ? `${network?.name ?? `Chain ${chainId}`} has no verified Hydeout launcher or indexer yet, so launch history and fee claims are unavailable.`
+            : undefined}
         />
       )}
       {tab === "mine" && launchLive && (
@@ -718,7 +745,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       )}
 
       {/* Launch tab — engine-aware: live V4 form or evidence-gated Stable V3 form. */}
-      {tab === "launch" && <EngineAwareLaunch defaultChainId={chainId} onLaunched={refetch} />}
+      {tab === "launch" && <EngineAwareLaunch defaultChainId={chainId} v5Ready={v5Ready} onLaunched={refetch} />}
     </div>
   );
 }

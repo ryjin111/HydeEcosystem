@@ -23,6 +23,7 @@ import {HydeHook} from "../../src/HydeHook.sol";
 import {HydeTokenFactory} from "../../src/HydeTokenFactory.sol";
 import {IHydeHook} from "../../src/interfaces/IHydeHook.sol";
 import {IHydeVault} from "../../src/interfaces/IHydeVault.sol";
+import "./ForceCompile.sol";
 
 /// @notice Deploys the FULL Hyde own-stack against a REAL Uniswap V4 (PoolManager + PositionManager +
 ///         Permit2 from v4-periphery test utils), with the hook CREATE2-mined to the §4c permission bits.

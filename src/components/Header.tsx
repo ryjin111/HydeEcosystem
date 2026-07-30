@@ -30,7 +30,7 @@ function launchRouteComing(chainId: number): boolean {
   const hasLaunchRoute = capabilities.some(
     (capability) => capability.role === "launch" || capability.role === "launch+trade",
   );
-  return hasLaunchRoute && !isHydeLaunchLive(chainId);
+  return !hasLaunchRoute || !isHydeLaunchLive(chainId);
 }
 
 export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderProps) {
@@ -107,7 +107,11 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
           chainId: `0x${selectedNetwork.id.toString(16)}`,
           chainName: selectedNetwork.name,
           rpcUrls: [selectedNetwork.rpcUrl],
-          nativeCurrency: { name: selectedNetwork.currencySymbol, symbol: selectedNetwork.currencySymbol, decimals: 18 },
+          nativeCurrency: {
+            name: selectedNetwork.currencySymbol,
+            symbol: selectedNetwork.currencySymbol,
+            decimals: selectedNetwork.currencyDecimals ?? 18,
+          },
           blockExplorerUrls: [selectedNetwork.explorerUrl],
         }],
       });

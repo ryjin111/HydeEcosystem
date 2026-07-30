@@ -3,7 +3,7 @@ import type { NetworkConfig, TokenInfo } from "../utils/constants";
 import { isGatewayLive } from "../utils/constants";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { ComingChainNotice } from "../components/ComingChainNotice";
-import { chainV3Capability, isHydeLaunchLive } from "../utils/chainRegistry";
+import { chainEngineCapabilities, chainV3Capability, isHydeLaunchLive } from "../utils/chainRegistry";
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { useHydeLaunches } from "../hooks/useDopplerTokens";
 import { TokenDetail } from "./Token";
@@ -108,6 +108,7 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 
 export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const hasEngine = chainEngineCapabilities(network.id).length > 0;
   // Stable-specific fail-close: a single-sided V3 chain has no V4 swap (trade:null). This never matches a
   // v4-hook chain, so Robinhood's existing isGatewayLive gate is untouched (kami 24334).
   if (chainV3Capability(network.id)) {
@@ -143,7 +144,9 @@ export function SwapPage({ network, tokens, onAddCustomToken }: Props) {
               >
                 <h2 className="font-display text-lg font-semibold text-pcs-text">Exchange</h2>
                 <p className="text-sm text-pcs-textDim">
-                  {isHydeLaunchLive(network.id)
+                  {!hasEngine
+                    ? `${network.name} is connected at the network layer, but Hydeout has no verified launcher or swap engine on this chain yet.`
+                    : isHydeLaunchLive(network.id)
                     ? `In-app swap is coming to ${network.name} shortly. Hydeout launches continue trading in their locked-liquidity pools.`
                     : `Canonical Uniswap V4 is available on ${network.name}, but Hydeout's launcher and execution path are not deployed here yet.`}
                 </p>

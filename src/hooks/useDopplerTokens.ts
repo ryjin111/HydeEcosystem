@@ -14,6 +14,11 @@ import {
 import type { DopplerPool } from "../utils/dopplerConfig";
 import { v3ChainRow } from "../utils/chainRegistry";
 import { rpcTransportForNetwork, rpcUrlsForNetwork } from "../utils/rpc";
+import {
+  fetchTrenchV5Pools,
+  fetchTrenchV5Token,
+  isTrenchV5Configured,
+} from "../utils/trenchV5";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 
@@ -623,7 +628,7 @@ async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<Doppler
 
 /** Single-token read for launches outside the board page. Network-aware: mainnet reads the two live
  *  own-stack launch sources; testnet reads its own factory. Fails to null (honest not-found). */
-export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN_ID): {
+export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN_ID, enabled = true): {
   pool: DopplerPool | null;
   loading: boolean;
   error: string | null;
@@ -632,7 +637,7 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    if (!enabled || !address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
       setPool(null);
       setLoading(false);
       setError(null);
@@ -642,7 +647,7 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
     setPool(null); // drop the prior token immediately on address/chain change (kami A-blocker #3)
     setLoading(true);
     setError(null);
-    const fetcher =
+    const legacyFetcher =
       chainId === RH_TESTNET_ID
         ? fetchTestnetLaunchToken
         : chainId === ROBINHOOD_CHAIN_ID
@@ -651,7 +656,12 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
             ? fetchArbitrumLaunchToken
           : chainId === STABLE_CHAIN_ID
             ? fetchStableV3LaunchToken
-          : null;
+            : null;
+    const fetcher = isTrenchV5Configured(chainId)
+      ? async (token: `0x${string}`) => (
+          await fetchTrenchV5Token(chainId, token).catch(() => null)
+        ) ?? (legacyFetcher ? legacyFetcher(token) : null)
+      : legacyFetcher;
     if (!fetcher) {
       setLoading(false);
       return () => {
@@ -668,7 +678,7 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [address, chainId]);
+  }, [address, chainId, enabled]);
   return { pool, loading, error };
 }
 
@@ -1151,7 +1161,7 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
 
     // Only chains with a live Hyde deployment have launches. Unknown chains return empty instead of
     // falling back to Robinhood data (which would leak launches across chain contexts).
-    const fetcher =
+    const legacyFetcher =
       chainId === RH_TESTNET_ID
         ? fetchHydeFactoryPools
         : chainId === ROBINHOOD_CHAIN_ID
@@ -1161,6 +1171,26 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
           : chainId === STABLE_CHAIN_ID
             ? () => fetchStableV3Pools(tick > 0)
           : null;
+    const fetcher = legacyFetcher || isTrenchV5Configured(chainId)
+      ? async () => {
+          const [legacyResult, v5Result] = await Promise.allSettled([
+            legacyFetcher ? legacyFetcher() : Promise.resolve([]),
+            isTrenchV5Configured(chainId) ? fetchTrenchV5Pools(chainId) : Promise.resolve([]),
+          ]);
+          const legacy = legacyResult.status === "fulfilled" ? legacyResult.value : [];
+          const v5 = v5Result.status === "fulfilled" ? v5Result.value : [];
+          if (legacyResult.status === "rejected" && v5Result.status === "rejected") {
+            throw v5Result.reason ?? legacyResult.reason;
+          }
+          const seen = new Set<string>();
+          return [...v5, ...legacy].filter((pool) => {
+            const key = pool.address.toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        }
+      : null;
     if (!fetcher) {
       setPools([]);
       setLoading(false);
