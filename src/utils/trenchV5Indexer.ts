@@ -10,6 +10,7 @@ type IndexedLaunch = {
   token: string;
   creator: string;
   poolAddress: string | null;
+  poolId: string | null;
   name: string;
   symbol: string;
   decimals: number;
@@ -54,6 +55,7 @@ function parseLaunch(
     || !row.creator || !ADDRESS.test(row.creator)
     || !row.numeraire || !ADDRESS.test(row.numeraire)
     || (row.poolAddress != null && !ADDRESS.test(row.poolAddress))
+    || (row.poolId != null && !/^0x[0-9a-fA-F]{64}$/.test(row.poolId))
     || typeof row.name !== "string"
     || typeof row.symbol !== "string"
     || !Number.isInteger(row.decimals)
@@ -82,6 +84,7 @@ function toPool(row: IndexedLaunch): DopplerPool {
     address: row.token,
     chainId: row.chainId,
     poolAddress: row.poolAddress,
+    poolId: row.poolId,
     baseToken: {
       address: row.token,
       name: row.name,

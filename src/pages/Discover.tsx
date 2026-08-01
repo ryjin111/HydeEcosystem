@@ -74,7 +74,7 @@ function ageOf(iso: string): string {
 }
 
 function compactUsd(value: number | null): string {
-  if (value == null || !Number.isFinite(value) || value < 0) return "Not indexed";
+  if (value == null || !Number.isFinite(value) || value < 0) return "Market unavailable";
   if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(value >= 10_000_000_000 ? 1 : 2)}B`;
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(value >= 10_000_000 ? 1 : 2)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}K`;
@@ -82,7 +82,7 @@ function compactUsd(value: number | null): string {
 }
 
 function priceUsd(value: number | null): string {
-  if (value == null || !Number.isFinite(value) || value <= 0) return "Not indexed";
+  if (value == null || !Number.isFinite(value) || value <= 0) return "Market unavailable";
   if (value >= 1) return `$${value.toLocaleString("en-US", { maximumFractionDigits: 4 })}`;
   return `$${value.toLocaleString("en-US", { maximumSignificantDigits: 5 })}`;
 }

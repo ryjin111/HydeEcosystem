@@ -274,7 +274,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   );
   const fetchedPool = selectedLookup.pool;
   const pool = boardPool ?? fetchedPool;
-  const geckoPoolAddress = pool?.poolAddress ?? pair;
+  const geckoPoolAddress = pool?.poolAddress ?? pool?.poolId ?? pair;
   const gecko = useGeckoPoolActivity(network.id, geckoPoolAddress, address, chartRange);
   const wrongChainPool = pool || selectedLookup.loading
     ? null

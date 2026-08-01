@@ -23,6 +23,7 @@ import { v3ChainRow, type LaunchEngine } from "./chainRegistry";
 import type { DopplerPool, TrenchCurveState } from "./dopplerConfig";
 import { rpcTransportForNetwork, rpcUrlsForNetwork } from "./rpc";
 import { fetchIndexedTrenchV5Pools, fetchIndexedTrenchV5Token } from "./trenchV5Indexer";
+import { fetchGeckoTerminalMarkets } from "./geckoTerminalMarkets";
 
 type V5EnvManifest = {
   factory?: string;
@@ -427,6 +428,7 @@ type TrenchLaunchLog = {
     token?: Address;
     creator?: Address;
     pool?: Address;
+    poolId?: Hex;
   };
   blockNumber: bigint;
 };
@@ -483,7 +485,7 @@ async function enrichLaunchLog(
   timestamp?: number,
 ): Promise<DopplerPool | null> {
   const { manifest } = runtime;
-  const { token, creator, pool } = log.args;
+  const { token, creator, pool, poolId } = log.args;
   if (!token || !creator) return null;
   const [name, symbol, progress, claimable] = await Promise.all([
     runtime.client.readContract({ address: token, abi: erc20MetaAbi, functionName: "name" }).catch(() => null),
@@ -515,6 +517,7 @@ async function enrichLaunchLog(
     address: token,
     chainId: manifest.chainId,
     poolAddress: v3 ? pool : null,
+    poolId: v3 ? null : poolId ?? null,
     baseToken: { address: token, name, symbol, decimals: 18 },
     quoteToken: v3
       ? {
@@ -555,9 +558,9 @@ function dexChainId(chainId: number): string | null {
 }
 
 /**
- * DEXScreener is enrichment only: the launch identity, engine, state and progress always come from
- * verified contracts. A missing/stale index response leaves market fields null rather than inventing
- * a price. Pair candidates must match chain, Uniswap, launch token, and the V5 factory numeraire.
+ * Market APIs are enrichment only: identity, engine, state and progress always come from verified
+ * contracts. GeckoTerminal is primary and is accepted only for the canonical pool; DEXScreener is
+ * the fail-neutral fallback and must match chain, Uniswap, launch token, and factory numeraire.
  */
 async function fetchTrenchMarkets(
   chainId: number,
@@ -565,9 +568,13 @@ async function fetchTrenchMarkets(
   pools: DopplerPool[],
 ): Promise<Map<string, TrenchMarket>> {
   const chain = dexChainId(chainId);
-  const markets = new Map<string, TrenchMarket>();
+  const markets = new Map<string, TrenchMarket>(await fetchGeckoTerminalMarkets(pools));
   if (!chain || pools.length === 0) return markets;
-  const byToken = new Map(pools.map((pool) => [pool.address.toLowerCase(), pool]));
+  const byToken = new Map(
+    pools
+      .filter((pool) => !markets.has(pool.address.toLowerCase()))
+      .map((pool) => [pool.address.toLowerCase(), pool]),
+  );
   const addresses = [...byToken.keys()];
   for (let offset = 0; offset < addresses.length; offset += 30) {
     const batch = addresses.slice(offset, offset + 30);

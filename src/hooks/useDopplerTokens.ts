@@ -20,6 +20,7 @@ import {
   isTrenchV5Configured,
 } from "../utils/trenchV5";
 import { fetchIndexedLegacyPools, fetchIndexedLegacyToken } from "../utils/trenchV5Indexer";
+import { fetchGeckoTerminalMarkets } from "../utils/geckoTerminalMarkets";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 
@@ -320,6 +321,23 @@ async function fetchDexData(
   return out;
 }
 
+async function fetchLaunchMarketData(
+  pools: DopplerPool[],
+  expectedChain: DexChain = "robinhood",
+  canonicalPairByToken?: ReadonlyMap<string, string>,
+): Promise<Map<string, DexData>> {
+  const gecko = new Map<string, DexData>(await fetchGeckoTerminalMarkets(pools));
+  const missing = pools.filter((pool) => !gecko.has(pool.address.toLowerCase()));
+  if (missing.length === 0) return gecko;
+  const fallback = await fetchDexData(
+    missing.map((pool) => pool.address),
+    expectedChain,
+    canonicalPairByToken,
+  );
+  for (const [token, market] of fallback) gecko.set(token, market);
+  return gecko;
+}
+
 
 /** Tokens launched via the Hydeout launchpad on Robinhood Chain, as TokenInfo[].
  *  No swap-routing metadata attached here; the Token page gates executable swaps
@@ -462,7 +480,7 @@ async function loadStableV3Pools(): Promise<DopplerPool[]> {
         .filter((pool) => !!pool.poolAddress)
         .map((pool) => [pool.address.toLowerCase(), pool.poolAddress!] as const),
     );
-    const dex = await fetchDexData(indexed.map((pool) => pool.address), "stable", canonicalPairs);
+    const dex = await fetchLaunchMarketData(indexed, "stable", canonicalPairs);
     return indexed.map((pool) => {
       const data = dex.get(pool.address.toLowerCase());
       return data ? {
@@ -537,7 +555,7 @@ async function loadStableV3Pools(): Promise<DopplerPool[]> {
       .filter((pool) => !!pool.poolAddress)
       .map((pool) => [pool.address.toLowerCase(), pool.poolAddress!] as const),
   );
-  const dex = await fetchDexData(deduped.map((pool) => pool.address), "stable", canonicalPairs);
+  const dex = await fetchLaunchMarketData(deduped, "stable", canonicalPairs);
   return deduped.map((pool) => {
     const data = dex.get(pool.address.toLowerCase());
     if (!data) return pool;
@@ -636,8 +654,8 @@ async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<Doppler
     creator,
     creatorClaimable: null,
   };
-  const data = (await fetchDexData(
-    [address],
+  const data = (await fetchLaunchMarketData(
+    [pool],
     "stable",
     new Map([[address.toLowerCase(), poolAddress]]),
   )).get(address.toLowerCase());
@@ -730,7 +748,10 @@ const rhTestnetChain = defineChain({
 });
 const testnetClient = createPublicClient({ chain: rhTestnetChain, transport: rpcTransportForNetwork(ROBINHOOD_TESTNET) });
 
-type LaunchLog = { args: { token: `0x${string}`; creator: `0x${string}` }; blockNumber: bigint | null };
+type LaunchLog = {
+  args: { token: `0x${string}`; creator: `0x${string}`; poolId?: `0x${string}` };
+  blockNumber: bigint | null;
+};
 type OwnStackSource = {
   chainId: number;
   network: typeof ROBINHOOD_TESTNET | typeof ARBITRUM_MAINNET;
@@ -860,6 +881,7 @@ async function fetchOwnStackFactoryPools(source: OwnStackSource): Promise<Dopple
     return {
       address: token,
       chainId: source.chainId,
+      poolId: log.args.poolId ?? null,
       baseToken: { address: token, name, symbol, decimals: 18 },
       quoteToken: { address: source.network.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
       launchEngine: "v4-hook",
@@ -955,10 +977,14 @@ async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerP
   const event = (isHoodiePair ? hoodieCreated : wethCreated)[0];
   const meta = await fetchExplorerToken(address);
   const timestamp = event?.timeStamp ? explorerInteger(event.timeStamp) : 0;
+  const poolId = isHoodiePair
+    ? (/^0x[0-9a-fA-F]{64}/.test(event?.data ?? "") ? event.data.slice(0, 66) : null)
+    : (event?.topics[3] && /^0x[0-9a-fA-F]{64}$/.test(event.topics[3]) ? event.topics[3] : null);
 
   return {
     address,
     chainId: ROBINHOOD_CHAIN_ID,
+    poolId,
     baseToken: {
       address,
       name: meta.name!,
@@ -994,6 +1020,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
   type ExplorerLaunch = {
     token: `0x${string}`;
     creator: `0x${string}` | null;
+    poolId: string | null;
     block: number;
     timestamp: number;
     isHoodiePair: boolean;
@@ -1002,6 +1029,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
     ...wethLogs.map((log) => ({
       token: topicAddress(log.topics[1]),
       creator: topicAddress(log.topics[2]),
+      poolId: log.topics[3] && /^0x[0-9a-fA-F]{64}$/.test(log.topics[3]) ? log.topics[3] : null,
       block: explorerInteger(log.blockNumber),
       timestamp: explorerInteger(log.timeStamp),
       isHoodiePair: false,
@@ -1009,6 +1037,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
     ...hoodieLogs.map((log) => ({
       token: topicAddress(log.topics[3]),
       creator: topicAddress(log.topics[2]),
+      poolId: /^0x[0-9a-fA-F]{64}/.test(log.data) ? log.data.slice(0, 66) : null,
       block: explorerInteger(log.blockNumber),
       timestamp: explorerInteger(log.timeStamp),
       isHoodiePair: true,
@@ -1028,6 +1057,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
       enriched.push({
         address: row.token,
         chainId: ROBINHOOD_CHAIN_ID,
+        poolId: row.poolId,
         baseToken: {
           address: row.token,
           name: meta.name!,
@@ -1060,7 +1090,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
     seen.add(key);
     return true;
   });
-  const dex = await fetchDexData(deduped.map((p) => p.address));
+  const dex = await fetchLaunchMarketData(deduped);
   return deduped.map((p) => {
     const d = dex.get(p.address.toLowerCase());
     if (!d) return p;
@@ -1113,7 +1143,7 @@ function isRobinhoodIndexPool(value: unknown): value is DopplerPool {
 async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
   const indexed = await fetchIndexedLegacyPools(ROBINHOOD_CHAIN_ID);
   if (indexed) {
-    const dex = await fetchDexData(indexed.map((pool) => pool.address));
+    const dex = await fetchLaunchMarketData(indexed);
     return indexed.map((pool) => {
       const data = dex.get(pool.address.toLowerCase());
       return data ? {
@@ -1132,7 +1162,7 @@ async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
     if (!Array.isArray(payload.pools)) throw new Error("launch index payload is malformed");
     const pools = payload.pools.filter(isRobinhoodIndexPool);
     if (pools.length !== payload.pools.length) throw new Error("launch index contains an invalid pool");
-    const dex = await fetchDexData(pools.map((pool) => pool.address));
+    const dex = await fetchLaunchMarketData(pools);
     return pools.map((pool) => {
       const data = dex.get(pool.address.toLowerCase());
       if (!data) return pool;

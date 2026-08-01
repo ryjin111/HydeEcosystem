@@ -97,8 +97,8 @@ const CHAIN_LABELS: Record<number, string> = {
 /** Bigger launch card (clint 21605): the token NAME + $TICKER read in full (no more "A…" crush),
  *  with MCAP shown large. The per-card "ROBINHOOD CHAIN" pill is dropped — every launch is on the
  *  same chain (stated in the page/footer), and repeating it was what squeezed the name column.
- *  Metrics are honesty-gated: MCAP/Liquidity render ONLY when the DEXScreener pair is real
- *  and indexed; otherwise cards show the on-chain curve level when available — never a fake $. */
+ *  Metrics are honesty-gated: MCAP/Liquidity render only when a canonical GeckoTerminal
+ *  pool (or validated DEXScreener fallback) matches the launch — never a fake $. */
 export function PoolCard({
   pool,
   network,
@@ -326,20 +326,20 @@ export function PoolCard({
           </span>
         </button>
 
-        {/* Market cap + price — real values only; honest "Not indexed" when unpriced, never $0.00 (kami). */}
+        {/* Market cap + price — real values only; report unavailable data rather than a fabricated $0.00. */}
         {hasMcap || hasPrice ? (
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
               <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap</p>
               <p className="text-sm font-semibold text-pcs-text tabular-nums truncate">
-                {hasMcap ? fmtUsd(pool.marketCapUsd as number) : <span className="text-pcs-textDim font-medium">Not indexed</span>}
+                {hasMcap ? fmtUsd(pool.marketCapUsd as number) : <span className="text-pcs-textDim font-medium">Market unavailable</span>}
                 {untraded && hasMcap && <span className="ml-1 text-[9px] font-medium text-pcs-textDim uppercase">new</span>}
               </p>
             </div>
             <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
               <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Price</p>
               <p className="text-sm font-semibold text-pcs-text tabular-nums truncate">
-                {hasPrice ? fmtUsd(pool.priceUsd as number) : <span className="text-pcs-textDim font-medium">Not indexed</span>}
+                {hasPrice ? fmtUsd(pool.priceUsd as number) : <span className="text-pcs-textDim font-medium">Market unavailable</span>}
               </p>
             </div>
           </div>
@@ -348,7 +348,7 @@ export function PoolCard({
           // row — never a fabricated $0.00 (kami acceptance).
           <div className="rounded-xl px-3 py-2" style={{ background: "rgba(255,255,255,0.03)" }}>
             <p className="text-[10px] uppercase tracking-wide text-pcs-textDim mb-0.5">Market cap &middot; price</p>
-            <p className="text-sm font-medium text-pcs-textDim">New launch &middot; not yet indexed</p>
+            <p className="text-sm font-medium text-pcs-textDim">Launch indexed &middot; market data unavailable</p>
           </div>
         )}
 
