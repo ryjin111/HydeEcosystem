@@ -4,7 +4,7 @@ import { and, count, desc, eq } from "ponder";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Address } from "viem";
-import { trenchGraduatorAbi, trenchV4LockerAbi } from "../../abis/trenchV5";
+import { erc20MetadataAbi, trenchGraduatorAbi, trenchV4LockerAbi } from "../../abis/trenchV5";
 import { INDEXER_CHAINS, indexerChainById } from "../chains";
 
 const app = new Hono();
@@ -37,15 +37,46 @@ function asProgress(value: unknown): LiveProgress | null {
   return value as LiveProgress;
 }
 
-async function enrich(rows: Array<typeof launch.$inferSelect>, chainId: number) {
+type EnrichedLaunch = {
+  row: typeof launch.$inferSelect;
+  progress: LiveProgress | null;
+  tokenFees: bigint | null;
+  quoteFees: bigint | null;
+  metadata: { name: string; symbol: string; decimals: number } | null;
+};
+
+function unenriched(row: typeof launch.$inferSelect): EnrichedLaunch {
+  return { row, progress: null, tokenFees: null, quoteFees: null, metadata: null };
+}
+
+async function enrich(rows: Array<typeof launch.$inferSelect>, chainId: number): Promise<EnrichedLaunch[]> {
   const chain = indexerChainById(chainId);
-  if (!chain || rows.length === 0) return rows.map((row) => ({ row, progress: null, tokenFees: null, quoteFees: null }));
-  if (rows.every((row) => row.protocolVersion === "legacy-instant")) {
-    return rows.map((row) => ({ row, progress: null, tokenFees: null, quoteFees: null }));
-  }
+  if (!chain || rows.length === 0) return rows.map(unenriched);
   const client = (publicClients as Record<string, any>)[chain.key];
-  if (!client) return rows.map((row) => ({ row, progress: null, tokenFees: null, quoteFees: null }));
+  if (!client) return rows.map(unenriched);
   try {
+    if (rows.every((row) => row.protocolVersion === "legacy-instant")) {
+      const results = await client.multicall({
+        allowFailure: true,
+        contracts: rows.flatMap((row) => [
+          { address: row.token, abi: erc20MetadataAbi, functionName: "name" },
+          { address: row.token, abi: erc20MetadataAbi, functionName: "symbol" },
+          { address: row.token, abi: erc20MetadataAbi, functionName: "decimals" },
+        ]),
+      });
+      return rows.map((row, index) => {
+        const offset = index * 3;
+        const name = results[offset];
+        const symbol = results[offset + 1];
+        const decimals = results[offset + 2];
+        return {
+          ...unenriched(row),
+          metadata: name?.status === "success" && symbol?.status === "success" && decimals?.status === "success"
+            ? { name: name.result as string, symbol: symbol.result as string, decimals: Number(decimals.result) }
+            : null,
+        };
+      });
+    }
     const results = await client.multicall({
       allowFailure: true,
       contracts: rows.flatMap((row) => [
@@ -64,10 +95,11 @@ async function enrich(rows: Array<typeof launch.$inferSelect>, chainId: number) 
         progress: progressResult?.status === "success" ? asProgress(progressResult.result) : null,
         tokenFees: tokenResult?.status === "success" ? tokenResult.result as bigint : null,
         quoteFees: quoteResult?.status === "success" ? quoteResult.result as bigint : null,
+        metadata: null,
       };
     });
   } catch {
-    return rows.map((row) => ({ row, progress: null, tokenFees: null, quoteFees: null }));
+    return rows.map(unenriched);
   }
 }
 
@@ -79,9 +111,9 @@ function serialize(item: Awaited<ReturnType<typeof enrich>>[number]) {
     creator: row.creator,
     poolAddress: row.poolAddress,
     poolId: row.poolId,
-    name: row.name,
-    symbol: row.symbol,
-    decimals: row.decimals,
+    name: item.metadata?.name ?? row.name,
+    symbol: item.metadata?.symbol ?? row.symbol,
+    decimals: item.metadata?.decimals ?? row.decimals,
     engine: row.engine,
     numeraire: row.numeraire,
     quoteSymbol: row.quoteSymbol,
