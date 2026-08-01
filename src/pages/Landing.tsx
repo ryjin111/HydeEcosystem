@@ -8,6 +8,7 @@ import { chainEngineCapabilities, isHydeLaunchLive } from "../utils/chainRegistr
 import { NETWORKS } from "../utils/constants";
 import { CoinCard } from "./Discover";
 import { useTrenchV5Ready } from "../hooks/useTrenchV5Ready";
+import { isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 const MARKET_ROW_COUNT = 6;
@@ -88,6 +89,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   const hasEngine = capabilities.length > 0;
   const launchLive = isHydeLaunchLive(chainId);
   const { ready: v5Ready } = useTrenchV5Ready(chainId);
+  const publicMainnetPending = !isTrenchV5PubliclyAvailable(chainId);
   const isStableV3 = capabilities.length > 0 && capabilities.every((item) => item.engine === "v3-single-sided");
   const pools = useMemo(
     () => chainScope === "all"
@@ -177,7 +179,13 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
       <section className="surface-hero term-panel mb-6 grid overflow-hidden rounded-lg lg:grid-cols-[1.08fr,0.92fr]">
         <div className="relative z-[1] px-5 py-6 sm:px-7 sm:py-8">
           <p className="term-label mb-3">
-            {v5Ready ? "V5 Trench Curve · live" : launchLive ? "Legacy markets live · V5 pending" : "Launch rail coming soon"}
+            {publicMainnetPending
+              ? `${chainName} · coming soon`
+              : v5Ready
+                ? "V5 Trench Curve · live"
+                : launchLive
+                  ? "Legacy markets live · V5 pending"
+                  : "Launch rail coming soon"}
           </p>
           <h1 className="font-display text-[34px] font-bold leading-[1.03] text-[var(--term-text)] sm:text-[44px]">
             Launch a token.
@@ -187,7 +195,12 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
             </span>
           </h1>
           <p className="mt-4 max-w-[610px] text-sm leading-6 text-[var(--term-sub)]">
-            {v5Ready ? (
+            {publicMainnetPending ? (
+              <>
+                <strong className="font-semibold text-[var(--term-text)]">{chainName} public mainnet is not live yet.</strong>{" "}
+                The network remains visible for preview, but launches, swaps, claims, and liquidity actions are disabled.
+              </>
+            ) : v5Ready ? (
               <>
                 <strong className="font-semibold text-[var(--term-text)]">V5 Trench Curve is verified on {chainName}.</strong>{" "}
                 80% enters a live pool-native curve and 20% is reserved for graduation into permanently
@@ -224,7 +237,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               </NavLink>
             ) : (
               <button type="button" className="btn-terminal px-5 py-2.5" disabled>
-                V5 deployment pending
+                {publicMainnetPending ? "Coming soon" : "V5 deployment pending"}
               </button>
             )}
             <a href="#live-market" className="btn-ghost-term px-5 py-2.5">

@@ -24,6 +24,7 @@ import {
 import { isClaimConfirmed, type ReplacedReason } from "../utils/txStatus";
 import { readFeeState, runHarvest, feeDisplayState, nextHarvestStep, type FeeState, type HarvestStep, type StepStatus } from "../utils/hoodieFees";
 import { useTrenchV5Ready } from "../hooks/useTrenchV5Ready";
+import { isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 const RH_TESTNET_CHAIN_ID = 46630;
@@ -514,6 +515,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
   const engineCapabilities = chainEngineCapabilities(chainId);
   const launchLive = isHydeLaunchLive(chainId);
   const { ready: v5Ready } = useTrenchV5Ready(chainId);
+  const publicMainnetPending = !isTrenchV5PubliclyAvailable(chainId);
   const engineLabels = engineCapabilities.map((capability) => ENGINE_META[capability.engine]);
   const creatorShares = [...new Set(engineLabels.map((meta) => meta.creatorShare))].sort((a, b) => a - b);
   const creatorShareLabel = creatorShares.length === 0
@@ -584,7 +586,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             <span
               className={v5Ready ? "live-ping" : "h-2 w-2 rounded-full bg-pcs-textDim"}
             />
-            Hydeout V5 · depth {chainId.toLocaleString()} · {v5Ready ? "deployment verified" : "deployment pending"}
+            Hydeout V5 · depth {chainId.toLocaleString()} · {publicMainnetPending ? "coming soon" : v5Ready ? "deployment verified" : "deployment pending"}
           </div>
           <h1 className="mt-3 font-display text-4xl font-semibold leading-[0.98] tracking-[-0.04em] text-[var(--term-text)] sm:text-5xl lg:text-6xl">
             Launch from
@@ -609,7 +611,9 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
           <div className="guardian-readout">
             <span>Route</span>
             <strong>
-              {isTestnet
+              {publicMainnetPending
+                ? "Public mainnet pending · Coming soon"
+                : isTestnet
                 ? "V4 sandbox"
                 : engineCapabilities.length === 0
                   ? "Network connected · engine pending"
@@ -637,7 +641,9 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
         <p className="term-label mb-2">Hydeout protocol</p>
         <h1 className="font-display text-2xl font-semibold text-[var(--term-text)]">Launchpad</h1>
         <p className="mt-1 text-sm text-[var(--term-sub)]">
-          {engineCapabilities.length === 0
+          {publicMainnetPending
+            ? `${network?.name ?? `Chain ${chainId}`} public mainnet is not live yet. Hydeout protocol actions remain disabled until launch readiness is re-verified.`
+            : engineCapabilities.length === 0
             ? `${network?.name ?? `Chain ${chainId}`} is connected for wallet, RPC, and explorer context. Hydeout protocol actions stay disabled until a launch engine is deployed and verified.`
             : v5Ready
             ? `V5 Trench Curve is verified on ${engineCapabilities[0]?.name ?? "this chain"} · 80% live curve, 20% graduation reserve.`

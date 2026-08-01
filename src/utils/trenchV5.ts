@@ -51,6 +51,14 @@ const ZERO = /^0x0{40}$/i;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const HASH = /^0x[0-9a-fA-F]{64}$/;
 
+// Arc's public mainnet is not live yet. Keep its mined preview manifest for auditability, but never
+// expose launch transactions until the chain is explicitly removed from this release gate.
+const PUBLICLY_DISABLED_V5_CHAINS = new Set<number>([ARC_MAINNET.id]);
+
+export function isTrenchV5PubliclyAvailable(chainId: number): boolean {
+  return !PUBLICLY_DISABLED_V5_CHAINS.has(chainId);
+}
+
 function envManifest(chainId: number): V5EnvManifest {
   if (chainId === ARC_MAINNET.id) {
     return {
@@ -96,6 +104,7 @@ function envManifest(chainId: number): V5EnvManifest {
 }
 
 function parseManifest(chainId: number): TrenchV5Manifest | null {
+  if (!isTrenchV5PubliclyAvailable(chainId)) return null;
   const raw = envManifest(chainId);
   const network = NETWORKS.find((item) => item.id === chainId);
   const engine: LaunchEngine = v3ChainRow(chainId) ? "v3-single-sided" : "v4-hook";

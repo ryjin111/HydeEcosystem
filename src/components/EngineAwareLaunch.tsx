@@ -10,6 +10,7 @@ import { chainEngineCapabilities, ENGINE_META, type LaunchEngine } from "../util
 import { NETWORKS } from "../utils/constants";
 import { Button, SectionLabel } from "./ui/kit";
 import { useTrenchV5Ready } from "../hooks/useTrenchV5Ready";
+import { isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -26,6 +27,7 @@ function ComingLaunchBody({
 }) {
   const meta = ENGINE_META[engine];
   const isV4 = engine === "v4-hook";
+  const publicMainnetPending = !isTrenchV5PubliclyAvailable(chainId);
   return (
     <div className="term-panel mx-auto w-full max-w-[680px] rounded-lg p-6 sm:p-8">
       <div className="mb-1 flex items-center justify-between">
@@ -49,14 +51,19 @@ function ComingLaunchBody({
         <div className="flex justify-between text-pcs-textDim"><span>Protocol rail</span><span className="text-pcs-text">{isV4 ? "Trench Curve → locked V4" : "Trench Curve → locked V3"}</span></div>
         <div className="flex justify-between text-pcs-textDim"><span>Curve / reserve</span><span className="text-pcs-text">80% / 20%</span></div>
         <div className="flex justify-between text-pcs-textDim"><span>Fee split</span><span className="text-pcs-text">{meta.feeSplitLabel}</span></div>
-        <div className="flex justify-between text-pcs-textDim"><span>Hydeout contracts</span><span className="font-mono text-pcs-text">Awaiting deploy</span></div>
+        <div className="flex justify-between text-pcs-textDim">
+          <span>Availability</span>
+          <span className="font-mono text-pcs-text">{publicMainnetPending ? "Public mainnet pending" : "Awaiting verification"}</span>
+        </div>
       </div>
 
       <Button variant="primary" size="lg" className="mt-5 w-full" disabled>
         Launch on {chainName} — Coming soon
       </Button>
       <p className="mt-3 text-center text-[11px] leading-5 text-pcs-textDim">
-        {isV4
+        {publicMainnetPending
+          ? `${chainName} launches are disabled until its public mainnet is live and Hydeout re-verifies the complete deployment.`
+          : isV4
           ? "The V4 rail is implemented. Launches open only after the V5 factory, graduator, and permanent locker are deployed and runtime-hash verified."
           : "The V3 rail is implemented. Launches open only after the chain-specific V5 factory, graduator, and permanent locker are deployed and runtime-hash verified."}
       </p>
