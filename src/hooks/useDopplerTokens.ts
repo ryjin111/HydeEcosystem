@@ -1098,7 +1098,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
   });
 }
 
-const MAINNET_LAUNCH_CACHE_KEY = "hyde_mainnet_launches_v3";
+const MAINNET_LAUNCH_CACHE_KEY = "hyde_mainnet_launches_v4";
 const MAINNET_LAUNCH_CACHE_TTL = 5 * 60 * 1000;
 const MAINNET_LAUNCH_CACHE_MAX_STALE = 24 * 60 * 60 * 1000;
 let mainnetLaunchMemoryCache: { at: number; pools: DopplerPool[] } | null = null;
