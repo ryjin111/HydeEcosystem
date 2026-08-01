@@ -385,22 +385,9 @@ export function PoolCard({
               </span>
             </div>
 
-            {!feeLoading && feeDisp === "claim" && (
-              <button
-                type="button"
-                data-testid="claim-fees"
-                onClick={(e) => { e.stopPropagation(); void doClaim(); }}
-                disabled={claiming || !walletClient}
-                className="relative z-20 w-full rounded-lg py-1.5 text-xs font-bold text-pcs-bg transition disabled:opacity-50"
-                style={{ background: "#34C77B" }}
-              >
-                {claiming ? "Claiming…" : `Claim ${claimUnit}`}
-              </button>
-            )}
-
-            {!feeLoading && (feeDisp === "awaiting" || feeDisp === "lt-pending") && (
+            {!feeLoading && (feeDisp === "claim" || feeDisp === "awaiting" || feeDisp === "lt-pending") && (
               <div className="space-y-1.5">
-                {(harvesting || harvestFailed) && (
+                {isHoodieFeePair && (harvesting || harvestFailed) && (
                   <div className="flex items-center justify-center gap-1.5 text-[10px] font-medium" data-testid="harvest-steps">
                     {(["collect", "settle", "claim"] as HarvestStep[]).map((st, i) => (
                       <span key={st} className="flex items-center gap-1">
@@ -410,24 +397,27 @@ export function PoolCard({
                     ))}
                   </div>
                 )}
-                {!harvesting && (
+                {!harvesting && !claiming && (
                   <button
                     type="button"
-                    data-testid="collect-claim"
-                    onClick={(e) => { e.stopPropagation(); void startHarvest(); }}
+                    data-testid={isHoodieFeePair ? "collect-claim" : "claim-fees"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void (isHoodieFeePair ? startHarvest() : doClaim());
+                    }}
                     disabled={!walletClient}
                     className="relative z-20 w-full rounded-lg py-1.5 text-xs font-bold text-pcs-bg transition disabled:opacity-50"
                     style={{ background: "#34C77B" }}
                   >
-                    {harvestFailed
-                      ? resumeLabel
-                      : feeDisp === "lt-pending"
-                        ? "Settle & Claim · one confirmation"
-                        : "Collect & Claim · one confirmation"}
+                    {isHoodieFeePair
+                      ? harvestFailed ? resumeLabel : "Collect creator fees · one confirmation"
+                      : `Claim ${claimUnit}`}
                   </button>
                 )}
-                {harvesting && (
-                  <p className="text-center text-[10px] text-pcs-textDim">Confirm the complete batch once in your wallet…</p>
+                {(harvesting || claiming) && (
+                  <p className="text-center text-[10px] text-pcs-textDim">
+                    {isHoodieFeePair ? "Confirm the complete batch once in your wallet…" : "Confirm the fee claim in your wallet…"}
+                  </p>
                 )}
               </div>
             )}
