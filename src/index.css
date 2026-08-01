@@ -51,7 +51,7 @@ body {
 .btn-terminal:hover:not(:disabled) { background: var(--term-teal-bright); }
 .btn-terminal:active:not(:disabled) { filter: brightness(0.94); }
 
-/* Ghost / secondary — quiet outline on near-black (Browse market, tabs). */
+/* Ghost / secondary — quiet outline on near-black surfaces and tabs. */
 .btn-ghost-term {
   @apply rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40;
   border: 1px solid var(--term-border);

@@ -240,9 +240,6 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
                 {publicMainnetPending ? "Coming soon" : "V5 deployment pending"}
               </button>
             )}
-            <a href="#live-market" className="btn-ghost-term px-5 py-2.5">
-              Browse market
-            </a>
           </div>
         </div>
 
