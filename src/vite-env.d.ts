@@ -11,6 +11,8 @@ interface ImportMetaEnv {
   readonly VITE_STABLE_MAINNET_RPC_URL?: string;
   readonly VITE_ARBITRUM_MAINNET_RPC_URL?: string;
   readonly VITE_ARC_MAINNET_RPC_URL?: string;
+  /** Optional Ponder API. Discovery prefers it and safely falls back to direct factory-log scans. */
+  readonly VITE_V5_INDEXER_URL?: string;
   /** V5 is fail-closed: every runtime address/hash field is required before the UI reads or writes it. */
   readonly VITE_TRENCH_V5_ARC_FACTORY?: string;
   readonly VITE_TRENCH_V5_ARC_FACTORY_CODE_HASH?: string;

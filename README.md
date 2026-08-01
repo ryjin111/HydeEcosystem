@@ -7,6 +7,7 @@ Hyde lets anyone launch an ERC-20 whose entire supply is seeded into permanently
 The protocol contracts, the launchpad frontend, and the security audit in this repository were designed, built, and adversarially reviewed by an autonomous team of AI agents (see [AI-Agent Audit](#ai-agent-audit)).
 
 - **Frontend:** live on Vercel (Vite + React + wagmi/viem).
+- **Indexer:** Ponder + PostgreSQL discovery API for Stable, Arbitrum, and Robinhood, with automatic frontend RPC fallback.
 - **Robinhood Chain mainnet (4663):** V4 launch, in-app swap, and creator-fee settlement are live.
 - **Stable mainnet (988):** V3 single-sided launch, in-app swap, permanently locked LP, and direct 95/5 fee collection are live.
 - **Security status:** internally reviewed and covered by deterministic/fork/live evidence, but **not externally audited**.
@@ -44,7 +45,7 @@ The repository contains the V4 own-stack contracts plus the Stable V3 reach-line
 
 ### Launchpad frontend (`src/`) — Vite + React
 - **Launchpad** — permissionless, engine-aware launch forms for live Robinhood V4 and Stable V3 mainnets.
-- **Discover / Launches / Stats** — on-chain aggregates and trending, read straight from factory events.
+- **Discover / Launches / Stats** — indexed on-chain aggregates and trending, with direct factory-event RPC fallback.
 - **Swap** — V4 own-stack routing plus Stable V3 SwapRouter02/QuoterV2 Buy/Sell with live preflight and slippage protection.
 - **Add / Remove Liquidity** — V4 Position Manager multicall flows.
 - **Token page** — per-token detail, embedded GeckoTerminal chart.
@@ -174,6 +175,11 @@ The review was adversarial by design (each finding had to be *refuted or confirm
 - Tailwind CSS · React Router · React Query · react-hot-toast
 - Deployed on **Vercel** (Node 24 runtime); serverless `api/` routes for IPFS pinning + rate limiting
 
+**Indexer**
+- [Ponder](https://ponder.sh/) + PostgreSQL + Hono
+- Persistent multi-chain event backfill with live multicall enrichment
+- Railway-ready service config; frontend remains available through direct-RPC fallback
+
 **Chains**
 - Robinhood Chain mainnet (`4663`, V4 launch/trade) · Stable mainnet (`988`, V3 launch/trade) · Arbitrum One (`42161`, live Hyde V4 WETH launches; in-app execution gateway pending) · Robinhood Testnet (`46630`, retained for development)
 
@@ -232,6 +238,7 @@ npm run contracts:test  # installs missing deps, then runs the complete Foundry 
 | `VITE_IPFS_GATEWAY` | frontend | Optional | IPFS read gateway for token art. Defaults to `https://ipfs.io/ipfs/`. |
 | `VITE_ALCHEMY_API_KEY` | frontend | Prod recommended | Public/domain-restricted Alchemy client key for Robinhood, Stable, and Arbitrum. The chain-owned RPC remains the fallback. |
 | `VITE_ROBINHOOD_MAINNET_RPC_URL` / `VITE_STABLE_MAINNET_RPC_URL` / `VITE_ARBITRUM_MAINNET_RPC_URL` | frontend | Optional | Full paid endpoint overrides; each takes precedence over the shared Alchemy key. |
+| `VITE_V5_INDEXER_URL` | frontend | Prod recommended | Public base URL of the deployed `indexer/` service. The UI falls back to direct RPC when unset or unavailable. |
 | `ROBINHOOD_RPC_URL` / `STABLE_RPC_URL` | Vercel serverless | Prod recommended | Secret server-side RPCs for creator-signed metadata verification. Never prefix the secret values with `VITE_`. |
 | `TESTNET_RPC` | contract fork tests | Optional | RPC URL for the on-chain fork tests. Unset → those tests skip cleanly. |
 | `PINATA_JWT` / `PINATA_PIN_ENDPOINT` | Vercel serverless (`api/pin-image`) | Prod only / optional endpoint | Scoped Pinata pinning JWT and optional upload endpoint. Never prefix the JWT with `VITE_`. |
@@ -271,6 +278,7 @@ src/                  # Vite + React frontend
   components/         #   LaunchTokenForm, V4SwapCard, V4LiquidityCard, ...
   utils/constants.ts  #   chains + V4 contract addresses per network
 api/                  # Vercel routes (metadata, IPFS pinning, cached launch index)
+indexer/              # Ponder + Postgres V5 launch/fee indexer and read API
 ```
 
 ## Deep-Dive Docs

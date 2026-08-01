@@ -22,6 +22,7 @@ import {
 import { v3ChainRow, type LaunchEngine } from "./chainRegistry";
 import type { DopplerPool, TrenchCurveState } from "./dopplerConfig";
 import { rpcTransportForNetwork, rpcUrlsForNetwork } from "./rpc";
+import { fetchIndexedTrenchV5Pools, fetchIndexedTrenchV5Token } from "./trenchV5Indexer";
 
 type V5EnvManifest = {
   factory?: string;
@@ -559,10 +560,11 @@ function dexChainId(chainId: number): string | null {
  * a price. Pair candidates must match chain, Uniswap, launch token, and the V5 factory numeraire.
  */
 async function fetchTrenchMarkets(
-  runtime: VerifiedTrenchV5Runtime,
+  chainId: number,
+  numeraire: Address,
   pools: DopplerPool[],
 ): Promise<Map<string, TrenchMarket>> {
-  const chain = dexChainId(runtime.manifest.chainId);
+  const chain = dexChainId(chainId);
   const markets = new Map<string, TrenchMarket>();
   if (!chain || pools.length === 0) return markets;
   const byToken = new Map(pools.map((pool) => [pool.address.toLowerCase(), pool]));
@@ -593,7 +595,7 @@ async function fetchTrenchMarkets(
           !pool
           || pair.chainId !== chain
           || pair.dexId !== "uniswap"
-          || pair.quoteToken?.address?.toLowerCase() !== runtime.numeraire.toLowerCase()
+          || pair.quoteToken?.address?.toLowerCase() !== numeraire.toLowerCase()
           || (
             pool.poolAddress
             && pair.pairAddress?.toLowerCase() !== pool.poolAddress.toLowerCase()
@@ -618,10 +620,11 @@ async function fetchTrenchMarkets(
 }
 
 async function withTrenchMarkets(
-  runtime: VerifiedTrenchV5Runtime,
+  chainId: number,
+  numeraire: Address,
   pools: DopplerPool[],
 ): Promise<DopplerPool[]> {
-  const markets = await fetchTrenchMarkets(runtime, pools);
+  const markets = await fetchTrenchMarkets(chainId, numeraire, pools);
   return pools.map((pool) => {
     const market = markets.get(pool.address.toLowerCase());
     return market
@@ -639,6 +642,11 @@ async function withTrenchMarkets(
 export async function fetchTrenchV5Pools(chainId: number): Promise<DopplerPool[]> {
   const manifest = trenchV5Manifest(chainId);
   if (!manifest) return [];
+  const indexed = await fetchIndexedTrenchV5Pools(chainId);
+  if (indexed) {
+    if (indexed.length === 0) return [];
+    return withTrenchMarkets(chainId, indexed[0].quoteToken.address as Address, indexed);
+  }
   const runtime = await verifyTrenchV5Runtime(chainId);
   const newest = await newestLaunchLogs(runtime);
   const blockNumbers = [...new Set(newest.map((log) => log.blockNumber))];
@@ -649,18 +657,27 @@ export async function fetchTrenchV5Pools(chainId: number): Promise<DopplerPool[]
   const rows = await Promise.all(
     newest.map((log) => enrichLaunchLog(runtime, log, timestamps.get(log.blockNumber))),
   );
-  return withTrenchMarkets(runtime, rows.filter((pool): pool is DopplerPool => pool !== null));
+  return withTrenchMarkets(
+    chainId,
+    runtime.numeraire,
+    rows.filter((pool): pool is DopplerPool => pool !== null),
+  );
 }
 
 export async function fetchTrenchV5Token(chainId: number, token: Address): Promise<DopplerPool | null> {
   const manifest = trenchV5Manifest(chainId);
   if (!manifest) return null;
+  const indexed = await fetchIndexedTrenchV5Token(chainId, token);
+  if (indexed) {
+    const [enriched] = await withTrenchMarkets(chainId, indexed.quoteToken.address as Address, [indexed]);
+    return enriched;
+  }
   const runtime = await verifyTrenchV5Runtime(chainId);
   const [log] = await newestLaunchLogs(runtime, token);
   if (!log) return null;
   const pool = await enrichLaunchLog(runtime, log);
   if (!pool) return null;
-  const [enriched] = await withTrenchMarkets(runtime, [pool]);
+  const [enriched] = await withTrenchMarkets(chainId, runtime.numeraire, [pool]);
   return enriched;
 }
 

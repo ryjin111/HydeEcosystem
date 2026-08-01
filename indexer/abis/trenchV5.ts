@@ -1,0 +1,33 @@
+import { parseAbi } from "viem";
+
+export const erc20MetadataAbi = parseAbi([
+  "function name() view returns (string)",
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+]);
+
+export const trenchV3FactoryAbi = parseAbi([
+  "event LaunchCreated(address indexed token,address indexed creator,address indexed pool,uint256 curveTokenId,uint128 curveLiquidity,uint256 curveTokenUsed,uint256 graduationReserve)",
+]);
+
+export const trenchV4FactoryAbi = parseAbi([
+  "event LaunchCreated(address indexed token,address indexed creator,bytes32 indexed poolId,uint256 curveTokenId,uint128 curveLiquidity,uint256 curveTokenUsed,uint256 graduationReserve)",
+]);
+
+export const trenchGraduatorAbi = parseAbi([
+  "event GraduationSignaled(address indexed token,uint64 signaledAt,uint64 finalizableAt)",
+  "event Graduated(address indexed token,uint256 quotePrincipal,uint256 tokenPrincipal,uint256 primaryPositionId,uint256 positionCount)",
+  "function curveProgress(address token) view returns (uint256 sold,uint256 curveAllocation,uint256 progressWad,uint256 quotePrincipal,uint256 minimumProceeds,uint64 signaledAt,uint64 finalizableAt,uint8 state)",
+]);
+
+export const trenchV3LockerAbi = parseAbi([
+  "event FeeCredited(address indexed token,address indexed asset,address indexed creator,uint256 creatorCut,uint256 hydeCut)",
+  "event CreatorClaimed(address indexed token,address indexed asset,address indexed creator,uint256 amount)",
+  "function creatorClaimable(address token,address asset) view returns (uint256)",
+]);
+
+export const trenchV4LockerAbi = parseAbi([
+  "event FeeCredited(address indexed token,address indexed asset,uint256 creatorCut,uint256 hydeCut,uint256 autoLpCut)",
+  "event CreatorClaimed(address indexed token,address indexed asset,address indexed creator,uint256 amount)",
+  "function creatorClaimable(address token,address asset) view returns (uint256)",
+]);
