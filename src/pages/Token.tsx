@@ -809,6 +809,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
               symbol: sym,
               decimals: pool.baseToken.decimals,
             }}
+            graduated={pool.curveState === "graduated"}
           />
         ) : !isV4Launch && (
           <StableV3FeeCollector

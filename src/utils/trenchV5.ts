@@ -248,6 +248,13 @@ export const trenchV5LockerAbi = [
   { type: "function", name: "graduator", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   {
     type: "function",
+    name: "collect",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "amountToken", type: "uint256" }, { name: "amountNumeraire", type: "uint256" }],
+  },
+  {
+    type: "function",
     name: "creatorClaimable",
     stateMutability: "view",
     inputs: [{ type: "address" }, { type: "address" }],

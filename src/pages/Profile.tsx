@@ -491,6 +491,7 @@ function ProfileLaunchRow({ pool, network }: { pool: DopplerPool; network: Netwo
             symbol: pool.baseToken.symbol,
             decimals: pool.baseToken.decimals,
           }}
+          graduated={pool.curveState === "graduated"}
           compact
         />
       ) : pool.launchEngine === "v3-single-sided" && (
