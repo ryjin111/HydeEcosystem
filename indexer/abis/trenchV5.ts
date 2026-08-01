@@ -31,3 +31,15 @@ export const trenchV4LockerAbi = parseAbi([
   "event CreatorClaimed(address indexed token,address indexed asset,address indexed creator,uint256 amount)",
   "function creatorClaimable(address token,address asset) view returns (uint256)",
 ]);
+
+export const legacyV4FactoryAbi = parseAbi([
+  "event LaunchCreated(address indexed token,address indexed creator,bytes32 indexed poolId,uint256 tokenId,uint256 presetId)",
+]);
+
+export const legacyHoodieEngineAbi = parseAbi([
+  "event HoodieLaunchCreated(address indexed launcher,address indexed creator,address indexed token,bytes32 poolId,uint256 tokenId)",
+]);
+
+export const legacyV3PadAbi = parseAbi([
+  "event LaunchCreated(address indexed token,address indexed creator,address pool,uint256 tokenId,uint128 liquidity)",
+]);

@@ -2,7 +2,7 @@ import { ponder } from "ponder:registry";
 import { creatorFeeEvent, launch } from "ponder:schema";
 import type { Address } from "viem";
 import { erc20MetadataAbi, trenchGraduatorAbi } from "../abis/trenchV5";
-import { indexerChainById } from "./chains";
+import { indexerChainById, LEGACY_SOURCES } from "./chains";
 
 const WAD = 1_000_000_000_000_000_000n;
 
@@ -74,6 +74,8 @@ async function storeLaunch(
       numeraire: lower(chain.numeraire),
       quoteSymbol: chain.quoteSymbol,
       quoteDecimals: chain.quoteDecimals,
+      protocolVersion: "v5-trench",
+      source: engine === "v3-single-sided" ? "trench-v3-factory" : "trench-v4-factory",
       curveState: curveState(progress?.state ?? 1),
       ...initial,
       creatorClaimableToken: 0n,
@@ -92,6 +94,68 @@ async function storeLaunch(
       quotePrincipal: initial.quotePrincipal,
       lastUpdatedBlock: event.block.number,
     });
+}
+
+type LegacyLaunchConfig = {
+  engine: "v3-single-sided" | "v4-hook";
+  source: string;
+  token: Address;
+  creator: Address;
+  poolAddress?: Address;
+  poolId?: `0x${string}`;
+  numeraire: Address;
+  quoteSymbol: string;
+  quoteDecimals: number;
+};
+
+async function storeLegacyLaunch(context: any, event: any, config: LegacyLaunchConfig) {
+  const chain = indexerChainById(context.chain.id);
+  if (!chain) throw new Error(`Unsupported Hydeout indexer chain ${context.chain.id}`);
+  const token = lower(config.token);
+  const reads = await context.client.multicall({
+    allowFailure: true,
+    contracts: [
+      { address: token, abi: erc20MetadataAbi, functionName: "name" },
+      { address: token, abi: erc20MetadataAbi, functionName: "symbol" },
+      { address: token, abi: erc20MetadataAbi, functionName: "decimals" },
+    ],
+  });
+  const name = successful<string>(reads[0], "Unknown token");
+  const symbol = successful<string>(reads[1], "TOKEN");
+
+  await context.db
+    .insert(launch)
+    .values({
+      chainId: chain.id,
+      token,
+      creator: lower(config.creator),
+      poolAddress: config.poolAddress ? lower(config.poolAddress) : null,
+      poolId: config.poolId ?? null,
+      name,
+      symbol,
+      decimals: Number(successful<number>(reads[2], 18)),
+      engine: config.engine,
+      numeraire: lower(config.numeraire),
+      quoteSymbol: config.quoteSymbol,
+      quoteDecimals: config.quoteDecimals,
+      protocolVersion: "legacy-instant",
+      source: config.source,
+      curveState: "curve-active",
+      progressWad: 0n,
+      sold: 0n,
+      curveAllocation: 0n,
+      quotePrincipal: 0n,
+      minimumProceeds: 0n,
+      signaledAt: 0n,
+      finalizableAt: 0n,
+      creatorClaimableToken: 0n,
+      creatorClaimableNumeraire: 0n,
+      createdAt: BigInt(event.block.timestamp),
+      createdBlock: event.block.number,
+      createdTransaction: event.transaction.hash,
+      lastUpdatedBlock: event.block.number,
+    })
+    .onConflictDoUpdate({ name, symbol, lastUpdatedBlock: event.block.number });
 }
 
 async function updateGraduation(context: any, event: any, state: "graduation-signaled" | "graduated") {
@@ -176,4 +240,56 @@ ponder.on("TrenchV3Locker:CreatorClaimed", async ({ event, context }) => {
 
 ponder.on("TrenchV4Locker:CreatorClaimed", async ({ event, context }) => {
   await recordCreatorFee(context, event, "claimed");
+});
+
+ponder.on("LegacyStableV3Pad:LaunchCreated", async ({ event, context }) => {
+  await storeLegacyLaunch(context, event, {
+    engine: "v3-single-sided",
+    source: "legacy-stable-v3-pad",
+    token: event.args.token,
+    creator: event.args.creator,
+    poolAddress: event.args.pool,
+    numeraire: indexerChainById(context.chain.id)!.numeraire,
+    quoteSymbol: "USDT0",
+    quoteDecimals: 6,
+  });
+});
+
+ponder.on("LegacyArbitrumV4Factory:LaunchCreated", async ({ event, context }) => {
+  await storeLegacyLaunch(context, event, {
+    engine: "v4-hook",
+    source: "legacy-arbitrum-v4-factory",
+    token: event.args.token,
+    creator: event.args.creator,
+    poolId: event.args.poolId,
+    numeraire: indexerChainById(context.chain.id)!.numeraire,
+    quoteSymbol: "WETH",
+    quoteDecimals: 18,
+  });
+});
+
+ponder.on("LegacyRobinhoodV4Factory:LaunchCreated", async ({ event, context }) => {
+  await storeLegacyLaunch(context, event, {
+    engine: "v4-hook",
+    source: "legacy-robinhood-weth-factory",
+    token: event.args.token,
+    creator: event.args.creator,
+    poolId: event.args.poolId,
+    numeraire: indexerChainById(context.chain.id)!.numeraire,
+    quoteSymbol: "WETH",
+    quoteDecimals: 18,
+  });
+});
+
+ponder.on("LegacyRobinhoodHoodieEngine:HoodieLaunchCreated", async ({ event, context }) => {
+  await storeLegacyLaunch(context, event, {
+    engine: "v4-hook",
+    source: "legacy-robinhood-hoodie-engine",
+    token: event.args.token,
+    creator: event.args.creator,
+    poolId: event.args.poolId,
+    numeraire: LEGACY_SOURCES.robinhoodHoodieEngine.numeraire,
+    quoteSymbol: LEGACY_SOURCES.robinhoodHoodieEngine.quoteSymbol,
+    quoteDecimals: LEGACY_SOURCES.robinhoodHoodieEngine.quoteDecimals,
+  });
 });

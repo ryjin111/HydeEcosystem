@@ -19,6 +19,7 @@ import {
   fetchTrenchV5Token,
   isTrenchV5Configured,
 } from "../utils/trenchV5";
+import { fetchIndexedLegacyPools, fetchIndexedLegacyToken } from "../utils/trenchV5Indexer";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 
@@ -426,6 +427,8 @@ export async function isMainnetOwnStackLaunch(address: `0x${string}`): Promise<b
   if (a === MAINNET_HOODIE.toLowerCase() || a === ROBINHOOD_MAINNET.weth.toLowerCase()) return false;
   const cached = readMainnetLaunchCache(MAINNET_LAUNCH_CACHE_MAX_STALE);
   if (cached?.pools.some((pool) => pool.address.toLowerCase() === a)) return true;
+  const indexed = await fetchIndexedLegacyToken(ROBINHOOD_CHAIN_ID, address);
+  if (indexed) return true;
   const tokenTopic = topicForAddress(address);
   const [weth, hoodie] = await Promise.all([
     fetchExplorerLogs(MAINNET_WETH_FACTORY, LAUNCH_CREATED_TOPIC, MAINNET_WETH_FACTORY_BLOCK, { position: 1, value: tokenTopic }).catch(() => []),
@@ -452,6 +455,25 @@ let stableLaunchInFlight: Promise<DopplerPool[]> | null = null;
 /** Stable V3 launches from HydeV3Pad. Membership, metadata, and timestamps come directly from Stable;
  * market fields are accepted only from Stable-scoped Uniswap pairs returned by DEXScreener. */
 async function loadStableV3Pools(): Promise<DopplerPool[]> {
+  const indexed = await fetchIndexedLegacyPools(STABLE_CHAIN_ID);
+  if (indexed) {
+    const canonicalPairs = new Map(
+      indexed
+        .filter((pool) => !!pool.poolAddress)
+        .map((pool) => [pool.address.toLowerCase(), pool.poolAddress!] as const),
+    );
+    const dex = await fetchDexData(indexed.map((pool) => pool.address), "stable", canonicalPairs);
+    return indexed.map((pool) => {
+      const data = dex.get(pool.address.toLowerCase());
+      return data ? {
+        ...pool,
+        marketCapUsd: data.marketCapUsd,
+        priceUsd: data.priceUsd,
+        dollarLiquidity: data.liquidityUsd != null ? String(data.liquidityUsd) : pool.dollarLiquidity,
+        volumeUsd: data.volumeUsd != null ? String(data.volumeUsd) : pool.volumeUsd,
+      } : pool;
+    });
+  }
   const latest = await stableClient.getBlockNumber();
   const logs = await getStableLogs(
     (fromBlock, toBlock) => stableClient.getLogs({
@@ -555,6 +577,8 @@ async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<Doppler
     (pool) => pool.address.toLowerCase() === address.toLowerCase(),
   );
   if (cached) return cached;
+  const indexed = await fetchIndexedLegacyToken(STABLE_CHAIN_ID, address);
+  if (indexed) return indexed;
 
   const position = await stableClient.readContract({
     address: STABLE_V3_LOCKER,
@@ -864,7 +888,9 @@ async function fetchOwnStackFactoryPools(source: OwnStackSource): Promise<Dopple
  *  client so a testnet token page never falls back to mainnet data (clint #4 cross-chain bleed).
  *  Testnet isn't third-party indexed → price/graduation stay null (honest). Fails to null. */
 const fetchHydeFactoryPools = () => fetchOwnStackFactoryPools(TESTNET_OWN_STACK);
-const fetchArbitrumFactoryPools = () => fetchOwnStackFactoryPools(ARBITRUM_OWN_STACK);
+const fetchArbitrumFactoryPools = async () => (
+  await fetchIndexedLegacyPools(ARBITRUM_CHAIN_ID)
+) ?? fetchOwnStackFactoryPools(ARBITRUM_OWN_STACK);
 
 async function fetchOwnStackLaunchToken(
   source: OwnStackSource,
@@ -909,12 +935,15 @@ async function fetchOwnStackLaunchToken(
 export const fetchTestnetLaunchToken = (address: `0x${string}`) =>
   fetchOwnStackLaunchToken(TESTNET_OWN_STACK, address);
 export const fetchArbitrumLaunchToken = (address: `0x${string}`) =>
-  fetchOwnStackLaunchToken(ARBITRUM_OWN_STACK, address);
+  fetchIndexedLegacyToken(ARBITRUM_CHAIN_ID, address)
+    .then((indexed) => indexed ?? fetchOwnStackLaunchToken(ARBITRUM_OWN_STACK, address));
 
 async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
   const boardPool = (await fetchMainnetOwnStackPools().catch(() => []))
     .find((pool) => pool.address.toLowerCase() === address.toLowerCase());
   if (boardPool) return boardPool;
+  const indexed = await fetchIndexedLegacyToken(ROBINHOOD_CHAIN_ID, address);
+  if (indexed) return indexed;
 
   const tokenTopic = topicForAddress(address);
   const [wethCreated, hoodieCreated] = await Promise.all([
@@ -1082,6 +1111,20 @@ function isRobinhoodIndexPool(value: unknown): value is DopplerPool {
 }
 
 async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
+  const indexed = await fetchIndexedLegacyPools(ROBINHOOD_CHAIN_ID);
+  if (indexed) {
+    const dex = await fetchDexData(indexed.map((pool) => pool.address));
+    return indexed.map((pool) => {
+      const data = dex.get(pool.address.toLowerCase());
+      return data ? {
+        ...pool,
+        marketCapUsd: data.marketCapUsd,
+        priceUsd: data.priceUsd,
+        dollarLiquidity: data.liquidityUsd != null ? String(data.liquidityUsd) : pool.dollarLiquidity,
+        volumeUsd: data.volumeUsd != null ? String(data.volumeUsd) : pool.volumeUsd,
+      } : pool;
+    });
+  }
   try {
     const response = await fetch("/api/robinhood-launches");
     if (!response.ok) throw new Error(`launch index HTTP ${response.status}`);

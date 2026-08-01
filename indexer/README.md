@@ -1,8 +1,8 @@
-# Hydeout V5 indexer
+# Hydeout launch indexer
 
-Persistent [Ponder](https://ponder.sh/) indexer and read API for Hydeout V5 launches on Stable, Arbitrum One, and Robinhood Chain.
+Persistent [Ponder](https://ponder.sh/) indexer and read API for Hydeout V5 and legacy launches on Stable, Arbitrum One, and Robinhood Chain.
 
-The service backfills factory, graduation, and creator-fee events into Postgres. API responses combine those indexed records with one live multicall per request for current curve progress and claimable creator fees. The frontend prefers this API and automatically falls back to direct RPC discovery if the service is unset or temporarily unavailable.
+The service backfills V5 factory, graduation, and creator-fee events plus the legacy factories already trusted by the UI into Postgres. V5 API responses combine indexed records with one live multicall per request for current curve progress and claimable creator fees. The frontend prefers this API for both generations and automatically falls back to its existing direct chain/Blockscout readers if the service is unset or temporarily unavailable.
 
 ## Local development
 
@@ -26,7 +26,7 @@ All public application routes are read-only and allow cross-origin GET requests.
 | Route | Purpose |
 |---|---|
 | `GET /v1/status` | Supported chains and indexed launch counts. |
-| `GET /v1/launches?chainId=4663&limit=60` | Newest launches for one chain. Optional `creator=0x...`. |
+| `GET /v1/launches?chainId=4663&limit=60` | Newest launches for one chain. Optional `creator=0x...` and `protocolVersion=v5-trench\|legacy-instant`. |
 | `GET /v1/launches/:chainId/:token` | One indexed launch with current progress and claimable fees. |
 | `GET /ready` | Ponder readiness endpoint used by the host. |
 
@@ -46,4 +46,4 @@ Do not add a trailing path to `VITE_V5_INDEXER_URL`; the frontend appends `/v1/.
 
 ## Indexed deployments
 
-Addresses and deployment start blocks live in `src/chains.ts`; contract sources are defined in `ponder.config.ts`. When a new V5 stack is deployed, add its chain configuration there and add the matching frontend registry entry before enabling it in the UI.
+Addresses and deployment start blocks live in `src/chains.ts`; contract sources are defined in `ponder.config.ts`. Legacy coverage includes Stable's V3 pad, Robinhood's WETH factory and HOODIE engine, and the retained Arbitrum V4 factory. When a new stack is deployed, add its chain configuration there and add the matching frontend registry entry before enabling it in the UI.

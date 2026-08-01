@@ -71,3 +71,29 @@ export function indexerChainById(chainId: number): HydeoutIndexerChain | undefin
 export function indexerChainByKey(key: string): HydeoutIndexerChain | undefined {
   return INDEXER_CHAINS.find((chain) => chain.key === key);
 }
+
+export const LEGACY_SOURCES = {
+  stablePad: {
+    chainId: 988,
+    address: "0xE79F17Fe61F9c76824D74C496f122f0AB483ec6A" as Address,
+    startBlock: 33_271_478,
+  },
+  arbitrumFactory: {
+    chainId: 42_161,
+    address: "0x710fEa288266518528A4230771E07ee310ce509f" as Address,
+    startBlock: 488_965_908,
+  },
+  robinhoodWethFactory: {
+    chainId: 4_663,
+    address: "0x159A2fa37427299466B0723713eaa260e6124cbc" as Address,
+    startBlock: 17_418_907,
+  },
+  robinhoodHoodieEngine: {
+    chainId: 4_663,
+    address: "0x8062951c99CfFA5365f979D5139Cf96b5c77CFCc" as Address,
+    startBlock: 15_652_257,
+    numeraire: "0xC72c01AAB5f5678dc1d6f5C6d2B417d91D402Ba3" as Address,
+    quoteSymbol: "HOODIE",
+    quoteDecimals: 18,
+  },
+} as const;

@@ -5,8 +5,11 @@ import {
   trenchV3LockerAbi,
   trenchV4FactoryAbi,
   trenchV4LockerAbi,
+  legacyHoodieEngineAbi,
+  legacyV3PadAbi,
+  legacyV4FactoryAbi,
 } from "./abis/trenchV5";
-import { INDEXER_CHAINS } from "./src/chains";
+import { INDEXER_CHAINS, LEGACY_SOURCES } from "./src/chains";
 
 const stable = INDEXER_CHAINS[0];
 const arbitrum = INDEXER_CHAINS[1];
@@ -69,6 +72,30 @@ export default createConfig({
         arbitrum: { address: arbitrum.locker, startBlock: arbitrum.startBlock },
         robinhood: { address: robinhood.locker, startBlock: robinhood.startBlock },
       },
+    },
+    LegacyStableV3Pad: {
+      abi: legacyV3PadAbi,
+      chain: "stable",
+      address: LEGACY_SOURCES.stablePad.address,
+      startBlock: LEGACY_SOURCES.stablePad.startBlock,
+    },
+    LegacyArbitrumV4Factory: {
+      abi: legacyV4FactoryAbi,
+      chain: "arbitrum",
+      address: LEGACY_SOURCES.arbitrumFactory.address,
+      startBlock: LEGACY_SOURCES.arbitrumFactory.startBlock,
+    },
+    LegacyRobinhoodV4Factory: {
+      abi: legacyV4FactoryAbi,
+      chain: "robinhood",
+      address: LEGACY_SOURCES.robinhoodWethFactory.address,
+      startBlock: LEGACY_SOURCES.robinhoodWethFactory.startBlock,
+    },
+    LegacyRobinhoodHoodieEngine: {
+      abi: legacyHoodieEngineAbi,
+      chain: "robinhood",
+      address: LEGACY_SOURCES.robinhoodHoodieEngine.address,
+      startBlock: LEGACY_SOURCES.robinhoodHoodieEngine.startBlock,
     },
   },
 });

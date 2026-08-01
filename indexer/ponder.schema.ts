@@ -15,6 +15,8 @@ export const launch = onchainTable(
     numeraire: t.hex().notNull(),
     quoteSymbol: t.text().notNull(),
     quoteDecimals: t.integer().notNull(),
+    protocolVersion: t.text().notNull(),
+    source: t.text().notNull(),
     curveState: t.text().notNull(),
     progressWad: t.bigint().notNull(),
     sold: t.bigint().notNull(),
@@ -33,6 +35,7 @@ export const launch = onchainTable(
   (table) => ({
     pk: primaryKey({ columns: [table.chainId, table.token] }),
     chainCreatedIdx: index("launch_chain_created_idx").on(table.chainId, table.createdBlock),
+    chainVersionIdx: index("launch_chain_version_idx").on(table.chainId, table.protocolVersion),
     creatorIdx: index("launch_creator_idx").on(table.creator),
   }),
 );

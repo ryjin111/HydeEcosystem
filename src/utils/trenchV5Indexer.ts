@@ -17,6 +17,8 @@ type IndexedLaunch = {
   numeraire: string;
   quoteSymbol: string;
   quoteDecimals: number;
+  protocolVersion: "legacy-instant" | "v5-trench";
+  source: string;
   curveState: TrenchCurveState;
   progressWad: string;
   creatorClaimableNumeraire: string;
@@ -40,7 +42,11 @@ function isCurveState(value: unknown): value is TrenchCurveState {
   return value === "curve-active" || value === "graduation-signaled" || value === "graduated";
 }
 
-function parseLaunch(value: unknown, expectedChainId: number): IndexedLaunch {
+function parseLaunch(
+  value: unknown,
+  expectedChainId: number,
+  expectedVersion: IndexedLaunch["protocolVersion"],
+): IndexedLaunch {
   const row = value as Partial<IndexedLaunch>;
   if (
     row.chainId !== expectedChainId
@@ -54,6 +60,8 @@ function parseLaunch(value: unknown, expectedChainId: number): IndexedLaunch {
     || (row.engine !== "v3-single-sided" && row.engine !== "v4-hook")
     || typeof row.quoteSymbol !== "string"
     || !Number.isInteger(row.quoteDecimals)
+    || row.protocolVersion !== expectedVersion
+    || typeof row.source !== "string"
     || !isCurveState(row.curveState)
     || typeof row.progressWad !== "string"
     || typeof row.creatorClaimableNumeraire !== "string"
@@ -66,6 +74,7 @@ function parseLaunch(value: unknown, expectedChainId: number): IndexedLaunch {
 }
 
 function toPool(row: IndexedLaunch): DopplerPool {
+  const isV5 = row.protocolVersion === "v5-trench";
   const progressWad = BigInt(row.progressWad);
   const progress = Math.min(100, Number((progressWad * 10_000n) / WAD) / 100);
   const createdSeconds = Number(BigInt(row.createdAt));
@@ -86,17 +95,17 @@ function toPool(row: IndexedLaunch): DopplerPool {
       decimals: row.quoteDecimals,
     },
     launchEngine: row.engine,
-    protocolVersion: "v5-trench",
-    curveState: row.curveState,
+    protocolVersion: row.protocolVersion,
+    curveState: isV5 ? row.curveState : undefined,
     type: row.engine === "v3-single-sided" ? "v3" : "v4",
     dollarLiquidity: null,
     volumeUsd: null,
     marketCapUsd: null,
     priceUsd: null,
     createdAt: new Date(createdSeconds * 1000).toISOString(),
-    progress,
+    progress: isV5 ? progress : null,
     creator: row.creator,
-    creatorClaimable: row.creatorClaimableNumeraire,
+    creatorClaimable: isV5 ? row.creatorClaimableNumeraire : null,
   };
 }
 
@@ -121,13 +130,13 @@ async function fetchIndexer(path: string): Promise<unknown | null> {
 
 /** Returns null when the indexer is unset/unavailable so callers can use their RPC fallback. */
 export async function fetchIndexedTrenchV5Pools(chainId: number): Promise<DopplerPool[] | null> {
-  const payload = await fetchIndexer(`/v1/launches?chainId=${chainId}&limit=60`) as {
+  const payload = await fetchIndexer(`/v1/launches?chainId=${chainId}&protocolVersion=v5-trench&limit=60`) as {
     chainId?: number;
     launches?: unknown[];
   } | null;
   if (!payload || payload.chainId !== chainId || !Array.isArray(payload.launches)) return null;
   try {
-    return payload.launches.map((row) => toPool(parseLaunch(row, chainId)));
+    return payload.launches.map((row) => toPool(parseLaunch(row, chainId, "v5-trench")));
   } catch {
     return null;
   }
@@ -144,7 +153,37 @@ export async function fetchIndexedTrenchV5Token(
   } | null;
   if (!payload || payload.chainId !== chainId || payload.launch == null) return null;
   try {
-    return toPool(parseLaunch(payload.launch, chainId));
+    return toPool(parseLaunch(payload.launch, chainId, "v5-trench"));
+  } catch {
+    return null;
+  }
+}
+
+/** Indexed legacy factories use the same DTO but intentionally have no curve progress or V5 claims. */
+export async function fetchIndexedLegacyPools(chainId: number): Promise<DopplerPool[] | null> {
+  const payload = await fetchIndexer(`/v1/launches?chainId=${chainId}&protocolVersion=legacy-instant&limit=60`) as {
+    chainId?: number;
+    launches?: unknown[];
+  } | null;
+  if (!payload || payload.chainId !== chainId || !Array.isArray(payload.launches)) return null;
+  try {
+    return payload.launches.map((row) => toPool(parseLaunch(row, chainId, "legacy-instant")));
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchIndexedLegacyToken(
+  chainId: number,
+  token: Address,
+): Promise<DopplerPool | null> {
+  const payload = await fetchIndexer(`/v1/launches/${chainId}/${token}`) as {
+    chainId?: number;
+    launch?: unknown;
+  } | null;
+  if (!payload || payload.chainId !== chainId || payload.launch == null) return null;
+  try {
+    return toPool(parseLaunch(payload.launch, chainId, "legacy-instant"));
   } catch {
     return null;
   }

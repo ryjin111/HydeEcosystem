@@ -40,6 +40,9 @@ function asProgress(value: unknown): LiveProgress | null {
 async function enrich(rows: Array<typeof launch.$inferSelect>, chainId: number) {
   const chain = indexerChainById(chainId);
   if (!chain || rows.length === 0) return rows.map((row) => ({ row, progress: null, tokenFees: null, quoteFees: null }));
+  if (rows.every((row) => row.protocolVersion === "legacy-instant")) {
+    return rows.map((row) => ({ row, progress: null, tokenFees: null, quoteFees: null }));
+  }
   const client = (publicClients as Record<string, any>)[chain.key];
   if (!client) return rows.map((row) => ({ row, progress: null, tokenFees: null, quoteFees: null }));
   try {
@@ -83,6 +86,8 @@ function serialize(item: Awaited<ReturnType<typeof enrich>>[number]) {
     numeraire: row.numeraire,
     quoteSymbol: row.quoteSymbol,
     quoteDecimals: row.quoteDecimals,
+    protocolVersion: row.protocolVersion,
+    source: row.source,
     curveState: stateLabel(progress?.state ?? 0, row.curveState),
     progressWad: (progress?.progressWad ?? row.progressWad).toString(),
     sold: (progress?.sold ?? row.sold).toString(),
@@ -113,15 +118,19 @@ async function cachedPayload(key: string, load: () => Promise<unknown>): Promise
 
 app.get("/v1/status", async (c) => {
   const counts = await db
-    .select({ chainId: launch.chainId, launches: count() })
+    .select({ chainId: launch.chainId, protocolVersion: launch.protocolVersion, launches: count() })
     .from(launch)
-    .groupBy(launch.chainId);
+    .groupBy(launch.chainId, launch.protocolVersion);
   return c.json({
     service: "hydeout-v5-indexer",
     chains: INDEXER_CHAINS.map((chain) => ({
       chainId: chain.id,
       name: chain.name,
-      launches: Number(counts.find((row) => row.chainId === chain.id)?.launches ?? 0),
+      launches: counts
+        .filter((row) => row.chainId === chain.id)
+        .reduce((total, row) => total + Number(row.launches), 0),
+      v5: Number(counts.find((row) => row.chainId === chain.id && row.protocolVersion === "v5-trench")?.launches ?? 0),
+      legacy: Number(counts.find((row) => row.chainId === chain.id && row.protocolVersion === "legacy-instant")?.launches ?? 0),
     })),
   });
 });
@@ -133,13 +142,20 @@ app.get("/v1/launches", async (c) => {
   const creatorRaw = c.req.query("creator");
   const creator = creatorRaw && ADDRESS.test(creatorRaw) ? creatorRaw.toLowerCase() as Address : undefined;
   if (creatorRaw && !creator) return c.json({ error: "invalid creator address" }, 400);
+  const versionRaw = c.req.query("protocolVersion");
+  const protocolVersion = versionRaw === "v5-trench" || versionRaw === "legacy-instant" ? versionRaw : undefined;
+  if (versionRaw && !protocolVersion) return c.json({ error: "invalid protocolVersion" }, 400);
   const limit = Math.min(100, Math.max(1, Number(c.req.query("limit")) || 60));
-  const key = `launches:${chainId}:${creator ?? "all"}:${limit}`;
+  const key = `launches:${chainId}:${creator ?? "all"}:${protocolVersion ?? "all"}:${limit}`;
   const payload = await cachedPayload(key, async () => {
     const rows = await db
       .select()
       .from(launch)
-      .where(and(eq(launch.chainId, chainId), creator ? eq(launch.creator, creator) : undefined))
+      .where(and(
+        eq(launch.chainId, chainId),
+        creator ? eq(launch.creator, creator) : undefined,
+        protocolVersion ? eq(launch.protocolVersion, protocolVersion) : undefined,
+      ))
       .orderBy(desc(launch.createdBlock))
       .limit(limit);
     return { source: "ponder", chainId, launches: (await enrich(rows, chainId)).map(serialize) };

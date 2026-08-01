@@ -7,7 +7,7 @@ Hyde lets anyone launch an ERC-20 whose entire supply is seeded into permanently
 The protocol contracts, the launchpad frontend, and the security audit in this repository were designed, built, and adversarially reviewed by an autonomous team of AI agents (see [AI-Agent Audit](#ai-agent-audit)).
 
 - **Frontend:** live on Vercel (Vite + React + wagmi/viem).
-- **Indexer:** Ponder + PostgreSQL discovery API for Stable, Arbitrum, and Robinhood, with automatic frontend RPC fallback.
+- **Indexer:** Ponder + PostgreSQL discovery API for V5 and legacy launches on Stable, Arbitrum, and Robinhood, with automatic frontend RPC fallback.
 - **Robinhood Chain mainnet (4663):** V4 launch, in-app swap, and creator-fee settlement are live.
 - **Stable mainnet (988):** V3 single-sided launch, in-app swap, permanently locked LP, and direct 95/5 fee collection are live.
 - **Security status:** internally reviewed and covered by deterministic/fork/live evidence, but **not externally audited**.
@@ -177,7 +177,7 @@ The review was adversarial by design (each finding had to be *refuted or confirm
 
 **Indexer**
 - [Ponder](https://ponder.sh/) + PostgreSQL + Hono
-- Persistent multi-chain event backfill with live multicall enrichment
+- Persistent multi-chain V5 + legacy event backfill with live V5 multicall enrichment
 - Railway-ready service config; frontend remains available through direct-RPC fallback
 
 **Chains**
