@@ -782,6 +782,46 @@ body {
   color: var(--term-teal);
 }
 
+.token-holder-kind {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border: 1px solid var(--term-border);
+  border-radius: 999px;
+  padding: 0.1rem 0.38rem;
+  color: var(--term-dim);
+  background: rgba(255, 255, 255, 0.025);
+  font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+}
+
+.token-holder-kind-curve {
+  border-color: rgba(46, 159, 230, 0.34);
+  color: #67bdf3;
+  background: rgba(46, 159, 230, 0.09);
+}
+
+.token-holder-kind-lp {
+  border-color: rgba(42, 212, 166, 0.34);
+  color: var(--term-teal);
+  background: rgba(42, 212, 166, 0.08);
+}
+
+.token-holder-kind-locker {
+  border-color: rgba(174, 126, 239, 0.34);
+  color: #c59cf6;
+  background: rgba(174, 126, 239, 0.08);
+}
+
+.token-holder-kind-contract {
+  border-color: rgba(232, 163, 61, 0.3);
+  color: #e8a33d;
+  background: rgba(232, 163, 61, 0.07);
+}
+
 @media (max-width: 767px) {
   .profile-vault-empty {
     grid-template-columns: 1fr;
