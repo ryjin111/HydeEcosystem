@@ -196,7 +196,6 @@ function holderIdentity(
   known: Map<string, HolderIdentity>,
   contractAddresses: Set<string>,
   contractsChecked: boolean,
-  networkName: string,
 ): HolderIdentity {
   const normalized = address.toLowerCase();
   const protocolIdentity = known.get(normalized);
@@ -205,7 +204,7 @@ function holderIdentity(
     return { kind: "contract", badge: "CONTRACT", detail: "Smart contract balance · not a wallet" };
   }
   if (!contractsChecked) return { kind: "address", badge: "ADDRESS", detail: "Checking address type on-chain" };
-  return { kind: "wallet", badge: "WALLET", detail: `Wallet on ${networkName}` };
+  return { kind: "wallet", badge: "WALLET", detail: "" };
 }
 
 function timeAgo(iso: string): string | null {
@@ -770,7 +769,6 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                     knownHolderIdentities,
                     contractHolderScan.contracts,
                     contractHolderScan.checked,
-                    network.name,
                   );
                   return (
                     <a
@@ -788,9 +786,11 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                           <span className="truncate font-code text-xs text-pcs-text">{short(holder.address)}</span>
                           <span className={`token-holder-kind token-holder-kind-${identity.kind}`}>{identity.badge}</span>
                         </span>
-                        <span className="mt-0.5 block truncate text-[10px] uppercase tracking-wider text-pcs-textDim">
-                          {identity.detail}
-                        </span>
+                        {identity.detail && (
+                          <span className="mt-0.5 block truncate text-[10px] uppercase tracking-wider text-pcs-textDim">
+                            {identity.detail}
+                          </span>
+                        )}
                       </span>
                       <span className="text-right">
                         <span className="block font-code text-xs font-semibold tabular-nums text-pcs-text">
