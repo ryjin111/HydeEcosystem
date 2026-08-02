@@ -26,6 +26,18 @@ type IndexedLaunch = {
   createdAt: string;
 };
 
+export type IndexedActivity = {
+  holders: Array<{ address: string; value: string }>;
+  trades: Array<{
+    txHash: string;
+    trader: string;
+    timestamp: string;
+    kind: "buy" | "sell";
+    tokenAmount: string;
+    quoteAmount: string;
+  }>;
+};
+
 function indexerBaseUrl(): string | null {
   const raw = import.meta.env.VITE_V5_INDEXER_URL?.trim();
   if (!raw) return null;
@@ -187,6 +199,53 @@ export async function fetchIndexedLegacyToken(
   if (!payload || payload.chainId !== chainId || payload.launch == null) return null;
   try {
     return toPool(parseLaunch(payload.launch, chainId, "legacy-instant"));
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchIndexedTokenActivity(
+  chainId: number,
+  token: Address,
+): Promise<IndexedActivity | null> {
+  const payload = await fetchIndexer(`/v1/activity/${chainId}/${token}`) as {
+    chainId?: number;
+    token?: string;
+    holders?: unknown[];
+    trades?: unknown[];
+  } | null;
+  if (
+    !payload
+    || payload.chainId !== chainId
+    || payload.token?.toLowerCase() !== token.toLowerCase()
+    || !Array.isArray(payload.holders)
+    || !Array.isArray(payload.trades)
+  ) return null;
+  try {
+    const holders = payload.holders.map((value) => {
+      const row = value as { address?: unknown; value?: unknown };
+      if (typeof row.address !== "string" || !ADDRESS.test(row.address) || typeof row.value !== "string") {
+        throw new Error("invalid holder");
+      }
+      BigInt(row.value);
+      return { address: row.address, value: row.value };
+    });
+    const trades = payload.trades.map((value) => {
+      const row = value as Record<string, unknown>;
+      if (
+        typeof row.txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(row.txHash)
+        || typeof row.trader !== "string" || !ADDRESS.test(row.trader)
+        || typeof row.timestamp !== "string"
+        || (row.kind !== "buy" && row.kind !== "sell")
+        || typeof row.tokenAmount !== "string"
+        || typeof row.quoteAmount !== "string"
+      ) throw new Error("invalid trade");
+      BigInt(row.timestamp);
+      BigInt(row.tokenAmount);
+      BigInt(row.quoteAmount);
+      return row as IndexedActivity["trades"][number];
+    });
+    return { holders, trades };
   } catch {
     return null;
   }

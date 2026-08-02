@@ -6,6 +6,14 @@ export const erc20MetadataAbi = parseAbi([
   "function decimals() view returns (uint8)",
 ]);
 
+export const erc20TransferAbi = parseAbi([
+  "event Transfer(address indexed from,address indexed to,uint256 value)",
+]);
+
+export const uniswapV3PoolAbi = parseAbi([
+  "event Swap(address indexed sender,address indexed recipient,int256 amount0,int256 amount1,uint160 sqrtPriceX96,uint128 liquidity,int24 tick)",
+]);
+
 export const trenchV3FactoryAbi = parseAbi([
   "event LaunchCreated(address indexed token,address indexed creator,address indexed pool,uint256 curveTokenId,uint128 curveLiquidity,uint256 curveTokenUsed,uint256 graduationReserve)",
 ]);

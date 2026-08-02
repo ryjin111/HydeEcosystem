@@ -1,10 +1,11 @@
 import { ponder } from "ponder:registry";
-import { creatorFeeEvent, launch } from "ponder:schema";
+import { creatorFeeEvent, launch, poolSwap, tokenHolder } from "ponder:schema";
 import type { Address } from "viem";
 import { erc20MetadataAbi, trenchGraduatorAbi } from "../abis/trenchV5";
 import { indexerChainById, LEGACY_SOURCES } from "./chains";
 
 const WAD = 1_000_000_000_000_000_000n;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 
 function lower(address: Address): Address {
   return address.toLowerCase() as Address;
@@ -202,6 +203,57 @@ async function recordCreatorFee(context: any, event: any, kind: "credited" | "cl
   });
 }
 
+async function updateHolderBalance(
+  context: any,
+  chainId: number,
+  token: Address,
+  holder: Address,
+  delta: bigint,
+  blockNumber: bigint,
+) {
+  if (holder === ZERO_ADDRESS || delta === 0n) return;
+  await context.db
+    .insert(tokenHolder)
+    .values({
+      chainId,
+      token,
+      holder,
+      balance: delta > 0n ? delta : 0n,
+      lastUpdatedBlock: blockNumber,
+    })
+    .onConflictDoUpdate((row: typeof tokenHolder.$inferSelect) => ({
+      balance: delta > 0n ? row.balance + delta : row.balance > -delta ? row.balance + delta : 0n,
+      lastUpdatedBlock: blockNumber,
+    }));
+}
+
+async function recordTransfer(context: any, event: any) {
+  const chainId = context.chain.id as number;
+  const token = lower(event.log.address as Address);
+  const from = lower(event.args.from as Address);
+  const to = lower(event.args.to as Address);
+  if (from === to) return;
+  const value = BigInt(event.args.value);
+  await updateHolderBalance(context, chainId, token, from, -value, event.block.number);
+  await updateHolderBalance(context, chainId, token, to, value, event.block.number);
+}
+
+async function recordV3Swap(context: any, event: any) {
+  await context.db.insert(poolSwap).values({
+    id: event.id,
+    chainId: context.chain.id,
+    poolAddress: lower(event.log.address as Address),
+    sender: lower(event.args.sender as Address),
+    recipient: lower(event.args.recipient as Address),
+    amount0: BigInt(event.args.amount0),
+    amount1: BigInt(event.args.amount1),
+    blockNumber: event.block.number,
+    timestamp: BigInt(event.block.timestamp),
+    transactionHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+  }).onConflictDoNothing();
+}
+
 ponder.on("TrenchV3Factory:LaunchCreated", async ({ event, context }) => {
   await storeLaunch(context, event, "v3-single-sided");
 });
@@ -292,4 +344,25 @@ ponder.on("LegacyRobinhoodHoodieEngine:HoodieLaunchCreated", async ({ event, con
     quoteSymbol: LEGACY_SOURCES.robinhoodHoodieEngine.quoteSymbol,
     quoteDecimals: LEGACY_SOURCES.robinhoodHoodieEngine.quoteDecimals,
   });
+});
+
+for (const contract of [
+  "TrenchV3Token",
+  "TrenchV4Token",
+  "LegacyStableToken",
+  "LegacyArbitrumToken",
+  "LegacyRobinhoodWethToken",
+  "LegacyRobinhoodHoodieToken",
+] as const) {
+  ponder.on(`${contract}:Transfer`, async ({ event, context }) => {
+    await recordTransfer(context, event);
+  });
+}
+
+ponder.on("TrenchV3Pool:Swap", async ({ event, context }) => {
+  await recordV3Swap(context, event);
+});
+
+ponder.on("LegacyStableV3Pool:Swap", async ({ event, context }) => {
+  await recordV3Swap(context, event);
 });

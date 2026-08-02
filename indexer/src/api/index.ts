@@ -1,6 +1,6 @@
 import { db, publicClients } from "ponder:api";
-import { launch } from "ponder:schema";
-import { and, count, desc, eq } from "ponder";
+import { launch, poolSwap, tokenHolder } from "ponder:schema";
+import { and, count, desc, eq, gt } from "ponder";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Address } from "viem";
@@ -211,6 +211,68 @@ app.get("/v1/launches/:chainId/:token", async (c) => {
       .limit(1);
     const [item] = await enrich(rows, chainId);
     return { source: "ponder", chainId, launch: item ? serialize(item) : null };
+  });
+  c.header("Cache-Control", "public, max-age=5, stale-while-revalidate=30");
+  return c.json(payload);
+});
+
+app.get("/v1/activity/:chainId/:token", async (c) => {
+  const chainId = Number(c.req.param("chainId"));
+  const tokenRaw = c.req.param("token");
+  if (!indexerChainById(chainId)) return c.json({ error: "unsupported chainId" }, 400);
+  if (!ADDRESS.test(tokenRaw)) return c.json({ error: "invalid token address" }, 400);
+  const token = tokenRaw.toLowerCase() as Address;
+  const key = `activity:${chainId}:${token}`;
+  const payload = await cachedPayload(key, async () => {
+    const [launchRow] = await db
+      .select()
+      .from(launch)
+      .where(and(eq(launch.chainId, chainId), eq(launch.token, token)))
+      .limit(1);
+    if (!launchRow) return { source: "ponder", chainId, token, holders: [], trades: [] };
+
+    const holderRows = await db
+      .select()
+      .from(tokenHolder)
+      .where(and(
+        eq(tokenHolder.chainId, chainId),
+        eq(tokenHolder.token, token),
+        gt(tokenHolder.balance, 0n),
+      ))
+      .orderBy(desc(tokenHolder.balance))
+      .limit(8);
+
+    const swapRows = launchRow.poolAddress
+      ? await db
+        .select()
+        .from(poolSwap)
+        .where(and(
+          eq(poolSwap.chainId, chainId),
+          eq(poolSwap.poolAddress, launchRow.poolAddress),
+        ))
+        .orderBy(desc(poolSwap.blockNumber), desc(poolSwap.logIndex))
+        .limit(12)
+      : [];
+    const tokenIs0 = launchRow.token.toLowerCase() < launchRow.numeraire.toLowerCase();
+    const abs = (value: bigint) => value < 0n ? -value : value;
+    return {
+      source: "ponder",
+      chainId,
+      token,
+      holders: holderRows.map((row) => ({ address: row.holder, value: row.balance.toString() })),
+      trades: swapRows.map((row) => {
+        const tokenDelta = tokenIs0 ? row.amount0 : row.amount1;
+        const quoteDelta = tokenIs0 ? row.amount1 : row.amount0;
+        return {
+          txHash: row.transactionHash,
+          trader: row.sender,
+          timestamp: row.timestamp.toString(),
+          kind: tokenDelta > 0n ? "sell" : "buy",
+          tokenAmount: abs(tokenDelta).toString(),
+          quoteAmount: abs(quoteDelta).toString(),
+        };
+      }),
+    };
   });
   c.header("Cache-Control", "public, max-age=5, stale-while-revalidate=30");
   return c.json(payload);

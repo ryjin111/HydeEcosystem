@@ -1,5 +1,6 @@
-import { createConfig } from "ponder";
+import { createConfig, factory } from "ponder";
 import {
+  erc20TransferAbi,
   trenchGraduatorAbi,
   trenchV3FactoryAbi,
   trenchV3LockerAbi,
@@ -8,6 +9,7 @@ import {
   legacyHoodieEngineAbi,
   legacyV3PadAbi,
   legacyV4FactoryAbi,
+  uniswapV3PoolAbi,
 } from "./abis/trenchV5";
 import { INDEXER_CHAINS, LEGACY_SOURCES } from "./src/chains";
 
@@ -96,6 +98,97 @@ export default createConfig({
       chain: "robinhood",
       address: LEGACY_SOURCES.robinhoodHoodieEngine.address,
       startBlock: LEGACY_SOURCES.robinhoodHoodieEngine.startBlock,
+    },
+    TrenchV3Token: {
+      abi: erc20TransferAbi,
+      chain: "stable",
+      address: factory({
+        address: stable.factory,
+        event: trenchV3FactoryAbi[0],
+        parameter: "token",
+        startBlock: stable.startBlock,
+      }),
+    },
+    TrenchV4Token: {
+      abi: erc20TransferAbi,
+      chain: {
+        arbitrum: {
+          address: factory({
+            address: arbitrum.factory,
+            event: trenchV4FactoryAbi[0],
+            parameter: "token",
+            startBlock: arbitrum.startBlock,
+          }),
+        },
+        robinhood: {
+          address: factory({
+            address: robinhood.factory,
+            event: trenchV4FactoryAbi[0],
+            parameter: "token",
+            startBlock: robinhood.startBlock,
+          }),
+        },
+      },
+    },
+    LegacyStableToken: {
+      abi: erc20TransferAbi,
+      chain: "stable",
+      address: factory({
+        address: LEGACY_SOURCES.stablePad.address,
+        event: legacyV3PadAbi[0],
+        parameter: "token",
+        startBlock: LEGACY_SOURCES.stablePad.startBlock,
+      }),
+    },
+    LegacyArbitrumToken: {
+      abi: erc20TransferAbi,
+      chain: "arbitrum",
+      address: factory({
+        address: LEGACY_SOURCES.arbitrumFactory.address,
+        event: legacyV4FactoryAbi[0],
+        parameter: "token",
+        startBlock: LEGACY_SOURCES.arbitrumFactory.startBlock,
+      }),
+    },
+    LegacyRobinhoodWethToken: {
+      abi: erc20TransferAbi,
+      chain: "robinhood",
+      address: factory({
+        address: LEGACY_SOURCES.robinhoodWethFactory.address,
+        event: legacyV4FactoryAbi[0],
+        parameter: "token",
+        startBlock: LEGACY_SOURCES.robinhoodWethFactory.startBlock,
+      }),
+    },
+    LegacyRobinhoodHoodieToken: {
+      abi: erc20TransferAbi,
+      chain: "robinhood",
+      address: factory({
+        address: LEGACY_SOURCES.robinhoodHoodieEngine.address,
+        event: legacyHoodieEngineAbi[0],
+        parameter: "token",
+        startBlock: LEGACY_SOURCES.robinhoodHoodieEngine.startBlock,
+      }),
+    },
+    TrenchV3Pool: {
+      abi: uniswapV3PoolAbi,
+      chain: "stable",
+      address: factory({
+        address: stable.factory,
+        event: trenchV3FactoryAbi[0],
+        parameter: "pool",
+        startBlock: stable.startBlock,
+      }),
+    },
+    LegacyStableV3Pool: {
+      abi: uniswapV3PoolAbi,
+      chain: "stable",
+      address: factory({
+        address: LEGACY_SOURCES.stablePad.address,
+        event: legacyV3PadAbi[0],
+        parameter: "pool",
+        startBlock: LEGACY_SOURCES.stablePad.startBlock,
+      }),
     },
   },
 });

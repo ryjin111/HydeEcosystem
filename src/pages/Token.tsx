@@ -30,6 +30,7 @@ import {
   type GeckoCandle,
   type GeckoRange,
 } from "../hooks/useGeckoPoolActivity";
+import { useTokenActivity } from "../hooks/useTokenActivity";
 import { useTokenPosition } from "../hooks/useTokenPosition";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { HoodieSwapCard } from "../components/HoodieSwapCard";
@@ -141,28 +142,6 @@ function fmtPrice(n: number): string {
   return `$0.0${subNum(zeros)}${sig}`;
 }
 
-type Holder = { address: string; value: string };
-function useTopHolders(address?: string, chainId?: number): { holders: Holder[]; loading: boolean } {
-  const [holders, setHolders] = useState<Holder[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    setHolders([]);
-    if (!address || chainId !== ROBINHOOD_MAINNET_ID) { setLoading(false); return; } // mainnet-only source
-    let cancelled = false;
-    setLoading(true);
-    fetch(`https://robinhoodchain.blockscout.com/api/v2/tokens/${address}/holders`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        const items = (d?.items ?? []).slice(0, 8).map((h: { address?: { hash?: string }; value?: string }) => ({ address: h.address?.hash ?? "", value: h.value ?? "0" }));
-        if (!cancelled) setHolders(items);
-      })
-      .catch(() => { /* fail neutral → empty */ })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [address, chainId]);
-  return { holders, loading };
-}
-
 const short = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
 
 function fmtTokenAmount(value: string, decimals: number): string {
@@ -237,7 +216,6 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const { pools } = useHydeLaunches(network.id);
   const liveMarket = useDexPair(address, network.id);
   const { pair } = liveMarket;
-  const { holders, loading: holdersLoading } = useTopHolders(address, network.id);
   const [copied, setCopied] = useState(false);
   const [feedTab, setFeedTab] = useState<"trades" | "holders">("trades"); // coin-mockup: Trades/Holders tabs
   const [chartRange, setChartRange] = useState<GeckoRange>("24h");
@@ -276,6 +254,16 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const pool = boardPool ?? fetchedPool;
   const geckoPoolAddress = pool?.poolAddress ?? pool?.poolId ?? pair;
   const gecko = useGeckoPoolActivity(network.id, geckoPoolAddress, address, chartRange);
+  const activity = useTokenActivity({
+    chainId: network.id,
+    token: pool?.address,
+    quote: pool?.quoteToken.address,
+    poolId: pool?.poolId,
+    tokenDecimals: pool?.baseToken.decimals,
+    quoteDecimals: pool?.quoteToken.decimals,
+  });
+  const activityTrades = activity.trades.length > 0 ? activity.trades : gecko.trades;
+  const tradesLoading = activityTrades.length === 0 && (activity.loading || gecko.loading);
   const wrongChainPool = pool || selectedLookup.loading
     ? null
     : [robinhoodLookup.pool, stableLookup.pool, arbitrumLookup.pool]
@@ -599,15 +587,15 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                     </p>
                   </div>
                 </div>
-              ) : gecko.loading && gecko.trades.length === 0 ? (
+              ) : tradesLoading ? (
                 <div className="space-y-2">
                   {[0, 1, 2].map((row) => (
                     <div key={row} className="h-[48px] animate-pulse rounded-lg border border-pcs-border bg-white/[0.02]" />
                   ))}
                 </div>
-              ) : gecko.trades.length > 0 ? (
+              ) : activityTrades.length > 0 ? (
                 <div className="space-y-2">
-                  {gecko.trades.slice(0, 12).map((trade) => (
+                  {activityTrades.slice(0, 12).map((trade) => (
                     <a
                       key={`${trade.txHash}-${trade.timestamp}`}
                       href={`${network.explorerUrl}/tx/${trade.txHash}`}
@@ -633,17 +621,21 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                       </span>
                       <span className="text-right">
                         <span className="block font-code text-xs font-semibold tabular-nums text-pcs-text">
-                          {fmtUsd(trade.volumeUsd)}
+                          {trade.volumeUsd > 0
+                            ? fmtUsd(trade.volumeUsd)
+                            : `${fmtCompactToken(trade.quoteAmount)} ${pool.quoteToken.symbol}`}
                         </span>
                         <span className="mt-0.5 block font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
-                          {trade.priceUsd ? fmtPrice(trade.priceUsd) : "indexed swap"}
+                          {trade.priceUsd ? fmtPrice(trade.priceUsd) : "on-chain swap"}
                         </span>
                       </span>
                       <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 text-pcs-textDim transition group-hover:text-pcs-primary" />
                     </a>
                   ))}
                   <p className="pt-1 text-right font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
-                    Recent pool swaps via GeckoTerminal
+                    Recent pool swaps via {activity.tradeSource === "indexer"
+                      ? "Hyde indexer"
+                      : activity.tradeSource === "explorer" ? "chain explorer" : "GeckoTerminal"}
                   </p>
                 </div>
               ) : (
@@ -665,13 +657,13 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                   )}
                 </div>
               )
-            ) : holdersLoading ? (
+            ) : activity.loading ? (
               <div className="space-y-2">
                 {[0, 1, 2].map((row) => (
                   <div key={row} className="h-[46px] animate-pulse rounded-lg border border-pcs-border bg-white/[0.02]" />
                 ))}
               </div>
-            ) : holders.length === 0 ? (
+            ) : activity.holders.length === 0 ? (
               <div className="token-feed-empty">
                 <div className="token-feed-radar" aria-hidden="true">
                   <UserGroupIcon className="h-5 w-5" />
@@ -679,9 +671,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <div>
                   <p className="text-sm font-semibold text-pcs-text">Holder snapshot unavailable</p>
                   <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
-                    {network.id === STABLE_MAINNET.id
-                      ? "Stable’s current public explorer feeds do not return ranked ERC-20 holder rows yet."
-                      : "No holder rows were returned by the selected chain’s explorer."}
+                    The activity index has not returned ranked ERC-20 holder rows for this token yet.
                   </p>
                 </div>
                 <a
@@ -695,7 +685,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
               </div>
             ) : (
               <div className="space-y-2">
-                {holders.map((holder, index) => (
+                {activity.holders.map((holder, index) => (
                   <a
                     key={holder.address + index}
                     href={`${network.explorerUrl}/address/${holder.address}`}
@@ -722,7 +712,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                   </a>
                 ))}
                 <p className="pt-1 text-right font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
-                  Snapshot via chain explorer
+                  Snapshot via {activity.holderSource === "indexer" ? "Hyde indexer" : "chain explorer"}
                 </p>
               </div>
             )}

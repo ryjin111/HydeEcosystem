@@ -59,3 +59,38 @@ export const creatorFeeEvent = onchainTable(
     creatorIdx: index("creator_fee_creator_idx").on(table.creator),
   }),
 );
+
+export const tokenHolder = onchainTable(
+  "token_holder",
+  (t) => ({
+    chainId: t.integer().notNull(),
+    token: t.hex().notNull(),
+    holder: t.hex().notNull(),
+    balance: t.bigint().notNull(),
+    lastUpdatedBlock: t.bigint().notNull(),
+  }),
+  (table) => ({
+    pk: primaryKey({ columns: [table.chainId, table.token, table.holder] }),
+    tokenBalanceIdx: index("token_holder_token_balance_idx").on(table.chainId, table.token, table.balance),
+  }),
+);
+
+export const poolSwap = onchainTable(
+  "pool_swap",
+  (t) => ({
+    id: t.text().primaryKey(),
+    chainId: t.integer().notNull(),
+    poolAddress: t.hex().notNull(),
+    sender: t.hex().notNull(),
+    recipient: t.hex().notNull(),
+    amount0: t.bigint().notNull(),
+    amount1: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
+    timestamp: t.bigint().notNull(),
+    transactionHash: t.hex().notNull(),
+    logIndex: t.integer().notNull(),
+  }),
+  (table) => ({
+    poolBlockIdx: index("pool_swap_pool_block_idx").on(table.chainId, table.poolAddress, table.blockNumber),
+  }),
+);
