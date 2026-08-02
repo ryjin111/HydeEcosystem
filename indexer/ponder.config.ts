@@ -102,6 +102,7 @@ export default createConfig({
     TrenchV3Token: {
       abi: erc20TransferAbi,
       chain: "stable",
+      startBlock: stable.startBlock,
       address: factory({
         address: stable.factory,
         event: trenchV3FactoryAbi[0],
@@ -113,6 +114,7 @@ export default createConfig({
       abi: erc20TransferAbi,
       chain: {
         arbitrum: {
+          startBlock: arbitrum.startBlock,
           address: factory({
             address: arbitrum.factory,
             event: trenchV4FactoryAbi[0],
@@ -121,6 +123,7 @@ export default createConfig({
           }),
         },
         robinhood: {
+          startBlock: robinhood.startBlock,
           address: factory({
             address: robinhood.factory,
             event: trenchV4FactoryAbi[0],
@@ -133,6 +136,7 @@ export default createConfig({
     LegacyStableToken: {
       abi: erc20TransferAbi,
       chain: "stable",
+      startBlock: LEGACY_SOURCES.stablePad.startBlock,
       address: factory({
         address: LEGACY_SOURCES.stablePad.address,
         event: legacyV3PadAbi[0],
@@ -143,6 +147,7 @@ export default createConfig({
     LegacyArbitrumToken: {
       abi: erc20TransferAbi,
       chain: "arbitrum",
+      startBlock: LEGACY_SOURCES.arbitrumFactory.startBlock,
       address: factory({
         address: LEGACY_SOURCES.arbitrumFactory.address,
         event: legacyV4FactoryAbi[0],
@@ -153,6 +158,7 @@ export default createConfig({
     LegacyRobinhoodWethToken: {
       abi: erc20TransferAbi,
       chain: "robinhood",
+      startBlock: LEGACY_SOURCES.robinhoodWethFactory.startBlock,
       address: factory({
         address: LEGACY_SOURCES.robinhoodWethFactory.address,
         event: legacyV4FactoryAbi[0],
@@ -163,6 +169,7 @@ export default createConfig({
     LegacyRobinhoodHoodieToken: {
       abi: erc20TransferAbi,
       chain: "robinhood",
+      startBlock: LEGACY_SOURCES.robinhoodHoodieEngine.startBlock,
       address: factory({
         address: LEGACY_SOURCES.robinhoodHoodieEngine.address,
         event: legacyHoodieEngineAbi[0],
@@ -173,6 +180,7 @@ export default createConfig({
     TrenchV3Pool: {
       abi: uniswapV3PoolAbi,
       chain: "stable",
+      startBlock: stable.startBlock,
       address: factory({
         address: stable.factory,
         event: trenchV3FactoryAbi[0],
@@ -183,6 +191,7 @@ export default createConfig({
     LegacyStableV3Pool: {
       abi: uniswapV3PoolAbi,
       chain: "stable",
+      startBlock: LEGACY_SOURCES.stablePad.startBlock,
       address: factory({
         address: LEGACY_SOURCES.stablePad.address,
         event: legacyV3PadAbi[0],
