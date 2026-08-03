@@ -1,0 +1,25 @@
+{
+  "name": "hydeout-v5-indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ponder dev",
+    "start": "ponder start",
+    "serve": "ponder serve",
+    "codegen": "ponder codegen",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "hono": "^4.12.33",
+    "ponder": "0.17.4",
+    "viem": "2.55.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "~5.8.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

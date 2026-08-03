@@ -64,7 +64,14 @@ function RailIcon({ name }: { name: RailItem["icon"] }) {
   );
 }
 
-export function SideRail() {
+function withNetwork(to: string, chainId: number): string {
+  const [pathname, search = ""] = to.split("?");
+  const params = new URLSearchParams(search);
+  params.set("network", String(chainId));
+  return `${pathname}?${params.toString()}`;
+}
+
+export function SideRail({ selectedNetworkId }: { selectedNetworkId: number }) {
   const location = useLocation();
   return (
     <aside className="hyde-side-rail hidden w-[210px] shrink-0 xl:block">
@@ -83,7 +90,7 @@ export function SideRail() {
                   return (
                     <NavLink
                       key={item.to}
-                      to={item.to}
+                      to={withNetwork(item.to, selectedNetworkId)}
                       aria-current={active ? "page" : undefined}
                       className={`side-rail-button ${active ? "side-rail-button-active" : ""}`}
                     >

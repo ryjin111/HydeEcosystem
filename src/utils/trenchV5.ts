@@ -22,6 +22,8 @@ import {
 import { v3ChainRow, type LaunchEngine } from "./chainRegistry";
 import type { DopplerPool, TrenchCurveState } from "./dopplerConfig";
 import { rpcTransportForNetwork, rpcUrlsForNetwork } from "./rpc";
+import { fetchIndexedTrenchV5Pools, fetchIndexedTrenchV5Token } from "./trenchV5Indexer";
+import { fetchGeckoTerminalMarkets } from "./geckoTerminalMarkets";
 
 type V5EnvManifest = {
   factory?: string;
@@ -50,6 +52,14 @@ export type TrenchV5Manifest = {
 const ZERO = /^0x0{40}$/i;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const HASH = /^0x[0-9a-fA-F]{64}$/;
+
+// Arc's public mainnet is not live yet. Keep its mined preview manifest for auditability, but never
+// expose launch transactions until the chain is explicitly removed from this release gate.
+const PUBLICLY_DISABLED_V5_CHAINS = new Set<number>([ARC_MAINNET.id]);
+
+export function isTrenchV5PubliclyAvailable(chainId: number): boolean {
+  return !PUBLICLY_DISABLED_V5_CHAINS.has(chainId);
+}
 
 function envManifest(chainId: number): V5EnvManifest {
   if (chainId === ARC_MAINNET.id) {
@@ -96,6 +106,7 @@ function envManifest(chainId: number): V5EnvManifest {
 }
 
 function parseManifest(chainId: number): TrenchV5Manifest | null {
+  if (!isTrenchV5PubliclyAvailable(chainId)) return null;
   const raw = envManifest(chainId);
   const network = NETWORKS.find((item) => item.id === chainId);
   const engine: LaunchEngine = v3ChainRow(chainId) ? "v3-single-sided" : "v4-hook";
@@ -237,6 +248,13 @@ export const trenchV5GraduatorAbi = [
 
 export const trenchV5LockerAbi = [
   { type: "function", name: "graduator", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  {
+    type: "function",
+    name: "collect",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ name: "amountToken", type: "uint256" }, { name: "amountNumeraire", type: "uint256" }],
+  },
   {
     type: "function",
     name: "creatorClaimable",
@@ -410,6 +428,7 @@ type TrenchLaunchLog = {
     token?: Address;
     creator?: Address;
     pool?: Address;
+    poolId?: Hex;
   };
   blockNumber: bigint;
 };
@@ -466,7 +485,7 @@ async function enrichLaunchLog(
   timestamp?: number,
 ): Promise<DopplerPool | null> {
   const { manifest } = runtime;
-  const { token, creator, pool } = log.args;
+  const { token, creator, pool, poolId } = log.args;
   if (!token || !creator) return null;
   const [name, symbol, progress, claimable] = await Promise.all([
     runtime.client.readContract({ address: token, abi: erc20MetaAbi, functionName: "name" }).catch(() => null),
@@ -498,6 +517,7 @@ async function enrichLaunchLog(
     address: token,
     chainId: manifest.chainId,
     poolAddress: v3 ? pool : null,
+    poolId: v3 ? null : poolId ?? null,
     baseToken: { address: token, name, symbol, decimals: 18 },
     quoteToken: v3
       ? {
@@ -538,18 +558,23 @@ function dexChainId(chainId: number): string | null {
 }
 
 /**
- * DEXScreener is enrichment only: the launch identity, engine, state and progress always come from
- * verified contracts. A missing/stale index response leaves market fields null rather than inventing
- * a price. Pair candidates must match chain, Uniswap, launch token, and the V5 factory numeraire.
+ * Market APIs are enrichment only: identity, engine, state and progress always come from verified
+ * contracts. GeckoTerminal is primary and is accepted only for the canonical pool; DEXScreener is
+ * the fail-neutral fallback and must match chain, Uniswap, launch token, and factory numeraire.
  */
 async function fetchTrenchMarkets(
-  runtime: VerifiedTrenchV5Runtime,
+  chainId: number,
+  numeraire: Address,
   pools: DopplerPool[],
 ): Promise<Map<string, TrenchMarket>> {
-  const chain = dexChainId(runtime.manifest.chainId);
-  const markets = new Map<string, TrenchMarket>();
+  const chain = dexChainId(chainId);
+  const markets = new Map<string, TrenchMarket>(await fetchGeckoTerminalMarkets(pools));
   if (!chain || pools.length === 0) return markets;
-  const byToken = new Map(pools.map((pool) => [pool.address.toLowerCase(), pool]));
+  const byToken = new Map(
+    pools
+      .filter((pool) => !markets.has(pool.address.toLowerCase()))
+      .map((pool) => [pool.address.toLowerCase(), pool]),
+  );
   const addresses = [...byToken.keys()];
   for (let offset = 0; offset < addresses.length; offset += 30) {
     const batch = addresses.slice(offset, offset + 30);
@@ -577,7 +602,7 @@ async function fetchTrenchMarkets(
           !pool
           || pair.chainId !== chain
           || pair.dexId !== "uniswap"
-          || pair.quoteToken?.address?.toLowerCase() !== runtime.numeraire.toLowerCase()
+          || pair.quoteToken?.address?.toLowerCase() !== numeraire.toLowerCase()
           || (
             pool.poolAddress
             && pair.pairAddress?.toLowerCase() !== pool.poolAddress.toLowerCase()
@@ -602,10 +627,11 @@ async function fetchTrenchMarkets(
 }
 
 async function withTrenchMarkets(
-  runtime: VerifiedTrenchV5Runtime,
+  chainId: number,
+  numeraire: Address,
   pools: DopplerPool[],
 ): Promise<DopplerPool[]> {
-  const markets = await fetchTrenchMarkets(runtime, pools);
+  const markets = await fetchTrenchMarkets(chainId, numeraire, pools);
   return pools.map((pool) => {
     const market = markets.get(pool.address.toLowerCase());
     return market
@@ -623,6 +649,11 @@ async function withTrenchMarkets(
 export async function fetchTrenchV5Pools(chainId: number): Promise<DopplerPool[]> {
   const manifest = trenchV5Manifest(chainId);
   if (!manifest) return [];
+  const indexed = await fetchIndexedTrenchV5Pools(chainId);
+  if (indexed) {
+    if (indexed.length === 0) return [];
+    return withTrenchMarkets(chainId, indexed[0].quoteToken.address as Address, indexed);
+  }
   const runtime = await verifyTrenchV5Runtime(chainId);
   const newest = await newestLaunchLogs(runtime);
   const blockNumbers = [...new Set(newest.map((log) => log.blockNumber))];
@@ -633,18 +664,27 @@ export async function fetchTrenchV5Pools(chainId: number): Promise<DopplerPool[]
   const rows = await Promise.all(
     newest.map((log) => enrichLaunchLog(runtime, log, timestamps.get(log.blockNumber))),
   );
-  return withTrenchMarkets(runtime, rows.filter((pool): pool is DopplerPool => pool !== null));
+  return withTrenchMarkets(
+    chainId,
+    runtime.numeraire,
+    rows.filter((pool): pool is DopplerPool => pool !== null),
+  );
 }
 
 export async function fetchTrenchV5Token(chainId: number, token: Address): Promise<DopplerPool | null> {
   const manifest = trenchV5Manifest(chainId);
   if (!manifest) return null;
+  const indexed = await fetchIndexedTrenchV5Token(chainId, token);
+  if (indexed) {
+    const [enriched] = await withTrenchMarkets(chainId, indexed.quoteToken.address as Address, [indexed]);
+    return enriched;
+  }
   const runtime = await verifyTrenchV5Runtime(chainId);
   const [log] = await newestLaunchLogs(runtime, token);
   if (!log) return null;
   const pool = await enrichLaunchLog(runtime, log);
   if (!pool) return null;
-  const [enriched] = await withTrenchMarkets(runtime, [pool]);
+  const [enriched] = await withTrenchMarkets(chainId, runtime.numeraire, [pool]);
   return enriched;
 }
 

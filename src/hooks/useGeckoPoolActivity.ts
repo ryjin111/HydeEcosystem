@@ -34,6 +34,8 @@ type GeckoPoolActivity = GeckoSnapshot & {
   trades: GeckoTrade[];
   loading: boolean;
   error: string | null;
+  tradeError: string | null;
+  candleError: string | null;
   url: string | null;
 };
 
@@ -187,12 +189,14 @@ export function useGeckoPoolActivity(
     trades: [],
     loading: false,
     error: null,
+    tradeError: null,
+    candleError: null,
     url: null,
   });
 
   useEffect(() => {
     const network = NETWORK_SLUG[chainId];
-    if (!network || !poolAddress || !/^0x[0-9a-fA-F]{40}$/.test(poolAddress)) {
+    if (!network || !poolAddress || !/^0x(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(poolAddress)) {
       setState({
         priceUsd: null,
         marketCapUsd: null,
@@ -202,6 +206,8 @@ export function useGeckoPoolActivity(
         trades: [],
         loading: false,
         error: null,
+        tradeError: null,
+        candleError: null,
         url: null,
       });
       return;
@@ -214,7 +220,14 @@ export function useGeckoPoolActivity(
     const ohlcvUrl = `${poolUrl}/ohlcv/${RANGE_PATH[range]}&currency=usd&token=base`;
     const terminalUrl = `https://www.geckoterminal.com/${network}/pools/${normalizedPool}`;
 
-    setState((current) => ({ ...current, loading: true, error: null, url: terminalUrl }));
+    setState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      tradeError: null,
+      candleError: null,
+      url: terminalUrl,
+    }));
     Promise.allSettled([
       cachedJson<PoolResponse>(poolUrl),
       cachedJson<TradesResponse>(tradesUrl),
@@ -237,6 +250,8 @@ export function useGeckoPoolActivity(
         candles,
         loading: false,
         error: failed ? "Live market history is temporarily unavailable." : null,
+        tradeError: tradesResult.status === "rejected" ? "The GeckoTerminal trade feed is temporarily unavailable." : null,
+        candleError: candlesResult.status === "rejected" ? "The GeckoTerminal chart feed is temporarily unavailable." : null,
         url: terminalUrl,
       });
     });

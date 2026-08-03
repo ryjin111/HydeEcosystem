@@ -6,7 +6,7 @@
 // neutral. Restrictions copy = 3%→1% anti-snipe decay ONLY. No protocol touched.
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useAccount } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 import { formatUnits } from "viem";
 import {
   ArrowTopRightOnSquareIcon,
@@ -30,6 +30,7 @@ import {
   type GeckoCandle,
   type GeckoRange,
 } from "../hooks/useGeckoPoolActivity";
+import { useTokenActivity } from "../hooks/useTokenActivity";
 import { useTokenPosition } from "../hooks/useTokenPosition";
 import { V4SwapCard } from "../components/V4SwapCard";
 import { HoodieSwapCard } from "../components/HoodieSwapCard";
@@ -41,8 +42,9 @@ import { YourPositionCard } from "../components/YourPositionCard";
 import { TokenImage } from "../components/TokenImage";
 import { LaunchMetadataEditor } from "../components/LaunchMetadataEditor";
 import { fetchLaunchMeta, type LaunchMeta } from "../utils/launchMeta";
-import { chainV3Capability, ENGINE_META } from "../utils/chainRegistry";
+import { chainV3Capability, ENGINE_META, v3ChainRow } from "../utils/chainRegistry";
 import { protocolVersionOf } from "../utils/dopplerConfig";
+import { trenchV5Manifest } from "../utils/trenchV5";
 import { Card, Button, Stat, SectionLabel } from "../components/ui/kit";
 
 type Props = { network: NetworkConfig; tokens: TokenInfo[]; onAddCustomToken: (t: { address: `0x${string}`; symbol: string; name: string; decimals: number }) => void };
@@ -141,28 +143,6 @@ function fmtPrice(n: number): string {
   return `$0.0${subNum(zeros)}${sig}`;
 }
 
-type Holder = { address: string; value: string };
-function useTopHolders(address?: string, chainId?: number): { holders: Holder[]; loading: boolean } {
-  const [holders, setHolders] = useState<Holder[]>([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    setHolders([]);
-    if (!address || chainId !== ROBINHOOD_MAINNET_ID) { setLoading(false); return; } // mainnet-only source
-    let cancelled = false;
-    setLoading(true);
-    fetch(`https://robinhoodchain.blockscout.com/api/v2/tokens/${address}/holders`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        const items = (d?.items ?? []).slice(0, 8).map((h: { address?: { hash?: string }; value?: string }) => ({ address: h.address?.hash ?? "", value: h.value ?? "0" }));
-        if (!cancelled) setHolders(items);
-      })
-      .catch(() => { /* fail neutral → empty */ })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [address, chainId]);
-  return { holders, loading };
-}
-
 const short = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
 
 function fmtTokenAmount(value: string, decimals: number): string {
@@ -175,6 +155,58 @@ function fmtTokenAmount(value: string, decimals: number): string {
   } catch {
     return "—";
   }
+}
+
+type HolderKind = "curve" | "lp" | "locker" | "contract" | "wallet" | "address";
+type HolderIdentity = { kind: HolderKind; badge: string; detail: string };
+
+function useContractHolderAddresses(addresses: string[], chainId: number): { contracts: Set<string>; checked: boolean } {
+  const publicClient = usePublicClient({ chainId });
+  const [state, setState] = useState<{ contracts: Set<string>; checked: boolean }>({
+    contracts: new Set(),
+    checked: false,
+  });
+  const key = addresses.map((address) => address.toLowerCase()).sort().join(",");
+  useEffect(() => {
+    let cancelled = false;
+    setState({ contracts: new Set(), checked: false });
+    if (!publicClient || addresses.length === 0) {
+      setState({ contracts: new Set(), checked: true });
+      return;
+    }
+    Promise.all(addresses.map(async (address) => {
+      try {
+        const code = await publicClient.getBytecode({ address: address as `0x${string}` });
+        return code && code !== "0x" ? address.toLowerCase() : null;
+      } catch {
+        return null;
+      }
+    })).then((results) => {
+      if (!cancelled) setState({ contracts: new Set(results.filter((value): value is string => !!value)), checked: true });
+    });
+    return () => { cancelled = true; };
+    // `key` is the stable identity of the ranked address set; depending on the array itself would rescan each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chainId, key, publicClient]);
+  return state;
+}
+
+function holderIdentity(
+  address: string,
+  known: Map<string, HolderIdentity>,
+  contractAddresses: Set<string>,
+  contractsChecked: boolean,
+): HolderIdentity {
+  const normalized = address.toLowerCase();
+  const protocolIdentity = known.get(normalized);
+  if (protocolIdentity) return protocolIdentity;
+  if (contractAddresses.has(normalized)) {
+    return { kind: "contract", badge: "CONTRACT", detail: "Smart contract balance · not a wallet" };
+  }
+  // Ordinary EOAs do not need a redundant WALLET badge. A failed/unfinished bytecode probe also
+  // remains unlabeled so an unknown contract is never presented as a confirmed wallet.
+  if (!contractsChecked) return { kind: "address", badge: "", detail: "" };
+  return { kind: "wallet", badge: "", detail: "" };
 }
 
 function timeAgo(iso: string): string | null {
@@ -237,7 +269,6 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const { pools } = useHydeLaunches(network.id);
   const liveMarket = useDexPair(address, network.id);
   const { pair } = liveMarket;
-  const { holders, loading: holdersLoading } = useTopHolders(address, network.id);
   const [copied, setCopied] = useState(false);
   const [feedTab, setFeedTab] = useState<"trades" | "holders">("trades"); // coin-mockup: Trades/Holders tabs
   const [chartRange, setChartRange] = useState<GeckoRange>("24h");
@@ -274,8 +305,23 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   );
   const fetchedPool = selectedLookup.pool;
   const pool = boardPool ?? fetchedPool;
-  const geckoPoolAddress = pool?.poolAddress ?? pair;
+  const geckoPoolAddress = pool?.poolAddress ?? pool?.poolId ?? pair;
   const gecko = useGeckoPoolActivity(network.id, geckoPoolAddress, address, chartRange);
+  const activity = useTokenActivity({
+    chainId: network.id,
+    token: pool?.address,
+    quote: pool?.quoteToken.address,
+    poolId: pool?.poolId,
+    tokenDecimals: pool?.baseToken.decimals,
+    quoteDecimals: pool?.quoteToken.decimals,
+  });
+  const activityTrades = activity.trades.length > 0 ? activity.trades : gecko.trades;
+  const tradesLoading = activityTrades.length === 0 && (activity.loading || gecko.loading);
+  const holderAddresses = useMemo(
+    () => activity.holders.map((holder) => holder.address),
+    [activity.holders],
+  );
+  const contractHolderScan = useContractHolderAddresses(holderAddresses, network.id);
   const wrongChainPool = pool || selectedLookup.loading
     ? null
     : [robinhoodLookup.pool, stableLookup.pool, arbitrumLookup.pool]
@@ -332,7 +378,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             <Link to={`/token/${address}?network=${wrongChainPool.chainId}`}>
               <Button variant="primary">View on {actualName}</Button>
             </Link>
-            <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+            <Link to={`/discover?network=${network.id}`}><Button variant="secondary">Back to Discover</Button></Link>
           </div>
         </Card>
       </div>
@@ -343,7 +389,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
       <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
         <Card variant="panel" className="mx-auto max-w-lg text-center">
           <p className="py-5 text-pcs-textSub">Token data is temporarily unavailable.</p>
-          <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+          <Link to={`/discover?network=${network.id}`}><Button variant="secondary">Back to Discover</Button></Link>
         </Card>
       </div>
     );
@@ -353,7 +399,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
       <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
         <Card variant="panel" className="mx-auto max-w-lg text-center">
           <p className="py-5 text-pcs-textSub">This isn’t a Hydeout launch token.</p>
-          <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+          <Link to={`/discover?network=${network.id}`}><Button variant="secondary">Back to Discover</Button></Link>
         </Card>
       </div>
     );
@@ -364,6 +410,28 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
   const isV4Launch = pool.launchEngine === "v4-hook";
   const isV5 = protocolVersionOf(pool) === "v5-trench";
   const curveState = pool.curveState ?? "curve-active";
+  const knownHolderIdentities = new Map<string, HolderIdentity>();
+  const addKnownHolder = (holderAddress: string | null | undefined, identity: HolderIdentity) => {
+    if (holderAddress && !/^0x0{40}$/i.test(holderAddress)) {
+      knownHolderIdentities.set(holderAddress.toLowerCase(), identity);
+    }
+  };
+  const liquidityIdentity: HolderIdentity = isV5 && curveState !== "graduated"
+    ? { kind: "curve", badge: "CURVE", detail: "Bonding-curve liquidity · protocol custody" }
+    : { kind: "lp", badge: "LP", detail: "Locked liquidity · not a whale wallet" };
+  addKnownHolder(pool.poolAddress, liquidityIdentity);
+  addKnownHolder(V4_CONTRACTS_BY_CHAIN[network.id]?.poolManager, liquidityIdentity);
+  addKnownHolder(pool.address, { kind: "contract", badge: "TOKEN", detail: "Token contract balance" });
+  const v3System = v3ChainRow(network.id)?.launchpad;
+  addKnownHolder(v3System?.locker, { kind: "locker", badge: "LOCKER", detail: "Protocol liquidity locker" });
+  addKnownHolder(v3System?.pad, { kind: "contract", badge: "LAUNCH", detail: "Hyde launch contract" });
+  const v4System = V4_CONTRACTS_BY_CHAIN[network.id];
+  addKnownHolder(v4System?.positionManager, { kind: "contract", badge: "POSITION", detail: "Uniswap position manager" });
+  addKnownHolder(v4System?.hydeTokenFactory, { kind: "contract", badge: "LAUNCH", detail: "Hyde launch factory" });
+  addKnownHolder(v4System?.hoodieEngine, { kind: "contract", badge: "LAUNCH", detail: "Hyde launch engine" });
+  addKnownHolder(v4System?.hydeHook, { kind: "contract", badge: "HOOK", detail: "Hyde pool hook" });
+  addKnownHolder(v4System?.hoodieHook, { kind: "contract", badge: "HOOK", detail: "Hyde pool hook" });
+  addKnownHolder(trenchV5Manifest(network.id)?.factory, { kind: "contract", badge: "LAUNCH", detail: "V5 launch factory" });
   const curveProgress = Math.max(0, Math.min(100, pool.progress ?? 0));
   const curveStatusLabel = curveState === "graduated"
     ? "GRADUATED · LP LOCKED"
@@ -531,7 +599,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <p className="mt-1 max-w-sm text-xs text-pcs-textSub">
                   {wethContained
                     ? "Trading is paused while this pool’s launch price is under review."
-                    : gecko.error ?? "No indexed OHLCV candles were returned for this canonical pool yet."}
+                    : gecko.candleError ?? gecko.error ?? "No indexed OHLCV candles were returned for this canonical pool yet."}
                 </p>
               </div>
             </div>
@@ -599,15 +667,15 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                     </p>
                   </div>
                 </div>
-              ) : gecko.loading && gecko.trades.length === 0 ? (
+              ) : tradesLoading ? (
                 <div className="space-y-2">
                   {[0, 1, 2].map((row) => (
                     <div key={row} className="h-[48px] animate-pulse rounded-lg border border-pcs-border bg-white/[0.02]" />
                   ))}
                 </div>
-              ) : gecko.trades.length > 0 ? (
+              ) : activityTrades.length > 0 ? (
                 <div className="space-y-2">
-                  {gecko.trades.slice(0, 12).map((trade) => (
+                  {activityTrades.slice(0, 12).map((trade) => (
                     <a
                       key={`${trade.txHash}-${trade.timestamp}`}
                       href={`${network.explorerUrl}/tx/${trade.txHash}`}
@@ -633,17 +701,21 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                       </span>
                       <span className="text-right">
                         <span className="block font-code text-xs font-semibold tabular-nums text-pcs-text">
-                          {fmtUsd(trade.volumeUsd)}
+                          {trade.volumeUsd > 0
+                            ? fmtUsd(trade.volumeUsd)
+                            : `${fmtCompactToken(trade.quoteAmount)} ${pool.quoteToken.symbol}`}
                         </span>
                         <span className="mt-0.5 block font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
-                          {trade.priceUsd ? fmtPrice(trade.priceUsd) : "indexed swap"}
+                          {trade.priceUsd ? fmtPrice(trade.priceUsd) : "on-chain swap"}
                         </span>
                       </span>
                       <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 text-pcs-textDim transition group-hover:text-pcs-primary" />
                     </a>
                   ))}
                   <p className="pt-1 text-right font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
-                    Recent pool swaps via GeckoTerminal
+                    Recent pool swaps via {activity.tradeSource === "indexer"
+                      ? "Hyde indexer"
+                      : activity.tradeSource === "explorer" ? "chain explorer" : "GeckoTerminal"}
                   </p>
                 </div>
               ) : (
@@ -654,7 +726,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                   <div>
                     <p className="text-sm font-semibold text-pcs-text">No indexed swaps yet</p>
                     <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
-                      {gecko.error ?? "No recent trades were returned for this canonical pool."}
+                      {activity.tradeError ?? gecko.tradeError ?? gecko.error ?? "No recent trades were returned for this canonical pool."}
                     </p>
                   </div>
                   {gecko.url && (
@@ -665,13 +737,13 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                   )}
                 </div>
               )
-            ) : holdersLoading ? (
+            ) : activity.loading ? (
               <div className="space-y-2">
                 {[0, 1, 2].map((row) => (
                   <div key={row} className="h-[46px] animate-pulse rounded-lg border border-pcs-border bg-white/[0.02]" />
                 ))}
               </div>
-            ) : holders.length === 0 ? (
+            ) : activity.holders.length === 0 ? (
               <div className="token-feed-empty">
                 <div className="token-feed-radar" aria-hidden="true">
                   <UserGroupIcon className="h-5 w-5" />
@@ -679,9 +751,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <div>
                   <p className="text-sm font-semibold text-pcs-text">Holder snapshot unavailable</p>
                   <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
-                    {network.id === STABLE_MAINNET.id
-                      ? "Stable’s current public explorer feeds do not return ranked ERC-20 holder rows yet."
-                      : "No holder rows were returned by the selected chain’s explorer."}
+                    {activity.holderError ?? "The activity index has not returned ranked ERC-20 holder rows for this token yet."}
                   </p>
                 </div>
                 <a
@@ -695,35 +765,49 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
               </div>
             ) : (
               <div className="space-y-2">
-                {holders.map((holder, index) => (
-                  <a
-                    key={holder.address + index}
-                    href={`${network.explorerUrl}/address/${holder.address}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="token-holder-row group"
-                  >
-                    <span className={`token-holder-rank ${index < 3 ? "token-holder-rank-top" : ""}`}>
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-code text-xs text-pcs-text">{short(holder.address)}</span>
-                      <span className="mt-0.5 block text-[10px] uppercase tracking-wider text-pcs-textDim">
-                        Wallet on {network.name}
+                {activity.holders.map((holder, index) => {
+                  const identity = holderIdentity(
+                    holder.address,
+                    knownHolderIdentities,
+                    contractHolderScan.contracts,
+                    contractHolderScan.checked,
+                  );
+                  return (
+                    <a
+                      key={holder.address + index}
+                      href={`${network.explorerUrl}/address/${holder.address}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="token-holder-row group"
+                    >
+                      <span className={`token-holder-rank ${index < 3 ? "token-holder-rank-top" : ""}`}>
+                        {String(index + 1).padStart(2, "0")}
                       </span>
-                    </span>
-                    <span className="text-right">
-                      <span className="block font-code text-xs font-semibold tabular-nums text-pcs-text">
-                        {fmtTokenAmount(holder.value, pool.baseToken.decimals)}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate font-code text-xs text-pcs-text">{short(holder.address)}</span>
+                          {identity.badge && <span className={`token-holder-kind token-holder-kind-${identity.kind}`}>{identity.badge}</span>}
+                        </span>
+                        {identity.detail && (
+                          <span className="mt-0.5 block truncate text-[10px] uppercase tracking-wider text-pcs-textDim">
+                            {identity.detail}
+                          </span>
+                        )}
                       </span>
-                      <span className="mt-0.5 block font-code text-[9px] uppercase tracking-wider text-pcs-textDim">{sym}</span>
-                    </span>
-                    <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 text-pcs-textDim transition group-hover:text-pcs-primary" />
-                  </a>
-                ))}
-                <p className="pt-1 text-right font-code text-[9px] uppercase tracking-wider text-pcs-textDim">
-                  Snapshot via chain explorer
-                </p>
+                      <span className="text-right">
+                        <span className="block font-code text-xs font-semibold tabular-nums text-pcs-text">
+                          {fmtTokenAmount(holder.value, pool.baseToken.decimals)}
+                        </span>
+                        <span className="mt-0.5 block font-code text-[9px] uppercase tracking-wider text-pcs-textDim">{sym}</span>
+                      </span>
+                      <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 text-pcs-textDim transition group-hover:text-pcs-primary" />
+                    </a>
+                  );
+                })}
+                <div className="flex flex-col gap-1 pt-1 font-code text-[9px] uppercase tracking-wider text-pcs-textDim sm:flex-row sm:justify-between">
+                  <span>Curve / LP balances are protocol liquidity custody</span>
+                  <span>Snapshot via {activity.holderSource === "indexer" ? "Hyde indexer" : "chain explorer"}</span>
+                </div>
               </div>
             )}
           </div>
@@ -809,6 +893,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
               symbol: sym,
               decimals: pool.baseToken.decimals,
             }}
+            graduated={pool.curveState === "graduated"}
           />
         ) : !isV4Launch && (
           <StableV3FeeCollector

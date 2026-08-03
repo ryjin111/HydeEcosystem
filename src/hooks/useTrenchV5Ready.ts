@@ -5,7 +5,22 @@ export type TrenchV5Readiness = {
   ready: boolean;
   checking: boolean;
   error: string | null;
+  retry: () => void;
 };
+
+const verifiedChains = new Set<number>();
+const verificationInFlight = new Map<number, Promise<void>>();
+
+function verifyOnce(chainId: number): Promise<void> {
+  if (verifiedChains.has(chainId)) return Promise.resolve();
+  const existing = verificationInFlight.get(chainId);
+  if (existing) return existing;
+  const request = verifyTrenchV5Runtime(chainId)
+    .then(() => { verifiedChains.add(chainId); })
+    .finally(() => { verificationInFlight.delete(chainId); });
+  verificationInFlight.set(chainId, request);
+  return request;
+}
 
 /**
  * A parsed environment manifest is not proof of a deployment. Readiness becomes true only after
@@ -13,38 +28,65 @@ export type TrenchV5Readiness = {
  */
 export function useTrenchV5Ready(chainId: number): TrenchV5Readiness {
   const configured = isTrenchV5Configured(chainId);
-  const [state, setState] = useState<TrenchV5Readiness>({
-    ready: false,
-    checking: configured,
-    error: null,
+  const [attempt, setAttempt] = useState(0);
+  const retry = () => setAttempt((value) => value + 1);
+  const [snapshot, setSnapshot] = useState<{
+    chainId: number;
+    state: Omit<TrenchV5Readiness, "retry">;
+  }>({
+    chainId,
+    state: verifiedChains.has(chainId)
+      ? { ready: true, checking: false, error: null }
+      : configured
+        ? { ready: false, checking: true, error: null }
+        : { ready: false, checking: false, error: "V5 deployment manifest is unavailable." },
   });
+
+  // Never expose the previous chain's successful state while the next chain waits for its effect.
+  const state = snapshot.chainId === chainId
+    ? snapshot.state
+    : verifiedChains.has(chainId)
+      ? { ready: true, checking: false, error: null }
+      : configured
+        ? { ready: false, checking: true, error: null }
+        : { ready: false, checking: false, error: "V5 deployment manifest is unavailable." };
 
   useEffect(() => {
     let cancelled = false;
     if (!isTrenchV5Configured(chainId)) {
-      setState({ ready: false, checking: false, error: null });
+      setSnapshot({
+        chainId,
+        state: { ready: false, checking: false, error: "V5 deployment manifest is unavailable." },
+      });
       return () => {
         cancelled = true;
       };
     }
-    setState({ ready: false, checking: true, error: null });
-    verifyTrenchV5Runtime(chainId)
+    if (verifiedChains.has(chainId)) {
+      setSnapshot({ chainId, state: { ready: true, checking: false, error: null } });
+      return () => { cancelled = true; };
+    }
+    setSnapshot({ chainId, state: { ready: false, checking: true, error: null } });
+    verifyOnce(chainId)
       .then(() => {
-        if (!cancelled) setState({ ready: true, checking: false, error: null });
+        if (!cancelled) setSnapshot({ chainId, state: { ready: true, checking: false, error: null } });
       })
       .catch((cause) => {
         if (!cancelled) {
-          setState({
-            ready: false,
-            checking: false,
-            error: cause instanceof Error ? cause.message : "V5 runtime verification failed.",
+          setSnapshot({
+            chainId,
+            state: {
+              ready: false,
+              checking: false,
+              error: cause instanceof Error ? cause.message : "V5 runtime verification failed.",
+            },
           });
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [chainId]);
+  }, [attempt, chainId]);
 
-  return state;
+  return { ...state, retry };
 }

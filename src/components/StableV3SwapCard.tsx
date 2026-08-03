@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { formatUnits, maxUint256, type Address } from "viem";
-import { useAccount, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
+import { ConnectorAlreadyConnectedError, useAccount, useConnect, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
 import type { NetworkConfig } from "../utils/constants";
 import {
   assertStableV3SwapDeployment,
@@ -43,6 +43,7 @@ function errorCopy(error: unknown, fallback: string): string {
 export function StableV3SwapCard({ network, token }: Props) {
   const { address, isConnected, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
+  const { connectAsync, connectors, isPending: connecting } = useConnect();
   const publicClient = usePublicClient({ chainId: network.id });
   const { data: walletClient } = useWalletClient({ chainId: network.id });
   const config = useMemo(() => stableV3SwapConfig(network.id), [network.id]);
@@ -62,6 +63,16 @@ export function StableV3SwapCard({ network, token }: Props) {
   const [refresh, setRefresh] = useState(0);
   const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
   const quoteRequest = useRef(0);
+
+  const connectWallet = async () => {
+    const connector = connectors[0];
+    if (!connector) return toast.error("Wallet connector not found.");
+    try {
+      await connectAsync({ connector });
+    } catch (cause) {
+      if (!(cause instanceof ConnectorAlreadyConnectedError)) toast.error("Wallet connection failed.");
+    }
+  };
 
   const isBuy = side === "buy";
   const input = isBuy
@@ -365,8 +376,9 @@ export function StableV3SwapCard({ network, token }: Props) {
 
       <div className="mt-4">
         {!isConnected ? (
-          <button disabled className="w-full rounded-xl bg-[#22252D] py-3 text-sm font-bold text-[#6B7280]">
-            Connect wallet
+          <button type="button" onClick={connectWallet} disabled={connecting}
+            className="w-full rounded-xl bg-pcs-primary py-3 text-sm font-bold text-pcs-bg disabled:opacity-50">
+            {connecting ? "Connecting…" : "Connect wallet"}
           </button>
         ) : wrongNetwork ? (
           <button

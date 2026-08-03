@@ -74,7 +74,7 @@ function ageOf(iso: string): string {
 }
 
 function compactUsd(value: number | null): string {
-  if (value == null || !Number.isFinite(value) || value < 0) return "Not indexed";
+  if (value == null || !Number.isFinite(value) || value < 0) return "Market unavailable";
   if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(value >= 10_000_000_000 ? 1 : 2)}B`;
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(value >= 10_000_000 ? 1 : 2)}M`;
   if (value >= 1_000) return `$${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}K`;
@@ -82,7 +82,7 @@ function compactUsd(value: number | null): string {
 }
 
 function priceUsd(value: number | null): string {
-  if (value == null || !Number.isFinite(value) || value <= 0) return "Not indexed";
+  if (value == null || !Number.isFinite(value) || value <= 0) return "Market unavailable";
   if (value >= 1) return `$${value.toLocaleString("en-US", { maximumFractionDigits: 4 })}`;
   return `$${value.toLocaleString("en-US", { maximumSignificantDigits: 5 })}`;
 }
@@ -109,10 +109,20 @@ function EngineBadge({ engine, v5 = false }: { engine: LaunchEngine; v5?: boolea
   const isV4 = engine === "v4-hook";
   return (
     <span
-      className="rounded-md px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.08em]"
+      className="whitespace-nowrap rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] backdrop-blur-md"
       style={isV4
-        ? { background: "rgba(42,212,166,0.10)", color: "#4FE3BE", border: "1px solid rgba(42,212,166,0.25)" }
-        : { background: "rgba(46,159,230,0.10)", color: C.blueH, border: `1px solid ${C.blue}40` }}
+        ? {
+            background: "rgba(5,24,20,0.94)",
+            color: "#67F0CB",
+            border: "1px solid rgba(103,240,203,0.58)",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.58)",
+          }
+        : {
+            background: "rgba(5,17,28,0.94)",
+            color: "#78CBFF",
+            border: "1px solid rgba(120,203,255,0.58)",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.58)",
+          }}
     >
       {v5 ? `V5 · ${isV4 ? "V4" : "V3"}` : `Legacy · ${isV4 ? "V4" : "V3"}`}
     </span>
@@ -123,11 +133,12 @@ function ChainBadge({ chainId }: { chainId: number }) {
   const isStable = chainId === 988;
   return (
     <span
-      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[0.06em]"
+      className="inline-flex whitespace-nowrap items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.06em] backdrop-blur-md"
       style={{
-        background: isStable ? "rgba(52,199,123,0.10)" : "rgba(138,147,162,0.12)",
-        color: isStable ? "#67E3A2" : "#C8CED8",
-        border: `1px solid ${isStable ? "rgba(52,199,123,0.28)" : "rgba(138,147,162,0.24)"}`,
+        background: isStable ? "rgba(5,25,17,0.94)" : "rgba(10,15,24,0.94)",
+        color: isStable ? "#70F0AF" : "#F1F5FA",
+        border: `1px solid ${isStable ? "rgba(112,240,175,0.58)" : "rgba(200,214,232,0.52)"}`,
+        boxShadow: "0 2px 8px rgba(0,0,0,0.58)",
       }}
     >
       <span className="h-1 w-1 rounded-full" style={{ background: isStable ? C.green : C.blueH }} />
@@ -489,7 +500,10 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
           <LatestSignal p={featured} />
         ) : (
           <div className="rounded-[14px] p-8 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
-            No live launches in this view — <Link to={`/launchpad?tab=launch&network=${chainId}`} style={{ color: C.blue }}>launch on {networkName(chainId)}</Link>.
+            No live launches in this view — <Link
+              to={`/launchpad?tab=launch&network=${chainScope === "all" ? chainId : chainScope}`}
+              style={{ color: C.blue }}
+            >launch on {networkName(chainScope === "all" ? chainId : chainScope)}</Link>.
           </div>
         )}
         <EngineRoutes

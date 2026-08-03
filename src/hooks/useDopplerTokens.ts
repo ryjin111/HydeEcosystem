@@ -19,6 +19,8 @@ import {
   fetchTrenchV5Token,
   isTrenchV5Configured,
 } from "../utils/trenchV5";
+import { fetchIndexedLegacyPools, fetchIndexedLegacyToken } from "../utils/trenchV5Indexer";
+import { fetchGeckoTerminalMarkets } from "../utils/geckoTerminalMarkets";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 
@@ -319,6 +321,23 @@ async function fetchDexData(
   return out;
 }
 
+async function fetchLaunchMarketData(
+  pools: DopplerPool[],
+  expectedChain: DexChain = "robinhood",
+  canonicalPairByToken?: ReadonlyMap<string, string>,
+): Promise<Map<string, DexData>> {
+  const gecko = new Map<string, DexData>(await fetchGeckoTerminalMarkets(pools));
+  const missing = pools.filter((pool) => !gecko.has(pool.address.toLowerCase()));
+  if (missing.length === 0) return gecko;
+  const fallback = await fetchDexData(
+    missing.map((pool) => pool.address),
+    expectedChain,
+    canonicalPairByToken,
+  );
+  for (const [token, market] of fallback) gecko.set(token, market);
+  return gecko;
+}
+
 
 /** Tokens launched via the Hydeout launchpad on Robinhood Chain, as TokenInfo[].
  *  No swap-routing metadata attached here; the Token page gates executable swaps
@@ -426,6 +445,8 @@ export async function isMainnetOwnStackLaunch(address: `0x${string}`): Promise<b
   if (a === MAINNET_HOODIE.toLowerCase() || a === ROBINHOOD_MAINNET.weth.toLowerCase()) return false;
   const cached = readMainnetLaunchCache(MAINNET_LAUNCH_CACHE_MAX_STALE);
   if (cached?.pools.some((pool) => pool.address.toLowerCase() === a)) return true;
+  const indexed = await fetchIndexedLegacyToken(ROBINHOOD_CHAIN_ID, address);
+  if (indexed) return true;
   const tokenTopic = topicForAddress(address);
   const [weth, hoodie] = await Promise.all([
     fetchExplorerLogs(MAINNET_WETH_FACTORY, LAUNCH_CREATED_TOPIC, MAINNET_WETH_FACTORY_BLOCK, { position: 1, value: tokenTopic }).catch(() => []),
@@ -452,6 +473,25 @@ let stableLaunchInFlight: Promise<DopplerPool[]> | null = null;
 /** Stable V3 launches from HydeV3Pad. Membership, metadata, and timestamps come directly from Stable;
  * market fields are accepted only from Stable-scoped Uniswap pairs returned by DEXScreener. */
 async function loadStableV3Pools(): Promise<DopplerPool[]> {
+  const indexed = await fetchIndexedLegacyPools(STABLE_CHAIN_ID);
+  if (indexed) {
+    const canonicalPairs = new Map(
+      indexed
+        .filter((pool) => !!pool.poolAddress)
+        .map((pool) => [pool.address.toLowerCase(), pool.poolAddress!] as const),
+    );
+    const dex = await fetchLaunchMarketData(indexed, "stable", canonicalPairs);
+    return indexed.map((pool) => {
+      const data = dex.get(pool.address.toLowerCase());
+      return data ? {
+        ...pool,
+        marketCapUsd: data.marketCapUsd,
+        priceUsd: data.priceUsd,
+        dollarLiquidity: data.liquidityUsd != null ? String(data.liquidityUsd) : pool.dollarLiquidity,
+        volumeUsd: data.volumeUsd != null ? String(data.volumeUsd) : pool.volumeUsd,
+      } : pool;
+    });
+  }
   const latest = await stableClient.getBlockNumber();
   const logs = await getStableLogs(
     (fromBlock, toBlock) => stableClient.getLogs({
@@ -515,7 +555,7 @@ async function loadStableV3Pools(): Promise<DopplerPool[]> {
       .filter((pool) => !!pool.poolAddress)
       .map((pool) => [pool.address.toLowerCase(), pool.poolAddress!] as const),
   );
-  const dex = await fetchDexData(deduped.map((pool) => pool.address), "stable", canonicalPairs);
+  const dex = await fetchLaunchMarketData(deduped, "stable", canonicalPairs);
   return deduped.map((pool) => {
     const data = dex.get(pool.address.toLowerCase());
     if (!data) return pool;
@@ -555,6 +595,8 @@ async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<Doppler
     (pool) => pool.address.toLowerCase() === address.toLowerCase(),
   );
   if (cached) return cached;
+  const indexed = await fetchIndexedLegacyToken(STABLE_CHAIN_ID, address);
+  if (indexed) return indexed;
 
   const position = await stableClient.readContract({
     address: STABLE_V3_LOCKER,
@@ -612,8 +654,8 @@ async function fetchStableV3LaunchToken(address: `0x${string}`): Promise<Doppler
     creator,
     creatorClaimable: null,
   };
-  const data = (await fetchDexData(
-    [address],
+  const data = (await fetchLaunchMarketData(
+    [pool],
     "stable",
     new Map([[address.toLowerCase(), poolAddress]]),
   )).get(address.toLowerCase());
@@ -658,9 +700,26 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
             ? fetchStableV3LaunchToken
             : null;
     const fetcher = isTrenchV5Configured(chainId)
-      ? async (token: `0x${string}`) => (
-          await fetchTrenchV5Token(chainId, token).catch(() => null)
-        ) ?? (legacyFetcher ? legacyFetcher(token) : null)
+      ? async (token: `0x${string}`) => {
+          let v5Failure: unknown = null;
+          try {
+            const v5 = await fetchTrenchV5Token(chainId, token);
+            if (v5) return v5;
+          } catch (cause) {
+            v5Failure = cause;
+          }
+          if (legacyFetcher) {
+            try {
+              const legacy = await legacyFetcher(token);
+              if (legacy) return legacy;
+            } catch (cause) {
+              throw cause;
+            }
+          }
+          // A failed V5 lookup cannot safely become a definitive "not a Hydeout token" result.
+          if (v5Failure) throw v5Failure;
+          return null;
+        }
       : legacyFetcher;
     if (!fetcher) {
       setLoading(false);
@@ -706,7 +765,10 @@ const rhTestnetChain = defineChain({
 });
 const testnetClient = createPublicClient({ chain: rhTestnetChain, transport: rpcTransportForNetwork(ROBINHOOD_TESTNET) });
 
-type LaunchLog = { args: { token: `0x${string}`; creator: `0x${string}` }; blockNumber: bigint | null };
+type LaunchLog = {
+  args: { token: `0x${string}`; creator: `0x${string}`; poolId?: `0x${string}` };
+  blockNumber: bigint | null;
+};
 type OwnStackSource = {
   chainId: number;
   network: typeof ROBINHOOD_TESTNET | typeof ARBITRUM_MAINNET;
@@ -836,6 +898,7 @@ async function fetchOwnStackFactoryPools(source: OwnStackSource): Promise<Dopple
     return {
       address: token,
       chainId: source.chainId,
+      poolId: log.args.poolId ?? null,
       baseToken: { address: token, name, symbol, decimals: 18 },
       quoteToken: { address: source.network.weth, name: "Wrapped Ether", symbol: "WETH", decimals: 18 },
       launchEngine: "v4-hook",
@@ -864,7 +927,9 @@ async function fetchOwnStackFactoryPools(source: OwnStackSource): Promise<Dopple
  *  client so a testnet token page never falls back to mainnet data (clint #4 cross-chain bleed).
  *  Testnet isn't third-party indexed → price/graduation stay null (honest). Fails to null. */
 const fetchHydeFactoryPools = () => fetchOwnStackFactoryPools(TESTNET_OWN_STACK);
-const fetchArbitrumFactoryPools = () => fetchOwnStackFactoryPools(ARBITRUM_OWN_STACK);
+const fetchArbitrumFactoryPools = async () => (
+  await fetchIndexedLegacyPools(ARBITRUM_CHAIN_ID)
+) ?? fetchOwnStackFactoryPools(ARBITRUM_OWN_STACK);
 
 async function fetchOwnStackLaunchToken(
   source: OwnStackSource,
@@ -909,12 +974,15 @@ async function fetchOwnStackLaunchToken(
 export const fetchTestnetLaunchToken = (address: `0x${string}`) =>
   fetchOwnStackLaunchToken(TESTNET_OWN_STACK, address);
 export const fetchArbitrumLaunchToken = (address: `0x${string}`) =>
-  fetchOwnStackLaunchToken(ARBITRUM_OWN_STACK, address);
+  fetchIndexedLegacyToken(ARBITRUM_CHAIN_ID, address)
+    .then((indexed) => indexed ?? fetchOwnStackLaunchToken(ARBITRUM_OWN_STACK, address));
 
 async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerPool | null> {
   const boardPool = (await fetchMainnetOwnStackPools().catch(() => []))
     .find((pool) => pool.address.toLowerCase() === address.toLowerCase());
   if (boardPool) return boardPool;
+  const indexed = await fetchIndexedLegacyToken(ROBINHOOD_CHAIN_ID, address);
+  if (indexed) return indexed;
 
   const tokenTopic = topicForAddress(address);
   const [wethCreated, hoodieCreated] = await Promise.all([
@@ -926,10 +994,14 @@ async function fetchMainnetLaunchToken(address: `0x${string}`): Promise<DopplerP
   const event = (isHoodiePair ? hoodieCreated : wethCreated)[0];
   const meta = await fetchExplorerToken(address);
   const timestamp = event?.timeStamp ? explorerInteger(event.timeStamp) : 0;
+  const poolId = isHoodiePair
+    ? (/^0x[0-9a-fA-F]{64}/.test(event?.data ?? "") ? event.data.slice(0, 66) : null)
+    : (event?.topics[3] && /^0x[0-9a-fA-F]{64}$/.test(event.topics[3]) ? event.topics[3] : null);
 
   return {
     address,
     chainId: ROBINHOOD_CHAIN_ID,
+    poolId,
     baseToken: {
       address,
       name: meta.name!,
@@ -965,6 +1037,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
   type ExplorerLaunch = {
     token: `0x${string}`;
     creator: `0x${string}` | null;
+    poolId: string | null;
     block: number;
     timestamp: number;
     isHoodiePair: boolean;
@@ -973,6 +1046,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
     ...wethLogs.map((log) => ({
       token: topicAddress(log.topics[1]),
       creator: topicAddress(log.topics[2]),
+      poolId: log.topics[3] && /^0x[0-9a-fA-F]{64}$/.test(log.topics[3]) ? log.topics[3] : null,
       block: explorerInteger(log.blockNumber),
       timestamp: explorerInteger(log.timeStamp),
       isHoodiePair: false,
@@ -980,6 +1054,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
     ...hoodieLogs.map((log) => ({
       token: topicAddress(log.topics[3]),
       creator: topicAddress(log.topics[2]),
+      poolId: /^0x[0-9a-fA-F]{64}/.test(log.data) ? log.data.slice(0, 66) : null,
       block: explorerInteger(log.blockNumber),
       timestamp: explorerInteger(log.timeStamp),
       isHoodiePair: true,
@@ -999,6 +1074,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
       enriched.push({
         address: row.token,
         chainId: ROBINHOOD_CHAIN_ID,
+        poolId: row.poolId,
         baseToken: {
           address: row.token,
           name: meta.name!,
@@ -1031,7 +1107,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
     seen.add(key);
     return true;
   });
-  const dex = await fetchDexData(deduped.map((p) => p.address));
+  const dex = await fetchLaunchMarketData(deduped);
   return deduped.map((p) => {
     const d = dex.get(p.address.toLowerCase());
     if (!d) return p;
@@ -1039,7 +1115,7 @@ async function loadMainnetOwnStackPoolsDirect(): Promise<DopplerPool[]> {
   });
 }
 
-const MAINNET_LAUNCH_CACHE_KEY = "hyde_mainnet_launches_v3";
+const MAINNET_LAUNCH_CACHE_KEY = "hyde_mainnet_launches_v4";
 const MAINNET_LAUNCH_CACHE_TTL = 5 * 60 * 1000;
 const MAINNET_LAUNCH_CACHE_MAX_STALE = 24 * 60 * 60 * 1000;
 let mainnetLaunchMemoryCache: { at: number; pools: DopplerPool[] } | null = null;
@@ -1082,6 +1158,20 @@ function isRobinhoodIndexPool(value: unknown): value is DopplerPool {
 }
 
 async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
+  const indexed = await fetchIndexedLegacyPools(ROBINHOOD_CHAIN_ID);
+  if (indexed) {
+    const dex = await fetchLaunchMarketData(indexed);
+    return indexed.map((pool) => {
+      const data = dex.get(pool.address.toLowerCase());
+      return data ? {
+        ...pool,
+        marketCapUsd: data.marketCapUsd,
+        priceUsd: data.priceUsd,
+        dollarLiquidity: data.liquidityUsd != null ? String(data.liquidityUsd) : pool.dollarLiquidity,
+        volumeUsd: data.volumeUsd != null ? String(data.volumeUsd) : pool.volumeUsd,
+      } : pool;
+    });
+  }
   try {
     const response = await fetch("/api/robinhood-launches");
     if (!response.ok) throw new Error(`launch index HTTP ${response.status}`);
@@ -1089,7 +1179,7 @@ async function loadMainnetOwnStackPools(): Promise<DopplerPool[]> {
     if (!Array.isArray(payload.pools)) throw new Error("launch index payload is malformed");
     const pools = payload.pools.filter(isRobinhoodIndexPool);
     if (pools.length !== payload.pools.length) throw new Error("launch index contains an invalid pool");
-    const dex = await fetchDexData(pools.map((pool) => pool.address));
+    const dex = await fetchLaunchMarketData(pools);
     return pools.map((pool) => {
       const data = dex.get(pool.address.toLowerCase());
       if (!data) return pool;
@@ -1145,11 +1235,13 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
   pools: DopplerPool[];
   loading: boolean;
   error: string | null;
+  warning: string | null;
   refetch: () => void;
 } {
   const [pools, setPools] = useState<DopplerPool[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const refetch = () => setTick((t) => t + 1);
 
@@ -1158,6 +1250,8 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     setPools([]); // drop prior-chain launches immediately on a chain switch (kami A-blocker #3)
     setLoading(true);
     setError(null);
+    setWarning(null);
+    let partialWarning: string | null = null;
 
     // Only chains with a live Hyde deployment have launches. Unknown chains return empty instead of
     // falling back to Robinhood data (which would leak launches across chain contexts).
@@ -1182,6 +1276,11 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
           if (legacyResult.status === "rejected" && v5Result.status === "rejected") {
             throw v5Result.reason ?? legacyResult.reason;
           }
+          if (legacyResult.status === "rejected") {
+            partialWarning = "Legacy launch data is temporarily unavailable; this list may be incomplete.";
+          } else if (v5Result.status === "rejected") {
+            partialWarning = "V5 launch data is temporarily unavailable; this list may be incomplete.";
+          }
           const seen = new Set<string>();
           return [...v5, ...legacy].filter((pool) => {
             const key = pool.address.toLowerCase();
@@ -1201,7 +1300,10 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     }
     fetcher()
       .then((items) => {
-        if (!cancelled) setPools(items);
+        if (!cancelled) {
+          setPools(items);
+          setWarning(partialWarning);
+        }
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -1219,7 +1321,7 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     };
   }, [tick, chainId]);
 
-  return { pools, loading, error, refetch };
+  return { pools, loading, error, warning, refetch };
 }
 
 /* ─── Platform stats (transparency page) ──────────────────────────────────────

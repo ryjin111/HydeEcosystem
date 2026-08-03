@@ -12,6 +12,8 @@ export type DopplerPool = {
   chainId: number;
   /** Canonical pool contract when the launch event exposes it directly (Stable V3). */
   poolAddress?: string | null;
+  /** Canonical Uniswap V4 PoolId when the launch event exposes a pool key instead of a contract. */
+  poolId?: string | null;
   baseToken: {
     address: string;
     name: string;
@@ -36,10 +38,9 @@ export type DopplerPool = {
   type: string;
   dollarLiquidity: string | null;
   volumeUsd: string | null;
-  /** USD market cap — real, from the DEXScreener pair. Null until the token graduates
-   *  to a Uniswap pool and is indexed (curve-stage tokens have no priced pair yet). */
+  /** USD market cap or FDV from a canonical GeckoTerminal pool, with DEXScreener fallback. */
   marketCapUsd: number | null;
-  /** USD spot price from the DEXScreener pair. Null while on the auction curve. */
+  /** USD spot price from a canonical GeckoTerminal pool, with DEXScreener fallback. */
   priceUsd: number | null;
   createdAt: string;
   /** Curve progress toward graduation, 0–100 (100 = graduated). Null when unknown. */
