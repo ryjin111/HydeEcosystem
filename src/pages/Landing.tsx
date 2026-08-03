@@ -88,7 +88,8 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
     ?? `Chain ${chainId}`;
   const hasEngine = capabilities.length > 0;
   const launchLive = isHydeLaunchLive(chainId);
-  const { ready: v5Ready } = useTrenchV5Ready(chainId);
+  const v5Readiness = useTrenchV5Ready(chainId);
+  const { ready: v5Ready, checking: v5Checking, error: v5Error, retry: retryV5 } = v5Readiness;
   const publicMainnetPending = !isTrenchV5PubliclyAvailable(chainId);
   const isStableV3 = capabilities.length > 0 && capabilities.every((item) => item.engine === "v3-single-sided");
   const pools = useMemo(
@@ -181,8 +182,12 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
           <p className="term-label mb-3">
             {publicMainnetPending
               ? `${chainName} · coming soon`
-              : v5Ready
+              : v5Checking
+                ? "V5 Trench Curve · verifying"
+                : v5Ready
                 ? "V5 Trench Curve · live"
+                : v5Error
+                  ? "V5 verification unavailable"
                 : launchLive
                   ? "Legacy markets live · V5 pending"
                   : "Launch rail coming soon"}
@@ -199,6 +204,11 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               <>
                 <strong className="font-semibold text-[var(--term-text)]">{chainName} public mainnet is not live yet.</strong>{" "}
                 The network remains visible for preview, but launches, swaps, claims, and liquidity actions are disabled.
+              </>
+            ) : v5Checking ? (
+              <>
+                <strong className="font-semibold text-[var(--term-text)]">Verifying the V5 deployment on {chainName}.</strong>{" "}
+                Runtime hashes and protocol bindings are being checked before transaction controls are enabled.
               </>
             ) : v5Ready ? (
               <>
@@ -232,12 +242,16 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
           </p>
           <div className="mt-5 flex flex-wrap gap-2.5">
             {v5Ready ? (
-              <NavLink to="/launchpad?tab=launch" className="btn-terminal px-5 py-2.5">
+              <NavLink to={`/launchpad?tab=launch&network=${chainId}`} className="btn-terminal px-5 py-2.5">
                 Launch a Token
               </NavLink>
+            ) : !publicMainnetPending && v5Error ? (
+              <button type="button" className="btn-ghost-term px-5 py-2.5" onClick={retryV5}>
+                Retry V5 verification
+              </button>
             ) : (
               <button type="button" className="btn-terminal px-5 py-2.5" disabled>
-                {publicMainnetPending ? "Coming soon" : "V5 deployment pending"}
+                {publicMainnetPending ? "Coming soon" : v5Checking ? "Verifying deployment…" : "V5 deployment pending"}
               </button>
             )}
           </div>
@@ -274,7 +288,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               {scopeName} · chain-safe discovery
             </p>
           </div>
-          <NavLink to="/discover" className="ml-auto text-[12px] font-semibold text-[var(--term-teal)] hover:underline">
+          <NavLink to={`/discover?network=${chainId}`} className="ml-auto text-[12px] font-semibold text-[var(--term-teal)] hover:underline">
             View all →
           </NavLink>
         </div>
@@ -335,7 +349,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
                 onClick={() => setMarketEngine((current) => current === tab.id ? "all" : tab.id)}
                 aria-pressed={active}
                 disabled={!supported}
-                title={supported ? `Filter by ${tab.label} launches` : `${tab.label} is not supported on ${chainName}`}
+                title={supported ? `Filter by ${tab.label} launches` : `${tab.label} is not supported on ${scopeName}`}
                 className={`rounded-md border px-3 py-1.5 text-[12px] font-semibold transition ${
                   !supported
                     ? "cursor-not-allowed border-[var(--term-border)] text-[var(--term-dim)] opacity-35"
@@ -368,8 +382,8 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
         ) : marketRows.length === 0 ? (
           <div className="term-panel rounded-lg px-5 py-10 text-center font-code text-[12px] text-[var(--term-dim)]">
             {marketEngine === "all"
-              ? `No launches indexed on ${chainName} yet.`
-              : `No ${marketEngine === "v4-hook" ? "V4" : "V3"} launches indexed on ${chainName} yet.`}
+              ? `No launches indexed on ${scopeName} yet.`
+              : `No ${marketEngine === "v4-hook" ? "V4" : "V3"} launches indexed on ${scopeName} yet.`}
           </div>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,220px))] gap-x-4 gap-y-6">
@@ -399,7 +413,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               <p className="mx-auto mt-4 w-fit rounded-md border border-[var(--term-border)] px-3 py-2 font-code text-[11px] text-[var(--term-dim)]">
                 {address.slice(0, 8)}…{address.slice(-6)}
               </p>
-              <NavLink to="/profile" className="btn-terminal mt-4 inline-flex px-5 py-2.5">
+              <NavLink to={`/profile?network=${chainId}`} className="btn-terminal mt-4 inline-flex px-5 py-2.5">
                 Open portfolio
               </NavLink>
             </>

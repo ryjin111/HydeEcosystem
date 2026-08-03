@@ -11,7 +11,7 @@ import {
   parseUnits,
   type Address,
 } from "viem";
-import { useAccount, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
+import { ConnectorAlreadyConnectedError, useAccount, useConnect, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
 import {
   erc20Abi,
   HYDE_DYNAMIC_FEE,
@@ -111,6 +111,7 @@ export function TrenchV5V4SwapCard({ network, token }: Props) {
   const publicClient = usePublicClient({ chainId: network.id });
   const { data: walletClient } = useWalletClient({ chainId: network.id });
   const { switchChain } = useSwitchChain();
+  const { connectAsync, connectors, isPending: connecting } = useConnect();
   const contracts = V4_CONTRACTS_BY_CHAIN[network.id];
 
   const [route, setRoute] = useState<Route | null>(null);
@@ -132,6 +133,16 @@ export function TrenchV5V4SwapCard({ network, token }: Props) {
   const [refresh, setRefresh] = useState(0);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   const quoteRequest = useRef(0);
+
+  const connectWallet = async () => {
+    const connector = connectors[0];
+    if (!connector) return toast.error("Wallet connector not found.");
+    try {
+      await connectAsync({ connector });
+    } catch (cause) {
+      if (!(cause instanceof ConnectorAlreadyConnectedError)) toast.error("Wallet connection failed.");
+    }
+  };
 
   const isBuy = side === "buy";
   const wrongNetwork = isConnected && chainId !== network.id;
@@ -620,7 +631,16 @@ export function TrenchV5V4SwapCard({ network, token }: Props) {
       )}
 
       <div className="mt-4">
-        {wrongNetwork && isConnected ? (
+        {!isConnected ? (
+          <button
+            type="button"
+            onClick={connectWallet}
+            disabled={connecting}
+            className="w-full rounded-xl bg-pcs-primary py-3 text-sm font-bold text-pcs-bg disabled:opacity-50"
+          >
+            {connecting ? "Connecting…" : "Connect wallet"}
+          </button>
+        ) : wrongNetwork ? (
           <button
             type="button"
             onClick={() => switchChain({ chainId: network.id })}
@@ -651,9 +671,7 @@ export function TrenchV5V4SwapCard({ network, token }: Props) {
           >
             {submitting
               ? (isBuy ? "Buying..." : "Selling...")
-              : !isConnected
-                ? "Connect wallet"
-                : !route
+              : !route
                   ? "V5 route unavailable"
                   : poolExists === false
                     ? "Verified pool not found"

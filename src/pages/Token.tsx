@@ -203,8 +203,10 @@ function holderIdentity(
   if (contractAddresses.has(normalized)) {
     return { kind: "contract", badge: "CONTRACT", detail: "Smart contract balance · not a wallet" };
   }
-  if (!contractsChecked) return { kind: "address", badge: "ADDRESS", detail: "Checking address type on-chain" };
-  return { kind: "wallet", badge: "WALLET", detail: "" };
+  // Ordinary EOAs do not need a redundant WALLET badge. A failed/unfinished bytecode probe also
+  // remains unlabeled so an unknown contract is never presented as a confirmed wallet.
+  if (!contractsChecked) return { kind: "address", badge: "", detail: "" };
+  return { kind: "wallet", badge: "", detail: "" };
 }
 
 function timeAgo(iso: string): string | null {
@@ -376,7 +378,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
             <Link to={`/token/${address}?network=${wrongChainPool.chainId}`}>
               <Button variant="primary">View on {actualName}</Button>
             </Link>
-            <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+            <Link to={`/discover?network=${network.id}`}><Button variant="secondary">Back to Discover</Button></Link>
           </div>
         </Card>
       </div>
@@ -387,7 +389,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
       <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
         <Card variant="panel" className="mx-auto max-w-lg text-center">
           <p className="py-5 text-pcs-textSub">Token data is temporarily unavailable.</p>
-          <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+          <Link to={`/discover?network=${network.id}`}><Button variant="secondary">Back to Discover</Button></Link>
         </Card>
       </div>
     );
@@ -397,7 +399,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
       <div className="hyde-page hyde-token mx-auto w-full max-w-[1200px]" data-depth-label="Token depth · on-chain signal">
         <Card variant="panel" className="mx-auto max-w-lg text-center">
           <p className="py-5 text-pcs-textSub">This isn’t a Hydeout launch token.</p>
-          <Link to="/discover"><Button variant="secondary">Back to Discover</Button></Link>
+          <Link to={`/discover?network=${network.id}`}><Button variant="secondary">Back to Discover</Button></Link>
         </Card>
       </div>
     );
@@ -597,7 +599,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <p className="mt-1 max-w-sm text-xs text-pcs-textSub">
                   {wethContained
                     ? "Trading is paused while this pool’s launch price is under review."
-                    : gecko.error ?? "No indexed OHLCV candles were returned for this canonical pool yet."}
+                    : gecko.candleError ?? gecko.error ?? "No indexed OHLCV candles were returned for this canonical pool yet."}
                 </p>
               </div>
             </div>
@@ -724,7 +726,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                   <div>
                     <p className="text-sm font-semibold text-pcs-text">No indexed swaps yet</p>
                     <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
-                      {gecko.error ?? "No recent trades were returned for this canonical pool."}
+                      {activity.tradeError ?? gecko.tradeError ?? gecko.error ?? "No recent trades were returned for this canonical pool."}
                     </p>
                   </div>
                   {gecko.url && (
@@ -749,7 +751,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                 <div>
                   <p className="text-sm font-semibold text-pcs-text">Holder snapshot unavailable</p>
                   <p className="mt-1 max-w-md text-xs leading-5 text-pcs-textDim">
-                    The activity index has not returned ranked ERC-20 holder rows for this token yet.
+                    {activity.holderError ?? "The activity index has not returned ranked ERC-20 holder rows for this token yet."}
                   </p>
                 </div>
                 <a
@@ -784,7 +786,7 @@ export function TokenDetail({ address, network, tokens, onAddCustomToken }: Prop
                       <span className="min-w-0 flex-1">
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="truncate font-code text-xs text-pcs-text">{short(holder.address)}</span>
-                          <span className={`token-holder-kind token-holder-kind-${identity.kind}`}>{identity.badge}</span>
+                          {identity.badge && <span className={`token-holder-kind token-holder-kind-${identity.kind}`}>{identity.badge}</span>}
                         </span>
                         {identity.detail && (
                           <span className="mt-0.5 block truncate text-[10px] uppercase tracking-wider text-pcs-textDim">

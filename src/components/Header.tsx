@@ -5,7 +5,8 @@ import { useAccount, useBalance, useConnect, useDisconnect, useSwitchChain } fro
 import { ConnectorAlreadyConnectedError } from "wagmi";
 import type { NetworkConfig } from "../utils/constants";
 import { shortenAddress } from "../utils/format";
-import { chainEngineCapabilities, isHydeLaunchLive } from "../utils/chainRegistry";
+import { chainEngineCapabilities } from "../utils/chainRegistry";
+import { isTrenchV5Configured, isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
 
 type HeaderProps = {
   selectedNetwork: NetworkConfig;
@@ -25,12 +26,19 @@ const NAV: { label: string; to: string; match: (p: string, s: string) => boolean
   { label: "Stats", to: "/stats", match: (p) => p.startsWith("/stats") },
 ];
 
+function withNetwork(to: string, chainId: number): string {
+  const [pathname, search = ""] = to.split("?");
+  const params = new URLSearchParams(search);
+  params.set("network", String(chainId));
+  return `${pathname}?${params.toString()}`;
+}
+
 function launchRouteComing(chainId: number): boolean {
   const capabilities = chainEngineCapabilities(chainId);
   const hasLaunchRoute = capabilities.some(
     (capability) => capability.role === "launch" || capability.role === "launch+trade",
   );
-  return !hasLaunchRoute || !isHydeLaunchLive(chainId);
+  return !hasLaunchRoute || !isTrenchV5PubliclyAvailable(chainId) || !isTrenchV5Configured(chainId);
 }
 
 export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderProps) {
@@ -134,7 +142,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
       >
         <div className="mx-auto flex h-14 max-w-[1920px] items-center gap-3 px-4 sm:px-8 md:px-10">
           {/* Brand */}
-          <NavLink to="/" className="flex items-center gap-2 shrink-0">
+          <NavLink to={withNetwork("/", selectedNetwork.id)} className="flex items-center gap-2 shrink-0">
             <span className="relative h-8 w-8 shrink-0 overflow-hidden" aria-hidden="true">
               <img
                 src="/logo/trademark-shark-light.png"
@@ -148,7 +156,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
           {/* Desktop nav */}
           <nav className="ml-2 hidden items-center gap-1 md:flex xl:hidden">
             {NAV.map((n) => (
-              <NavLink key={n.label} to={n.to} className={navCls(n.match(loc.pathname, loc.search))}>
+              <NavLink key={n.label} to={withNetwork(n.to, selectedNetwork.id)} className={navCls(n.match(loc.pathname, loc.search))}>
                 {n.label}
               </NavLink>
             ))}
@@ -211,7 +219,7 @@ export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderPro
           {NAV.map((n) => (
             <NavLink
               key={n.label}
-              to={n.to}
+              to={withNetwork(n.to, selectedNetwork.id)}
               className={`${navCls(n.match(loc.pathname, loc.search))} text-center`}
             >
               {n.label}

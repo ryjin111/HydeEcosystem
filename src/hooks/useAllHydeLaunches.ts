@@ -9,6 +9,7 @@ export type HydeLaunchSource = {
   pools: DopplerPool[];
   loading: boolean;
   error: string | null;
+  warning: string | null;
   refetch: () => void;
 };
 
@@ -39,6 +40,7 @@ export function useAllHydeLaunches(): {
         pools: robinhood.pools,
         loading: robinhood.loading,
         error: robinhood.error,
+        warning: robinhood.warning,
         refetch: robinhood.refetch,
       },
       {
@@ -47,6 +49,7 @@ export function useAllHydeLaunches(): {
         pools: stable.pools,
         loading: stable.loading,
         error: stable.error,
+        warning: stable.warning,
         refetch: stable.refetch,
       },
       {
@@ -55,6 +58,7 @@ export function useAllHydeLaunches(): {
         pools: arbitrum.pools,
         loading: arbitrum.loading,
         error: arbitrum.error,
+        warning: arbitrum.warning,
         refetch: arbitrum.refetch,
       },
     ],
@@ -62,12 +66,15 @@ export function useAllHydeLaunches(): {
       robinhood.error,
       robinhood.loading,
       robinhood.pools,
+      robinhood.warning,
       stable.error,
       stable.loading,
       stable.pools,
+      stable.warning,
       arbitrum.error,
       arbitrum.loading,
       arbitrum.pools,
+      arbitrum.warning,
     ],
   );
 
@@ -76,6 +83,7 @@ export function useAllHydeLaunches(): {
     [sources],
   );
   const failed = sources.filter((source) => source.error);
+  const incomplete = sources.filter((source) => source.warning && !source.error);
 
   return {
     pools,
@@ -86,7 +94,9 @@ export function useAllHydeLaunches(): {
       : null,
     warning: failed.length > 0 && failed.length < sources.length
       ? `${failed.map((source) => source.name).join(" and ")} data is temporarily unavailable.`
-      : null,
+      : incomplete.length > 0
+        ? `${incomplete.map((source) => source.name).join(" and ")} launch data may be incomplete.`
+        : null,
     refetch: () => sources.forEach((source) => source.refetch()),
   };
 }

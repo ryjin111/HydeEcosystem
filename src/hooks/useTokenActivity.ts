@@ -20,6 +20,8 @@ type TokenActivity = {
   loading: boolean;
   holderSource: "indexer" | "explorer" | null;
   tradeSource: "indexer" | "explorer" | null;
+  holderError: string | null;
+  tradeError: string | null;
 };
 
 const ROBINHOOD_MAINNET_ID = 4663;
@@ -43,7 +45,7 @@ function asNumber(value: bigint, decimals: number): number {
 
 async function fetchRobinhoodHolders(token: Address): Promise<Holder[]> {
   const response = await fetch(`https://robinhoodchain.blockscout.com/api/v2/tokens/${token}/holders`);
-  if (!response.ok) return [];
+  if (!response.ok) throw new Error("Holder explorer is unavailable.");
   const payload = await response.json() as {
     items?: Array<{ address?: { hash?: string }; value?: string }>;
   };
@@ -75,7 +77,7 @@ async function fetchRobinhoodV4Trades(
     topic1: poolId,
   });
   const response = await fetch(`https://robinhoodchain.blockscout.com/api?${params}`);
-  if (!response.ok) return [];
+  if (!response.ok) throw new Error("Trade explorer is unavailable.");
   const payload = await response.json() as {
     result?: Array<{
       data?: Hex;
@@ -131,13 +133,15 @@ export function useTokenActivity({
     loading: true,
     holderSource: null,
     tradeSource: null,
+    holderError: null,
+    tradeError: null,
   });
 
   useEffect(() => {
     let cancelled = false;
-    setState({ holders: [], trades: [], loading: true, holderSource: null, tradeSource: null });
+    setState({ holders: [], trades: [], loading: true, holderSource: null, tradeSource: null, holderError: null, tradeError: null });
     if (!token || !ADDRESS.test(token)) {
-      setState({ holders: [], trades: [], loading: false, holderSource: null, tradeSource: null });
+      setState({ holders: [], trades: [], loading: false, holderSource: null, tradeSource: null, holderError: null, tradeError: null });
       return;
     }
     const tokenAddress = token as Address;
@@ -149,9 +153,9 @@ export function useTokenActivity({
       && Number.isInteger(quoteDecimals)
     );
 
-    Promise.all([
+    Promise.allSettled([
       fetchIndexedTokenActivity(chainId, tokenAddress),
-      chainId === ROBINHOOD_MAINNET_ID ? fetchRobinhoodHolders(tokenAddress).catch(() => []) : Promise.resolve([]),
+      chainId === ROBINHOOD_MAINNET_ID ? fetchRobinhoodHolders(tokenAddress) : Promise.resolve([]),
       validV4
         ? fetchRobinhoodV4Trades(
           tokenAddress,
@@ -159,10 +163,13 @@ export function useTokenActivity({
           poolId as Hex,
           tokenDecimals as number,
           quoteDecimals as number,
-        ).catch(() => [])
+        )
         : Promise.resolve([]),
-    ]).then(([indexed, explorerHolders, explorerTrades]) => {
+    ]).then(([indexedResult, holderResult, tradeResult]) => {
       if (cancelled) return;
+      const indexed = indexedResult.status === "fulfilled" ? indexedResult.value : null;
+      const explorerHolders = holderResult.status === "fulfilled" ? holderResult.value : [];
+      const explorerTrades = tradeResult.status === "fulfilled" ? tradeResult.value : [];
       const holders = indexed?.holders.length ? indexed.holders : explorerHolders;
       const indexedTrades: GeckoTrade[] = (indexed?.trades ?? []).map((trade) => {
         const tokenAmount = asNumber(BigInt(trade.tokenAmount), tokenDecimals ?? 18);
@@ -186,9 +193,25 @@ export function useTokenActivity({
         loading: false,
         holderSource: indexed?.holders.length ? "indexer" : explorerHolders.length ? "explorer" : null,
         tradeSource: indexedTrades.length ? "indexer" : explorerTrades.length ? "explorer" : null,
+        holderError: holders.length === 0 && indexed == null && holderResult.status === "rejected"
+          ? "Holder sources are temporarily unavailable."
+          : null,
+        tradeError: trades.length === 0 && indexed == null && validV4 && tradeResult.status === "rejected"
+          ? "On-chain trade sources are temporarily unavailable."
+          : null,
       });
     }).catch(() => {
-      if (!cancelled) setState({ holders: [], trades: [], loading: false, holderSource: null, tradeSource: null });
+      if (!cancelled) {
+        setState({
+          holders: [],
+          trades: [],
+          loading: false,
+          holderSource: null,
+          tradeSource: null,
+          holderError: "Holder sources are temporarily unavailable.",
+          tradeError: "On-chain trade sources are temporarily unavailable.",
+        });
+      }
     });
     return () => { cancelled = true; };
   }, [chainId, poolId, quote, quoteDecimals, token, tokenDecimals]);

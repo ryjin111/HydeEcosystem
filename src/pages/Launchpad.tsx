@@ -490,21 +490,30 @@ const RH_TESTNET_ID = 46630;
 
 export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number }) {
   // Tab is URL-driven (?tab=launch|mine) so the sidebar "Launch a Token" reliably lands on the form.
-  // The second tab is now "My Launches" (personal) — browsing all launches lives on the Landing (clint
-  // ①). Accept the legacy ?tab=explore so old links still land on the tab. Default = launch.
+  // The second tab is now "My Launches" (personal); old Explore links redirect to Discover instead of
+  // incorrectly opening a wallet-specific empty state. Default = launch.
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const tab: "mine" | "launch" = tabParam === "mine" || tabParam === "explore" ? "mine" : "launch";
-  const setTab = (t: "mine" | "launch") => setSearchParams({ tab: t });
+  const tab: "mine" | "launch" = tabParam === "mine" ? "mine" : "launch";
+  const setTab = (t: "mine" | "launch") => setSearchParams((current) => {
+    const next = new URLSearchParams(current);
+    next.set("tab", t);
+    next.set("network", String(chainId));
+    return next;
+  });
   // Network-aware: on Robinhood Testnet this reads the LIVE own-stack factory; else the Doppler rail.
   const isTestnet = chainId === RH_TESTNET_ID;
-  const { pools, loading, refetch } = useHydeLaunches(chainId);
+  const { pools, loading, error: launchesError, warning: launchesWarning, refetch } = useHydeLaunches(chainId);
   const network = NETWORKS.find((item) => item.id === chainId);
   const navigate = useNavigate();
+  useEffect(() => {
+    if (tabParam === "explore") navigate(`/discover?network=${chainId}`, { replace: true });
+  }, [chainId, navigate, tabParam]);
   const { address } = useAccount();
   const engineCapabilities = chainEngineCapabilities(chainId);
   const launchLive = isHydeLaunchLive(chainId);
-  const { ready: v5Ready } = useTrenchV5Ready(chainId);
+  const v5Readiness = useTrenchV5Ready(chainId);
+  const { ready: v5Ready, checking: v5Checking, error: v5Error, retry: retryV5 } = v5Readiness;
   const publicMainnetPending = !isTrenchV5PubliclyAvailable(chainId);
   const engineLabels = engineCapabilities.map((capability) => ENGINE_META[capability.engine]);
   const creatorShares = [...new Set(engineLabels.map((meta) => meta.creatorShare))].sort((a, b) => a - b);
@@ -576,7 +585,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             <span
               className={v5Ready ? "live-ping" : "h-2 w-2 rounded-full bg-pcs-textDim"}
             />
-            Hydeout V5 · depth {chainId.toLocaleString()} · {publicMainnetPending ? "coming soon" : v5Ready ? "deployment verified" : "deployment pending"}
+            Hydeout V5 · depth {chainId.toLocaleString()} · {publicMainnetPending ? "coming soon" : v5Checking ? "verifying deployment" : v5Ready ? "deployment verified" : "verification unavailable"}
           </div>
           <h1 className="mt-3 font-display text-4xl font-semibold leading-[0.98] tracking-[-0.04em] text-[var(--term-text)] sm:text-5xl lg:text-6xl">
             Launch from
@@ -607,7 +616,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
                 ? "V4 sandbox"
                 : engineCapabilities.length === 0
                   ? "Network connected · engine pending"
-                  : `V5 → ${routeLabel}${v5Ready ? "" : " · pending"}`}
+                  : `V5 → ${routeLabel}${v5Ready ? "" : v5Checking ? " · verifying" : " · unavailable"}`}
             </strong>
           </div>
         </div>
@@ -635,10 +644,17 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             ? `${network?.name ?? `Chain ${chainId}`} public mainnet is not live yet. Hydeout protocol actions remain disabled until launch readiness is re-verified.`
             : engineCapabilities.length === 0
             ? `${network?.name ?? `Chain ${chainId}`} is connected for wallet, RPC, and explorer context. Hydeout protocol actions stay disabled until a launch engine is deployed and verified.`
+            : v5Checking
+            ? `Verifying the V5 deployment on ${engineCapabilities[0]?.name ?? "this chain"} before enabling transactions.`
             : v5Ready
             ? `V5 Trench Curve is verified on ${engineCapabilities[0]?.name ?? "this chain"} · 80% live curve, 20% graduation reserve.`
-            : `V5 Trench Curve is implemented for ${engineCapabilities[0]?.name ?? "this chain"} and remains transaction-locked until its deployment manifest is verified.`}
+            : `V5 verification is unavailable on ${engineCapabilities[0]?.name ?? "this chain"}. ${v5Error ?? "The deployment manifest could not be verified."}`}
         </p>
+        {!publicMainnetPending && !v5Checking && !v5Ready && (
+          <button type="button" onClick={retryV5} className="mt-3 text-xs font-semibold text-pcs-primary hover:underline">
+            Retry deployment verification
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -678,6 +694,17 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       )}
       {tab === "mine" && launchLive && (
         <div>
+          {launchesWarning && (
+            <div className="mb-4 rounded-lg border border-amber-400/20 bg-amber-400/[0.06] px-4 py-2.5 text-xs text-amber-200/80">
+              {launchesWarning}
+            </div>
+          )}
+          {launchesError && (
+            <div className="mb-4 rounded-lg border border-pcs-warning/30 bg-pcs-warning/[0.06] px-4 py-3 text-xs text-pcs-warning">
+              <p>Launch history is temporarily unavailable. This does not mean your launches are missing.</p>
+              <button type="button" onClick={refetch} className="mt-2 font-semibold underline">Retry</button>
+            </div>
+          )}
           {/* Sort + refresh */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <label className="flex items-center gap-1.5 text-xs text-pcs-textDim">
@@ -715,7 +742,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             <div className="rounded-2xl p-10 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
               <p className="text-pcs-textDim text-sm">Connect your wallet to see your launches.</p>
             </div>
-          ) : !loading && shown.length === 0 ? (
+          ) : !loading && !launchesError && shown.length === 0 ? (
             <div className="rounded-2xl p-10 text-center" style={{ background: "#121419", border: "1px solid #22252D" }}>
               <p className="text-pcs-textDim text-sm">You haven't launched any tokens yet.</p>
               <p className="text-pcs-textDim text-xs mt-1">Browse everyone's launches on the home page.</p>
@@ -741,7 +768,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
       )}
 
       {/* Launch tab — engine-aware: live V4 form or evidence-gated Stable V3 form. */}
-      {tab === "launch" && <EngineAwareLaunch defaultChainId={chainId} v5Ready={v5Ready} onLaunched={refetch} />}
+      {tab === "launch" && <EngineAwareLaunch defaultChainId={chainId} v5Readiness={v5Readiness} onLaunched={refetch} />}
     </div>
   );
 }

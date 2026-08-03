@@ -500,7 +500,10 @@ export function DiscoverPage({ chainId = 4663 }: { chainId?: number }) {
           <LatestSignal p={featured} />
         ) : (
           <div className="rounded-[14px] p-8 text-center text-sm" style={{ background: C.surface, border: `1px solid ${C.hairline}`, color: C.muted }}>
-            No live launches in this view — <Link to={`/launchpad?tab=launch&network=${chainId}`} style={{ color: C.blue }}>launch on {networkName(chainId)}</Link>.
+            No live launches in this view — <Link
+              to={`/launchpad?tab=launch&network=${chainScope === "all" ? chainId : chainScope}`}
+              style={{ color: C.blue }}
+            >launch on {networkName(chainScope === "all" ? chainId : chainScope)}</Link>.
           </div>
         )}
         <EngineRoutes

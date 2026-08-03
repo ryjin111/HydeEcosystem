@@ -9,7 +9,7 @@ import { TrenchV5LaunchForm } from "./TrenchV5LaunchForm";
 import { chainEngineCapabilities, ENGINE_META, type LaunchEngine } from "../utils/chainRegistry";
 import { NETWORKS } from "../utils/constants";
 import { Button, SectionLabel } from "./ui/kit";
-import { useTrenchV5Ready } from "../hooks/useTrenchV5Ready";
+import type { TrenchV5Readiness } from "../hooks/useTrenchV5Ready";
 import { isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
@@ -20,10 +20,14 @@ function ComingLaunchBody({
   chainId,
   chainName,
   engine,
+  error,
+  onRetry,
 }: {
   chainId: number;
   chainName: string;
   engine: LaunchEngine;
+  error?: string | null;
+  onRetry?: () => void;
 }) {
   const meta = ENGINE_META[engine];
   const isV4 = engine === "v4-hook";
@@ -57,16 +61,38 @@ function ComingLaunchBody({
         </div>
       </div>
 
-      <Button variant="primary" size="lg" className="mt-5 w-full" disabled>
-        Launch on {chainName} — Coming soon
-      </Button>
+      {publicMainnetPending ? (
+        <Button variant="primary" size="lg" className="mt-5 w-full" disabled>
+          Launch on {chainName} — Coming soon
+        </Button>
+      ) : error && onRetry ? (
+        <Button variant="secondary" size="lg" className="mt-5 w-full" onClick={onRetry}>
+          Retry deployment verification
+        </Button>
+      ) : (
+        <Button variant="primary" size="lg" className="mt-5 w-full" disabled>
+          Launch unavailable
+        </Button>
+      )}
       <p className="mt-3 text-center text-[11px] leading-5 text-pcs-textDim">
         {publicMainnetPending
           ? `${chainName} launches are disabled until its public mainnet is live and Hydeout re-verifies the complete deployment.`
+          : error
+          ? error
           : isV4
           ? "The V4 rail is implemented. Launches open only after the V5 factory, graduator, and permanent locker are deployed and runtime-hash verified."
           : "The V3 rail is implemented. Launches open only after the chain-specific V5 factory, graduator, and permanent locker are deployed and runtime-hash verified."}
       </p>
+    </div>
+  );
+}
+
+function VerifyingLaunchBody({ chainName, chainId }: { chainName: string; chainId: number }) {
+  return (
+    <div className="term-panel mx-auto w-full max-w-[680px] rounded-lg p-8 text-center" aria-live="polite">
+      <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-pcs-primary/25 border-t-pcs-primary" />
+      <p className="mt-4 text-sm font-semibold text-pcs-text">Verifying {chainName} deployment…</p>
+      <p className="mt-1 text-xs text-pcs-textDim">Checking chain {chainId}, runtime hashes, and protocol bindings.</p>
     </div>
   );
 }
@@ -77,27 +103,38 @@ function EngineBody({
   engine,
   chainId,
   chainName,
-  ready,
+  readiness,
   onLaunched,
 }: {
   engine: LaunchEngine;
   chainId: number;
   chainName: string;
-  ready: boolean;
+  readiness: TrenchV5Readiness;
   onLaunched?: () => void;
 }) {
-  if (!ready) {
-    return <ComingLaunchBody chainId={chainId} chainName={chainName} engine={engine} />;
+  if (readiness.checking) {
+    return <VerifyingLaunchBody chainId={chainId} chainName={chainName} />;
+  }
+  if (!readiness.ready) {
+    return <ComingLaunchBody chainId={chainId} chainName={chainName} engine={engine} error={readiness.error} onRetry={readiness.retry} />;
   }
   return <TrenchV5LaunchForm chainId={chainId} chainName={chainName} engine={engine} onLaunched={onLaunched} />;
 }
 
-function EngineRouteBanner({ engine, live }: { engine: LaunchEngine; live: boolean }) {
+function EngineRouteBanner({ engine, readiness }: { engine: LaunchEngine; readiness: TrenchV5Readiness }) {
   const meta = ENGINE_META[engine];
   return (
     <div className="engine-identity-bar">
       <div>
-        <p className="commandbar-label">{live ? "V5 deployment verified" : "V5 deployment pending"}</p>
+        <p className="commandbar-label">
+          {readiness.checking
+            ? "Verifying V5 deployment"
+            : readiness.ready
+              ? "V5 deployment verified"
+              : readiness.error
+                ? "V5 verification unavailable"
+                : "V5 deployment pending"}
+        </p>
         <p className="mt-1 font-display text-sm font-semibold text-pcs-text">V5 · Trench Curve <span className="text-pcs-textDim">/ {engine === "v4-hook" ? "V4" : "V3"}</span></p>
       </div>
       <div className="min-w-0 sm:text-right">
@@ -114,13 +151,13 @@ function MultiEngineLaunch({
   engines,
   chainId,
   chainName,
-  ready,
+  readiness,
   onLaunched,
 }: {
   engines: LaunchEngine[];
   chainId: number;
   chainName: string;
-  ready: boolean;
+  readiness: TrenchV5Readiness;
   onLaunched?: () => void;
 }) {
   const [picked, setPicked] = useState<LaunchEngine>(engines[0]);
@@ -141,19 +178,19 @@ function MultiEngineLaunch({
           </button>
         ))}
       </div>
-      <EngineRouteBanner engine={picked} live={ready} />
-      <EngineBody engine={picked} chainId={chainId} chainName={chainName} ready={ready} onLaunched={onLaunched} />
+      <EngineRouteBanner engine={picked} readiness={readiness} />
+      <EngineBody engine={picked} chainId={chainId} chainName={chainName} readiness={readiness} onLaunched={onLaunched} />
     </div>
   );
 }
 
 export function EngineAwareLaunch({
   defaultChainId = 4663,
-  v5Ready,
+  v5Readiness,
   onLaunched,
 }: {
   defaultChainId?: number;
-  v5Ready?: boolean;
+  v5Readiness: TrenchV5Readiness;
   onLaunched?: () => void;
 }) {
   // Chain context = the GLOBAL network selector (App → LaunchpadPage → here). No launch-only deep-link:
@@ -162,8 +199,6 @@ export function EngineAwareLaunch({
   const chainName = chainEngineCapabilities(chainId)[0]?.name
     ?? NETWORKS.find((network) => network.id === chainId)?.name
     ?? `Chain ${chainId}`;
-  const runtimeReadiness = useTrenchV5Ready(chainId);
-  const ready = v5Ready ?? runtimeReadiness.ready;
 
   // Render rule (kami 24310 / gojo 24308): DERIVED from the registry, never hardcoded. A chain shows the
   // engines that pass their verified row (status != unsupported): 0 → one Coming-Soon state; 1 → that engine
@@ -182,12 +217,12 @@ export function EngineAwareLaunch({
   if (engines.length === 1) {
     return (
       <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3">
-        <EngineRouteBanner engine={engines[0].engine} live={ready} />
-        <EngineBody engine={engines[0].engine} chainId={chainId} chainName={chainName} ready={ready} onLaunched={onLaunched} />
+        <EngineRouteBanner engine={engines[0].engine} readiness={v5Readiness} />
+        <EngineBody engine={engines[0].engine} chainId={chainId} chainName={chainName} readiness={v5Readiness} onLaunched={onLaunched} />
       </div>
     );
   }
 
   // 2+ live engines (none today) — engine-mode selector over the registry-derived engines.
-  return <MultiEngineLaunch engines={engines.map((c) => c.engine)} chainId={chainId} chainName={chainName} ready={ready} onLaunched={onLaunched} />;
+  return <MultiEngineLaunch engines={engines.map((c) => c.engine)} chainId={chainId} chainName={chainName} readiness={v5Readiness} onLaunched={onLaunched} />;
 }

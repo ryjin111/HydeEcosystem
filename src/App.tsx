@@ -81,7 +81,7 @@ function App() {
       />
 
       <div className="mx-auto flex w-full max-w-[1920px]">
-        <SideRail />
+        <SideRail selectedNetworkId={selectedNetwork.id} />
         <main className="hyde-content min-w-0 flex-1 px-4 pb-10 pt-4 sm:px-8 md:px-10">
         <Suspense
           fallback={(

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatUnits, toHex, type Hex, type PublicClient, type WalletClient } from "viem";
-import { useAccount, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
+import { ConnectorAlreadyConnectedError, useAccount, useConnect, usePublicClient, useSwitchChain, useWalletClient } from "wagmi";
 import toast from "react-hot-toast";
 import { Button, SectionLabel } from "./ui/kit";
 import { TokenImage } from "./TokenImage";
@@ -76,6 +76,7 @@ export function TrenchV5LaunchForm({
   const publicClient = usePublicClient({ chainId });
   const { data: walletClient } = useWalletClient({ chainId });
   const { switchChain } = useSwitchChain();
+  const { connectAsync, connectors, isPending: connecting } = useConnect();
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [description, setDescription] = useState("");
@@ -103,6 +104,16 @@ export function TrenchV5LaunchForm({
   const v3Numeraire = engine === "v3-single-sided" ? v3ChainRow(chainId)?.numeraire : undefined;
   const quoteDecimals = v3Numeraire?.decimals ?? 18;
   const quoteSymbol = v3Numeraire?.symbol ?? "WETH";
+
+  const connectWallet = async () => {
+    const connector = connectors[0];
+    if (!connector) return toast.error("Wallet connector not found.");
+    try {
+      await connectAsync({ connector });
+    } catch (cause) {
+      if (!(cause instanceof ConnectorAlreadyConnectedError)) toast.error("Wallet connection failed.");
+    }
+  };
 
   const uploadImage = async (file: File | undefined) => {
     if (!file) return;
@@ -297,9 +308,9 @@ export function TrenchV5LaunchForm({
         )}
 
         {!isConnected ? (
-          <div className="rounded-lg border border-dashed border-pcs-border px-4 py-3 text-center text-xs text-pcs-textDim">
-            Connect your wallet to run the V5 pre-flight.
-          </div>
+          <Button className="w-full" size="lg" disabled={connecting} onClick={connectWallet}>
+            {connecting ? "Connecting…" : "Connect wallet"}
+          </Button>
         ) : chainMismatch ? (
           <Button className="w-full" size="lg" onClick={() => switchChain({ chainId })}>Switch to {chainName}</Button>
         ) : !preview ? (

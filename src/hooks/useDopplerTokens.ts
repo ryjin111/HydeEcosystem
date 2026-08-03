@@ -700,9 +700,26 @@ export function useHydeToken(address?: string, chainId: number = ROBINHOOD_CHAIN
             ? fetchStableV3LaunchToken
             : null;
     const fetcher = isTrenchV5Configured(chainId)
-      ? async (token: `0x${string}`) => (
-          await fetchTrenchV5Token(chainId, token).catch(() => null)
-        ) ?? (legacyFetcher ? legacyFetcher(token) : null)
+      ? async (token: `0x${string}`) => {
+          let v5Failure: unknown = null;
+          try {
+            const v5 = await fetchTrenchV5Token(chainId, token);
+            if (v5) return v5;
+          } catch (cause) {
+            v5Failure = cause;
+          }
+          if (legacyFetcher) {
+            try {
+              const legacy = await legacyFetcher(token);
+              if (legacy) return legacy;
+            } catch (cause) {
+              throw cause;
+            }
+          }
+          // A failed V5 lookup cannot safely become a definitive "not a Hydeout token" result.
+          if (v5Failure) throw v5Failure;
+          return null;
+        }
       : legacyFetcher;
     if (!fetcher) {
       setLoading(false);
@@ -1218,11 +1235,13 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
   pools: DopplerPool[];
   loading: boolean;
   error: string | null;
+  warning: string | null;
   refetch: () => void;
 } {
   const [pools, setPools] = useState<DopplerPool[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const refetch = () => setTick((t) => t + 1);
 
@@ -1231,6 +1250,8 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     setPools([]); // drop prior-chain launches immediately on a chain switch (kami A-blocker #3)
     setLoading(true);
     setError(null);
+    setWarning(null);
+    let partialWarning: string | null = null;
 
     // Only chains with a live Hyde deployment have launches. Unknown chains return empty instead of
     // falling back to Robinhood data (which would leak launches across chain contexts).
@@ -1255,6 +1276,11 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
           if (legacyResult.status === "rejected" && v5Result.status === "rejected") {
             throw v5Result.reason ?? legacyResult.reason;
           }
+          if (legacyResult.status === "rejected") {
+            partialWarning = "Legacy launch data is temporarily unavailable; this list may be incomplete.";
+          } else if (v5Result.status === "rejected") {
+            partialWarning = "V5 launch data is temporarily unavailable; this list may be incomplete.";
+          }
           const seen = new Set<string>();
           return [...v5, ...legacy].filter((pool) => {
             const key = pool.address.toLowerCase();
@@ -1274,7 +1300,10 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     }
     fetcher()
       .then((items) => {
-        if (!cancelled) setPools(items);
+        if (!cancelled) {
+          setPools(items);
+          setWarning(partialWarning);
+        }
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -1292,7 +1321,7 @@ export function useHydeLaunches(chainId: number = ROBINHOOD_CHAIN_ID): {
     };
   }, [tick, chainId]);
 
-  return { pools, loading, error, refetch };
+  return { pools, loading, error, warning, refetch };
 }
 
 /* ─── Platform stats (transparency page) ──────────────────────────────────────
