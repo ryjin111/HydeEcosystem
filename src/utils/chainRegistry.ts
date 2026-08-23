@@ -423,6 +423,39 @@ export const V3_CANDIDATES: V3ChainRow[] = [
     },
     role: "launch+trade",
   },
+  {
+    id: 57073,
+    name: "Ink",
+    shortName: "INK",
+    logo: "/chains/ink.svg",
+    rpcUrl: "https://rpc-gel.inkonchain.com",
+    explorer: "https://explorer.inkonchain.com",
+    nativeSymbol: "ETH",
+    v3Factory: "0x718E46d0962A66942E233760a8bd6038Ce54EdCD",
+    positionManager: "0xefD0f78F93f578036AE34D52A813a4BE7D8D2D52",
+    swapRouter: ZERO,
+    quoter: ZERO,
+    swapRouterCodeHash: `0x${"0".repeat(64)}`,
+    quoterCodeHash: `0x${"0".repeat(64)}`,
+    numeraire: {
+      address: "0x4200000000000000000000000000000000000006",
+      symbol: "WETH",
+      decimals: 18,
+      displayDecimals: 8,
+      usdPegged: false,
+    },
+    feeTier: 3000,
+    launchpad: {
+      implementation: "0x83D7306e1d6B07a10AE070CD16e8F6320EFaDD98",
+      pad: "0x71666A06bb454696073211733c755eA0194f3094",
+      locker: "0x670697c84C5a18b28aA21D25888CcdCF2416be04",
+      implementationCodeHash: "0x77499acdd5512646139cd69d341ce6bc0296ea5d0cd1da36fa6f1230b853a575",
+      padCodeHash: "0x99695a2d251957778375390f46875593d6708250116040061e7d01244bb86cf7",
+      lockerCodeHash: "0xccbd817a9025e9c26d38e3de752a04496738815a9fac5b070654e60f39423ebe",
+      deploymentBlock: 53997401n,
+    },
+    role: "launch",
+  },
 ];
 
 export function v3ChainRow(chainId: number): V3ChainRow | undefined {
@@ -447,7 +480,7 @@ export const ENGINE_META: Record<LaunchEngine, EngineMeta> = {
     title: "Uniswap V3 rail",
     subtitle: "Stablecoin settlement and permanent V3 custody.",
     feeSplitLabel: "95% creator • 5% Hyde", // kami 24242 — matches _split BPS exactly
-    trustLine: "V5 graduates into locked V3 positions; legacy instant positions remain locked.",
+    trustLine: "V3 positions are permanently locked; creator fees remain claimable.",
     creatorShare: 95,
     hydeShare: 5,
     lockedLpShare: 0,

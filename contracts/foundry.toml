@@ -68,3 +68,20 @@ optimizer_runs = 200
 via_ir = true
 bytecode_hash = "none"
 fs_permissions = [{ access = "read", path = "./out-v5v4" }]
+
+# Chain-agnostic official Flywheel staking vault. The same bytecode is shared by V3 and V4 launchers.
+# Deploy only from this pinned profile: FOUNDRY_PROFILE=flywheel forge build
+[profile.flywheel]
+src = "src/flywheel"
+test = "test/flywheel"
+script = "script/flywheel"
+out = "out-flywheel"
+libs = ["lib"]
+solc = "0.8.36"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+bytecode_hash = "none"
+fuzz = { runs = 256 }
+invariant = { runs = 256, depth = 32 }

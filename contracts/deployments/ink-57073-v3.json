@@ -1,0 +1,72 @@
+{
+  "network": "Ink Mainnet",
+  "chainId": 57073,
+  "rpcUrl": "https://rpc-gel.inkonchain.com",
+  "explorerUrl": "https://explorer.inkonchain.com",
+  "deployer": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "treasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "contracts": {
+    "implementation": {
+      "name": "HydeERC20",
+      "address": "0x83D7306e1d6B07a10AE070CD16e8F6320EFaDD98",
+      "deploymentTransaction": "0x9c0a37f7a2abed9dfa6b3d53cf3c2bfc77bbc734e8cede3f5648d38430dfb210",
+      "deploymentBlock": 53997103,
+      "runtimeCodeBytes": 4691,
+      "runtimeCodeHash": "0x77499acdd5512646139cd69d341ce6bc0296ea5d0cd1da36fa6f1230b853a575"
+    },
+    "launchpad": {
+      "name": "HydeV3Pad",
+      "address": "0x71666A06bb454696073211733c755eA0194f3094",
+      "deploymentTransaction": "0xcccbe1feea4661f3692b013c2b058d9f39c5b67a915be1309bf42084b1d440a9",
+      "deploymentBlock": 53997401,
+      "runtimeCodeBytes": 10228,
+      "runtimeCodeHash": "0x99695a2d251957778375390f46875593d6708250116040061e7d01244bb86cf7"
+    },
+    "feeLocker": {
+      "name": "HydeV3FeeLocker",
+      "address": "0x670697c84C5a18b28aA21D25888CcdCF2416be04",
+      "deploymentTransaction": "0xcccbe1feea4661f3692b013c2b058d9f39c5b67a915be1309bf42084b1d440a9",
+      "deploymentBlock": 53997401,
+      "runtimeCodeBytes": 3181,
+      "runtimeCodeHash": "0xccbd817a9025e9c26d38e3de752a04496738815a9fac5b070654e60f39423ebe"
+    }
+  },
+  "dependencies": {
+    "numeraire": {
+      "symbol": "WETH",
+      "address": "0x4200000000000000000000000000000000000006",
+      "decimals": 18
+    },
+    "venue": "Velodrome Slipstream",
+    "slipstreamFactory": "0x718E46d0962A66942E233760a8bd6038Ce54EdCD",
+    "positionManager": "0xefD0f78F93f578036AE34D52A813a4BE7D8D2D52"
+  },
+  "configuration": {
+    "poolFee": 3000,
+    "tickSpacing": 200,
+    "positionKey": 200,
+    "targetStartFdvWeth": "1",
+    "targetTopFdvWeth": "16",
+    "realizedStartFdvRaw": "1004311033770190170",
+    "realizedTopFdvRaw": "15865767123804433153",
+    "launchFeeWei": "400000000000000",
+    "creatorFeeBps": 9500,
+    "hydeFeeBps": 500,
+    "maxWalletBps": 200,
+    "maxWalletWindowSeconds": 600,
+    "graduationThresholdRaw": "100000000000000000"
+  },
+  "verification": {
+    "verifiedAtBlock": 53997401,
+    "receiptStatuses": [1, 1],
+    "immutableChecksPassed": 19,
+    "runtimeCodeHashesMatched": 3,
+    "liveSlipstreamForkLaunchPassed": true,
+    "tokenLaunchPerformed": false
+  },
+  "notes": {
+    "unusedFlywheelFactory": "0xDE8A4A4DC19B2dA4ec3b984f2cD934a33C12e8a0",
+    "unusedFlywheelDeploymentTransaction": "0x620c686dc68439841644888a9cad34155e69fa6c1c5e906da8b9157ff124d618",
+    "productionPadHasNoFlywheelReference": true
+  }
+}

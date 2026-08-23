@@ -28,7 +28,7 @@ function ok(label: string, cond: boolean, detail = "") {
 }
 const isUnsupported = (c: { status?: string }) => c.status === "unsupported";
 
-const stableRow = V3_CANDIDATES[0];
+const stableRow = V3_CANDIDATES.find((row) => row.id === 988)!;
 const infraFor = (row: typeof stableRow) => ({
   chainId: row.id,
   numeraire: { address: row.numeraire.address, decimals: row.numeraire.decimals, symbol: row.numeraire.symbol },

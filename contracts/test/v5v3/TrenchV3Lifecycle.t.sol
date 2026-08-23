@@ -8,6 +8,10 @@ import {TickMath} from "../../src/v3/libraries/TickMath.sol";
 import {TrenchV3Factory} from "../../src/v5v3/TrenchV3Factory.sol";
 import {TrenchV3Graduator} from "../../src/v5v3/TrenchV3Graduator.sol";
 import {TrenchV3Locker} from "../../src/v5v3/TrenchV3Locker.sol";
+import {FlywheelVault} from "../../src/flywheel/FlywheelVault.sol";
+import {FlywheelVaultFactory} from "../../src/flywheel/FlywheelVaultFactory.sol";
+import {IFlywheelFeeSource} from "../../src/flywheel/interfaces/IFlywheelFeeSource.sol";
+import {MockFlywheelRewardConverter} from "../flywheel/mocks/MockFlywheel.sol";
 import {MockERC20} from "../v3/mocks/MockERC20.sol";
 import {MockTrenchV3Factory, MockTrenchV3Pool, MockTrenchV3PositionManager} from "./mocks/MockTrenchV3.sol";
 
@@ -27,6 +31,7 @@ contract TrenchV3LifecycleTest is Test {
     TrenchV3Factory internal factory;
     TrenchV3Graduator internal graduator;
     TrenchV3Locker internal locker;
+    FlywheelVaultFactory internal vaultFactory;
 
     function setUp() public {
         quote = new MockERC20("USDT0", "USDT0", 6);
@@ -34,12 +39,14 @@ contract TrenchV3LifecycleTest is Test {
         uniFactory.setSpacing(FEE, SPACING);
         positionManager = new MockTrenchV3PositionManager(uniFactory);
         HydeERC20 impl = new HydeERC20();
+        vaultFactory = new FlywheelVaultFactory(address(this));
 
         factory = new TrenchV3Factory(
             TrenchV3Factory.Config({
                 impl: address(impl),
                 v3Factory: address(uniFactory),
                 positionManager: address(positionManager),
+                flywheelVaultFactory: address(vaultFactory),
                 hydeTreasury: HYDE,
                 numeraire: address(quote),
                 numeraireDecimals: 6,
@@ -117,6 +124,107 @@ contract TrenchV3LifecycleTest is Test {
         assertEq(quote.balanceOf(HYDE), expectedHydeQuote);
         assertEq(locker.accountedBalance(token), 0);
         assertEq(locker.accountedBalance(address(quote)), 0);
+    }
+
+    function test_flywheel_launch_routes_fees_90_5_5() public {
+        FlywheelVault receiver = vaultFactory.createVault(
+            IFlywheelFeeSource(address(locker)), address(quote), CREATOR, 7 days, keccak256("V3_FLYWHEEL")
+        );
+        bytes32 salt = _findSalt(true, "FLYWHEEL");
+        vm.prank(CREATOR);
+        (address token, uint256 curveTokenId) =
+            factory.launchFlywheel("Flywheel Token", "FLYW", salt, address(receiver));
+        assertEq(receiver.stakingToken(), token, "vault not atomically initialized");
+        assertEq(vaultFactory.vaultToken(address(receiver)), token);
+        assertEq(locker.flywheelRecipient(token), address(receiver));
+        assertTrue(HydeERC20(token).exempt(address(receiver)), "receiver not launch-window exempt");
+        uint256 tokenFees = 1_000e18;
+        uint256 quoteFees = 500e6;
+        quote.mint(address(positionManager), quoteFees);
+        positionManager.setFees(
+            curveTokenId, token < address(quote) ? tokenFees : quoteFees, token < address(quote) ? quoteFees : tokenFees
+        );
+        graduator.collectCurveFees(token);
+
+        uint256 expectedFlywheelToken = (tokenFees * 9_000) / 10_000;
+        uint256 expectedCreatorToken = (tokenFees * 500) / 10_000;
+        uint256 expectedHydeToken = tokenFees - expectedFlywheelToken - expectedCreatorToken;
+        uint256 expectedFlywheelQuote = (quoteFees * 9_000) / 10_000;
+        uint256 expectedCreatorQuote = (quoteFees * 500) / 10_000;
+        uint256 expectedHydeQuote = quoteFees - expectedFlywheelQuote - expectedCreatorQuote;
+
+        assertEq(locker.flywheelClaimable(token, token), expectedFlywheelToken);
+        assertEq(locker.creatorClaimable(token, token), expectedCreatorToken);
+        assertEq(locker.hydeClaimable(token, token), expectedHydeToken);
+        assertEq(locker.flywheelClaimable(token, address(quote)), expectedFlywheelQuote);
+        assertEq(locker.creatorClaimable(token, address(quote)), expectedCreatorQuote);
+        assertEq(locker.hydeClaimable(token, address(quote)), expectedHydeQuote);
+
+        receiver.pullAllFees();
+        assertEq(HydeERC20(token).balanceOf(address(receiver)), expectedFlywheelToken);
+        assertEq(quote.balanceOf(address(receiver)), expectedFlywheelQuote);
+        assertEq(locker.flywheelClaimable(token, token), 0);
+        assertEq(locker.flywheelClaimable(token, address(quote)), 0);
+        (,,,,, uint256 queuedToken, uint256 reservedToken,) = receiver.rewardData(token);
+        (,,,,, uint256 queuedQuote, uint256 reservedQuote,) = receiver.rewardData(address(quote));
+        assertEq(queuedToken, expectedFlywheelToken);
+        assertEq(reservedToken, expectedFlywheelToken);
+        assertEq(queuedQuote, expectedFlywheelQuote);
+        assertEq(reservedQuote, expectedFlywheelQuote);
+    }
+
+    function test_flywheel_launch_requires_official_unbound_receiver() public {
+        bytes32 salt = _findSalt(true, "BAD_FLYWHEEL");
+        uint256 nonceBefore = factory.launchNonce();
+        uint256 treasuryBefore = quote.balanceOf(LAUNCH_TREASURY);
+        vm.startPrank(CREATOR);
+        vm.expectRevert(TrenchV3Factory.InvalidFlywheel.selector);
+        factory.launchFlywheel("Bad Flywheel", "BADF", salt, address(0));
+        vm.expectRevert(TrenchV3Factory.InvalidFlywheel.selector);
+        factory.launchFlywheel("Bad Flywheel", "BADF", salt, address(positionManager));
+        vm.stopPrank();
+        assertEq(factory.launchNonce(), nonceBefore);
+        assertEq(quote.balanceOf(LAUNCH_TREASURY), treasuryBefore);
+    }
+
+    function test_flywheel_launch_rejects_wrong_controller() public {
+        FlywheelVault receiver = vaultFactory.createVault(
+            IFlywheelFeeSource(address(locker)), address(quote), address(0xBAD), 7 days, keccak256("WRONG_CONTROLLER")
+        );
+        bytes32 salt = _findSalt(true, "WRONG_CONTROLLER");
+        vm.prank(CREATOR);
+        vm.expectRevert(TrenchV3Factory.InvalidFlywheel.selector);
+        factory.launchFlywheel("Bad Flywheel", "BADF", salt, address(receiver));
+    }
+
+    function test_flywheel_launch_rejects_disabledSelectedRewardRoute() public {
+        MockERC20 stock = new MockERC20("Stock", "STOCK", 18);
+        MockFlywheelRewardConverter converter = new MockFlywheelRewardConverter();
+        vaultFactory.proposeRewardRoute(address(quote), address(stock), address(converter));
+        vm.warp(block.timestamp + vaultFactory.ROUTE_ACTIVATION_DELAY());
+        vaultFactory.activateRewardRoute(address(quote), address(stock));
+        FlywheelVault receiver = vaultFactory.createVault(
+            IFlywheelFeeSource(address(locker)), address(quote), address(stock), CREATOR, 7 days, keccak256("DISABLED")
+        );
+        vaultFactory.disableRewardRoute(address(quote), address(stock));
+
+        bytes32 salt = _findSalt(true, "DISABLED_ROUTE");
+        vm.prank(CREATOR);
+        vm.expectRevert(TrenchV3Factory.InvalidFlywheel.selector);
+        factory.launchFlywheel("Disabled Route", "DSBL", salt, address(receiver));
+    }
+
+    function test_flywheel_vault_cannot_be_reused() public {
+        FlywheelVault receiver = vaultFactory.createVault(
+            IFlywheelFeeSource(address(locker)), address(quote), CREATOR, 7 days, keccak256("NO_REUSE")
+        );
+        bytes32 firstSalt = _findSalt(true, "NO_REUSE_1");
+        vm.prank(CREATOR);
+        factory.launchFlywheel("First Flywheel", "FLY1", firstSalt, address(receiver));
+        bytes32 secondSalt = _findSalt(false, "NO_REUSE_2");
+        vm.prank(CREATOR);
+        vm.expectRevert(TrenchV3Factory.InvalidFlywheel.selector);
+        factory.launchFlywheel("Second Flywheel", "FLY2", secondSalt, address(receiver));
     }
 
     function test_signal_reverts_before_curve_is_full() public {

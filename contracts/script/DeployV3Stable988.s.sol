@@ -96,6 +96,8 @@ contract DeployV3Stable988 is Script {
                 numeraire: USDT0,
                 numeraireDecimals: NUMERAIRE_DECIMALS,
                 feeTier: FEE_TIER,
+                slipstream: false,
+                tickSpacing: 0,
                 startFdvWad: START_FDV_WAD,
                 topFdvWad: TOP_FDV_WAD,
                 launchFeeAsset: USDT0,

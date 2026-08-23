@@ -26,6 +26,7 @@ import {IHydeHook} from "../../src/interfaces/IHydeHook.sol";
 import {TrenchV4Factory} from "../../src/v5v4/TrenchV4Factory.sol";
 import {TrenchV4Graduator} from "../../src/v5v4/TrenchV4Graduator.sol";
 import {TrenchV4Locker} from "../../src/v5v4/TrenchV4Locker.sol";
+import {FlywheelVaultFactory} from "../../src/flywheel/FlywheelVaultFactory.sol";
 import {ITrenchV4LockerRegister} from "../../src/v5v4/interfaces/ITrenchV4.sol";
 
 interface IERC20MetadataV5V4Fork {
@@ -192,6 +193,7 @@ contract TrenchV4ForkTest is Test {
     }
 
     function _deployStack(ChainManifest memory c) private returns (Stack memory s) {
+        FlywheelVaultFactory vaultFactory = new FlywheelVaultFactory(address(this));
         address coordinatorAddress = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
         address implAddress = _child(coordinatorAddress, 1);
         address lockerAddress = _child(coordinatorAddress, 3);
@@ -220,6 +222,7 @@ contract TrenchV4ForkTest is Test {
             hook: IHydeHook(hookAddress),
             locker: TrenchV4Locker(lockerAddress),
             graduator: TrenchV4Graduator(graduatorAddress),
+            flywheelVaultFactory: address(vaultFactory),
             hydeTreasury: HYDE_TREASURY,
             numeraire: c.weth,
             numeraireDecimals: 18,

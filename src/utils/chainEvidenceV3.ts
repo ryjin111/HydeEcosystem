@@ -119,5 +119,56 @@ export const CHAIN_EVIDENCE_V3: Record<number, V3ChainEvidence | undefined> = {
     "readSmoke": {
       "verifiedAtBlock": "33271706"
     }
+  },
+  "57073": {
+    "chainId": 57073,
+    "generatedAtBlock": "53997401",
+    "rpcUrl": "https://rpc-gel.inkonchain.com",
+    "infra": {
+      "chainId": 57073,
+      "numeraire": {
+        "address": "0x4200000000000000000000000000000000000006",
+        "decimals": 18,
+        "symbol": "WETH"
+      },
+      "factory": {
+        "address": "0x718E46d0962A66942E233760a8bd6038Ce54EdCD",
+        "feeTier": 3000,
+        "tickSpacing": 200,
+        "codeHash": "0x47300e75187cc255355659bf86873d6adfbfe60ad2000e0f6e1274e02917b701",
+        "codeSize": 5903
+      },
+      "positionManager": {
+        "address": "0xefD0f78F93f578036AE34D52A813a4BE7D8D2D52",
+        "factoryBinding": "0x718E46d0962A66942E233760a8bd6038Ce54EdCD",
+        "codeHash": "0x068cdd1c2f2c7c4f78730b56ffe01cace7ef93ca815698cd85c3855ea6b10380",
+        "codeSize": 24451
+      },
+      "numeraireCode": {
+        "codeHash": "0xd0f1614c5dacfbd34f1c6f500f397009e4c9a8bfd4e02db353edb2253d9a8012",
+        "codeSize": 2865
+      },
+      "verifiedAtBlock": "53997401"
+    },
+    "launch": {
+      "implementation": "0x83D7306e1d6B07a10AE070CD16e8F6320EFaDD98",
+      "pad": "0x71666A06bb454696073211733c755eA0194f3094",
+      "locker": "0x670697c84C5a18b28aA21D25888CcdCF2416be04",
+      "implementationCodeSize": 4691,
+      "padCodeSize": 10228,
+      "lockerCodeSize": 3181,
+      "implementationCodeHash": "0x77499acdd5512646139cd69d341ce6bc0296ea5d0cd1da36fa6f1230b853a575",
+      "padCodeHash": "0x99695a2d251957778375390f46875593d6708250116040061e7d01244bb86cf7",
+      "lockerCodeHash": "0xccbd817a9025e9c26d38e3de752a04496738815a9fac5b070654e60f39423ebe",
+      "padLockerBinding": "0x670697c84C5a18b28aA21D25888CcdCF2416be04",
+      "lockerFactoryBinding": "0x71666A06bb454696073211733c755eA0194f3094",
+      "deployTx": "0xcccbe1feea4661f3692b013c2b058d9f39c5b67a915be1309bf42084b1d440a9",
+      "launchRoundTripFdv": "1.004311033770190170 WETH (Ink mainnet fork launch)",
+      "verifiedAtBlock": "53997401"
+    },
+    "trade": null,
+    "readSmoke": {
+      "verifiedAtBlock": "53997401"
+    }
   }
 };

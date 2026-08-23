@@ -28,6 +28,7 @@ import {HydeERC20} from "../HydeERC20.sol";
 import {IHydeHook} from "../interfaces/IHydeHook.sol";
 import {TrenchV4Graduator} from "./TrenchV4Graduator.sol";
 import {TrenchV4Locker} from "./TrenchV4Locker.sol";
+import {IFlywheelVault, IFlywheelVaultFactory} from "../flywheel/interfaces/IFlywheelVault.sol";
 
 /// @title TrenchV4Factory
 /// @notice Hydeout V5 launch rail for Robinhood Chain and Arbitrum:
@@ -53,6 +54,7 @@ contract TrenchV4Factory is ReentrancyGuard {
     IAllowanceTransfer public immutable PERMIT2;
     IStateView public immutable STATE_VIEW;
     IHydeHook public immutable HOOK;
+    IFlywheelVaultFactory public immutable FLYWHEEL_VAULT_FACTORY;
 
     address public immutable NUMERAIRE;
     uint8 public immutable NUMERAIRE_DECIMALS;
@@ -89,6 +91,7 @@ contract TrenchV4Factory is ReentrancyGuard {
         uint256 curveTokenUsed,
         uint256 graduationReserve
     );
+    event FlywheelLaunchCreated(address indexed token, address indexed creator, address indexed recipient);
     event Paused();
     event Unpaused();
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
@@ -105,6 +108,7 @@ contract TrenchV4Factory is ReentrancyGuard {
     error InvalidMetadata();
     error PausedError();
     error OnlyOwner();
+    error InvalidFlywheel();
 
     struct Config {
         address impl;
@@ -115,6 +119,7 @@ contract TrenchV4Factory is ReentrancyGuard {
         IHydeHook hook;
         TrenchV4Locker locker;
         TrenchV4Graduator graduator;
+        address flywheelVaultFactory;
         address hydeTreasury;
         address numeraire;
         uint8 numeraireDecimals;
@@ -144,6 +149,7 @@ contract TrenchV4Factory is ReentrancyGuard {
                 || address(c.permit2) == address(0) || address(c.stateView) == address(0)
                 || address(c.hook) == address(0) || address(c.locker) == address(0)
                 || address(c.graduator) == address(0) || c.hydeTreasury == address(0) || c.numeraire == address(0)
+                || c.flywheelVaultFactory == address(0) || c.flywheelVaultFactory.code.length == 0
                 || c.numeraireDecimals > 18 || c.tickSpacing <= 0 || c.universalRouter == address(0)
                 || c.startFdvWad == 0 || c.graduationFdvWad <= c.startFdvWad || c.launchFeeAmount == 0
                 || c.launchFeeTreasury == address(0) || c.maxWalletBps == 0 || c.maxWalletBps > 300
@@ -166,6 +172,7 @@ contract TrenchV4Factory is ReentrancyGuard {
         PERMIT2 = c.permit2;
         STATE_VIEW = c.stateView;
         HOOK = c.hook;
+        FLYWHEEL_VAULT_FACTORY = IFlywheelVaultFactory(c.flywheelVaultFactory);
         NUMERAIRE = c.numeraire;
         NUMERAIRE_DECIMALS = c.numeraireDecimals;
         TICK_SPACING = c.tickSpacing;
@@ -228,6 +235,25 @@ contract TrenchV4Factory is ReentrancyGuard {
         nonReentrant
         returns (address token, uint256 curveTokenId)
     {
+        return _launch(name, symbol, salt, address(0));
+    }
+
+    /// @notice Launches a Trench token whose fees use immutable 90/5/5 Flywheel accounting.
+    /// @param flywheelRecipient Deployed receiver contract funded with 90% of both fee assets.
+    function launchFlywheel(string calldata name, string calldata symbol, bytes32 salt, address flywheelRecipient)
+        external
+        payable
+        nonReentrant
+        returns (address token, uint256 curveTokenId)
+    {
+        _validateFlywheel(flywheelRecipient, msg.sender);
+        return _launch(name, symbol, salt, flywheelRecipient);
+    }
+
+    function _launch(string calldata name, string calldata symbol, bytes32 salt, address flywheelRecipient)
+        private
+        returns (address token, uint256 curveTokenId)
+    {
         if (paused) revert PausedError();
         if (
             bytes(name).length == 0 || bytes(name).length > MAX_NAME_BYTES || bytes(symbol).length == 0
@@ -265,7 +291,7 @@ contract TrenchV4Factory is ReentrancyGuard {
                     vault: address(LOCKER),
                     maxWalletBps: MAX_WALLET_BPS,
                     maxWalletWindowSecs: MAX_WALLET_WINDOW_SECS,
-                    exemptAddrs: _exemptSet()
+                    exemptAddrs: _exemptSet(flywheelRecipient)
                 })
             );
 
@@ -286,12 +312,45 @@ contract TrenchV4Factory is ReentrancyGuard {
         if (IERC20(token).balanceOf(address(this)) != 0) revert SeedFailed();
 
         GRADUATOR.registerCurve(
-            token, msg.sender, key, curveTokenId, CURVE_TARGET, reserve, tickLower, tickUpper, tokenIs0
+            token,
+            msg.sender,
+            key,
+            curveTokenId,
+            CURVE_TARGET,
+            reserve,
+            tickLower,
+            tickUpper,
+            tokenIs0,
+            flywheelRecipient
         );
+
+        if (flywheelRecipient != address(0)) {
+            IFlywheelVault(flywheelRecipient).initialize(token);
+            if (
+                FLYWHEEL_VAULT_FACTORY.vaultToken(flywheelRecipient) != token
+                    || FLYWHEEL_VAULT_FACTORY.tokenVault(token) != flywheelRecipient
+            ) revert InvalidFlywheel();
+        }
 
         isTrenchToken[token] = true;
         allTokens.push(token);
         emit LaunchCreated(token, msg.sender, key.toId(), curveTokenId, curveLiquidity, curveTokenUsed, reserve);
+        if (flywheelRecipient != address(0)) {
+            emit FlywheelLaunchCreated(token, msg.sender, flywheelRecipient);
+        }
+    }
+
+    function _validateFlywheel(address recipient, address creator) private view {
+        if (
+            recipient == address(0) || !FLYWHEEL_VAULT_FACTORY.isVault(recipient)
+                || !FLYWHEEL_VAULT_FACTORY.isVaultConfigActive(recipient)
+                || IFlywheelVault(recipient).DEPLOYER_FACTORY() != address(FLYWHEEL_VAULT_FACTORY)
+                || IFlywheelVault(recipient).FEE_SOURCE() != address(LOCKER)
+                || IFlywheelVault(recipient).NUMERAIRE() != NUMERAIRE
+                || IFlywheelVault(recipient).CONTROLLER() != creator
+                || IFlywheelVault(recipient).stakingToken() != address(0)
+                || FLYWHEEL_VAULT_FACTORY.vaultToken(recipient) != address(0)
+        ) revert InvalidFlywheel();
     }
 
     function _mintCurve(address token, PoolKey memory key, bool tokenIs0, int24 tickLower, int24 tickUpper)
@@ -347,8 +406,8 @@ contract TrenchV4Factory is ReentrancyGuard {
         });
     }
 
-    function _exemptSet() private view returns (address[] memory set) {
-        set = new address[](7);
+    function _exemptSet(address flywheelRecipient) private view returns (address[] memory set) {
+        set = new address[](flywheelRecipient == address(0) ? 7 : 8);
         set[0] = address(POOL_MANAGER);
         set[1] = address(POSITION_MANAGER);
         set[2] = address(this);
@@ -356,6 +415,7 @@ contract TrenchV4Factory is ReentrancyGuard {
         set[4] = address(GRADUATOR);
         set[5] = UNIVERSAL_ROUTER;
         set[6] = address(PERMIT2);
+        if (flywheelRecipient != address(0)) set[7] = flywheelRecipient;
     }
 
     function _rangeFor(bool tokenIs0) private view returns (int24 tickLower, int24 tickUpper, int24 initTick) {
