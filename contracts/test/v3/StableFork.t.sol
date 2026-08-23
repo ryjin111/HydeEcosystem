@@ -43,6 +43,8 @@ contract StableForkTest is Test {
                 numeraire: USDT0,
                 numeraireDecimals: 6, // IMMUTABLE from verified config — never an on-chain read
                 feeTier: FEE,
+                slipstream: false,
+                tickSpacing: 0,
                 startFdvWad: 5000 * 1e18, // $5k floor, decimals-independent (scaled ×10^6 on-chain → 5000e6)
                 topFdvWad: 50000 * 1e18,
                 launchFeeAsset: USDT0,

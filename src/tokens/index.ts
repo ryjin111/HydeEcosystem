@@ -9,3 +9,4 @@ export { UNICHAIN_TOKENS } from "./unichain";
 export { BNB_TOKENS } from "./bnb";
 export { XLAYER_TOKENS } from "./xlayer";
 export { ARBITRUM_TOKENS } from "./arbitrum";
+export { HYPEREVM_TOKENS } from "./hyperEvm";

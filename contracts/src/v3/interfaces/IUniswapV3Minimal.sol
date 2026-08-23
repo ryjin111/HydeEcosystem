@@ -13,6 +13,14 @@ interface IUniswapV3Factory {
     function feeAmountTickSpacing(uint24 fee) external view returns (int24);
 }
 
+interface ISlipstreamFactory {
+    function getPool(address tokenA, address tokenB, int24 tickSpacing) external view returns (address pool);
+    function createPool(address tokenA, address tokenB, int24 tickSpacing, uint160 sqrtPriceX96)
+        external
+        returns (address pool);
+    function tickSpacingToFee(int24 tickSpacing) external view returns (uint24 fee);
+}
+
 interface IUniswapV3Pool {
     function slot0()
         external
@@ -84,6 +92,32 @@ interface IV3PositionManagerMint {
             uint128 tokensOwed0,
             uint128 tokensOwed1
         );
+
+    function ownerOf(uint256 tokenId) external view returns (address owner);
+}
+
+/// @notice Ink/Slipstream mint surface. Positions and collect remain ABI-compatible
+///         with the split read/collect interface above.
+interface ISlipstreamPositionManagerMint {
+    struct MintParams {
+        address token0;
+        address token1;
+        int24 tickSpacing;
+        int24 tickLower;
+        int24 tickUpper;
+        uint256 amount0Desired;
+        uint256 amount1Desired;
+        uint256 amount0Min;
+        uint256 amount1Min;
+        address recipient;
+        uint256 deadline;
+        uint160 sqrtPriceX96;
+    }
+
+    function mint(MintParams calldata params)
+        external
+        payable
+        returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1);
 
     function ownerOf(uint256 tokenId) external view returns (address owner);
 }

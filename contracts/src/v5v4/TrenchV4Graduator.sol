@@ -169,7 +169,8 @@ contract TrenchV4Graduator is IERC721Receiver, ReentrancyGuard {
         uint256 reserveToken,
         int24 tickLower,
         int24 tickUpper,
-        bool tokenIs0
+        bool tokenIs0,
+        address flywheelRecipient
     ) external {
         if (msg.sender != FACTORY) revert OnlyFactory();
         if (_curveOf[token].state != CurveState.NONE) revert InvalidState();
@@ -220,7 +221,7 @@ contract TrenchV4Graduator is IERC721Receiver, ReentrancyGuard {
             tokenIs0: tokenIs0,
             state: CurveState.CURVE_ACTIVE
         });
-        LOCKER.openCurve(token, creator, key);
+        LOCKER.openCurve(token, creator, key, flywheelRecipient);
         emit CurveRegistered(token, creator, poolId, curveTokenId, initialTokenPrincipal, reserveToken);
     }
 

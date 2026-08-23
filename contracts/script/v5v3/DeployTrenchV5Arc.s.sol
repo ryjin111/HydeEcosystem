@@ -58,6 +58,7 @@ contract DeployTrenchV5Arc is Script {
         address owner = vm.envAddress("V5_FACTORY_OWNER");
         address hydeTreasury = vm.envAddress("HYDE_TREASURY");
         address launchTreasury = vm.envAddress("LAUNCH_TREASURY");
+        address flywheelVaultFactory = vm.envAddress("FLYWHEEL_VAULT_FACTORY");
         uint256 startFdvWad = vm.envUint("V5_START_FDV_WAD");
         uint256 graduationFdvWad = vm.envUint("V5_GRADUATION_FDV_WAD");
         uint256 minimumProceeds = vm.envUint("V5_MINIMUM_PROCEEDS");
@@ -66,6 +67,7 @@ contract DeployTrenchV5Arc is Script {
         require(owner != address(0), "OWNER_ZERO");
         require(hydeTreasury != address(0), "HYDE_TREASURY_ZERO");
         require(launchTreasury != address(0), "LAUNCH_TREASURY_ZERO");
+        require(flywheelVaultFactory.code.length != 0, "FLYWHEEL_FACTORY_NO_CODE");
         require(startFdvWad > 0 && graduationFdvWad > startFdvWad, "FDV_RANGE");
         require(minimumProceeds > 0, "MIN_PROCEEDS_ZERO");
         require(deployer.balance >= 0.5 ether, "INSUFFICIENT_GAS");
@@ -88,6 +90,7 @@ contract DeployTrenchV5Arc is Script {
                 impl: address(impl),
                 v3Factory: V3_FACTORY,
                 positionManager: POSITION_MANAGER,
+                flywheelVaultFactory: flywheelVaultFactory,
                 hydeTreasury: hydeTreasury,
                 numeraire: USDC,
                 numeraireDecimals: 6,
@@ -124,6 +127,7 @@ contract DeployTrenchV5Arc is Script {
         require(address(factory.V3_FACTORY()) == V3_FACTORY, "F_V3_FACTORY");
         require(address(factory.POSITION_MANAGER()) == POSITION_MANAGER, "F_NPM");
         require(factory.NUMERAIRE() == USDC, "F_NUMERAIRE");
+        require(address(factory.FLYWHEEL_VAULT_FACTORY()) == flywheelVaultFactory, "F_FLYWHEEL_FACTORY");
         require(factory.owner() == owner, "F_OWNER");
         require(factory.EXPECTED_TERMINAL_PROCEEDS() >= minimumProceeds, "F_PROCEEDS");
         require(graduator.FACTORY() == address(factory), "G_FACTORY");
@@ -137,6 +141,7 @@ contract DeployTrenchV5Arc is Script {
         console2.log("Factory   ", address(factory));
         console2.log("Graduator ", address(graduator));
         console2.log("Locker    ", address(locker));
+        console2.log("Flywheel vault factory", flywheelVaultFactory);
         console2.log("Actual opening/graduation FDV raw:");
         console2.log(factory.ACTUAL_START_FDV_RAW(), factory.ACTUAL_GRADUATION_FDV_RAW());
         console2.log("Expected terminal proceeds", factory.EXPECTED_TERMINAL_PROCEEDS());

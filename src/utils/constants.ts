@@ -1,5 +1,5 @@
 import type { Address, Hex } from "viem";
-import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, ROBINHOOD_MAINNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS, OPTIMISM_TOKENS, ETHEREUM_TOKENS, UNICHAIN_TOKENS, BNB_TOKENS, XLAYER_TOKENS, ARBITRUM_TOKENS } from "../tokens";
+import { TEMPO_MODERATO_TOKENS, ROBINHOOD_TESTNET_TOKENS, ROBINHOOD_MAINNET_TOKENS, PHAROS_ATLANTIC_TOKENS, INK_TOKENS, OPTIMISM_TOKENS, ETHEREUM_TOKENS, UNICHAIN_TOKENS, BNB_TOKENS, XLAYER_TOKENS, ARBITRUM_TOKENS, HYPEREVM_TOKENS } from "../tokens";
 
 export type TokenInfo = {
   symbol: string;
@@ -272,11 +272,28 @@ export const ARBITRUM_MAINNET: NetworkConfig = {
   tokens: ARBITRUM_TOKENS,
 };
 
+// HyperEVM mainnet preparation only. It stays out of NETWORKS until Hydeout's V3 deployment,
+// runtime evidence, fork lifecycle, and public release gate all pass. WHYPE is Hyperliquid's
+// immutable canonical wrapped-native system contract.
+export const HYPEREVM_MAINNET: NetworkConfig = {
+  id: 999,
+  name: "HyperEVM",
+  rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+  explorerUrl: "https://hyperevmscan.io",
+  currencySymbol: "HYPE",
+  factory: PLACEHOLDER_FACTORY,
+  router: PLACEHOLDER_ROUTER,
+  weth: "0x5555555555555555555555555555555555555555" as Address,
+  tokens: HYPEREVM_TOKENS,
+};
+
 export const NETWORKS: NetworkConfig[] = [
   ROBINHOOD_MAINNET,
   STABLE_MAINNET,       // LIVE V3 reach line (988); readiness is generated-evidence gated
   ARBITRUM_MAINNET,     // LIVE Hyde V4 WETH launch rail; in-app execution gateway remains fail-closed
   ARC_MAINNET,           // V5 V3 rail is runtime-manifest gated and fails closed on RPC/hash drift
+  INK_MAINNET,           // LIVE standalone V3 launch rail on Velodrome Slipstream
+  // HYPEREVM_MAINNET,   // preparation only: native Flywheel rewards; no deployed Hydeout rail yet
   // OPTIMISM_MAINNET,  // legacy lane retired 2026-07-03 — Hydeout is Robinhood-only
   // INK_MAINNET,       // hidden — multichain later
   // UNICHAIN_MAINNET,  // dropped

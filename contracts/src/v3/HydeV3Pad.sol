@@ -9,7 +9,13 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {HydeERC20} from "./HydeERC20.sol";
 import {HydeV3FeeLocker} from "./HydeV3FeeLocker.sol";
-import {IUniswapV3Factory, IUniswapV3Pool, IV3PositionManagerMint} from "./interfaces/IUniswapV3Minimal.sol";
+import {
+    ISlipstreamFactory,
+    ISlipstreamPositionManagerMint,
+    IUniswapV3Factory,
+    IUniswapV3Pool,
+    IV3PositionManagerMint
+} from "./interfaces/IUniswapV3Minimal.sol";
 import {IV3PositionManagerCollect} from "./interfaces/IUniswapV3Minimal.sol";
 import {TickMath} from "./libraries/TickMath.sol";
 
@@ -45,7 +51,9 @@ contract HydeV3Pad is ReentrancyGuard {
     address public immutable NUMERAIRE; // the paired asset (USDT0 on Stable) — pool currency0/1 per sort
     uint8 public immutable NUMERAIRE_DECIMALS; // IMMUTABLE from verified config — NEVER an on-chain read
     uint24 public immutable FEE_TIER;
+    uint24 public immutable POSITION_KEY;
     int24 public immutable TICK_SPACING;
+    bool public immutable SLIPSTREAM;
 
     // Launch fee (distinct from the 95/5 trading split). ERC-20 path (approve+transferFrom) with an
     // exact-delta fee-on-transfer guard; or native (msg.value) where the chain's fee asset is native.
@@ -94,6 +102,8 @@ contract HydeV3Pad is ReentrancyGuard {
         address numeraire;
         uint8 numeraireDecimals;
         uint24 feeTier;
+        bool slipstream;
+        int24 tickSpacing;
         uint256 startFdvWad; // FDV floor, DECIMALS-INDEPENDENT (FDV × 1e18); scaled on-chain by NUMERAIRE_DECIMALS
         uint256 topFdvWad; // FDV ceiling (× 1e18)
         address launchFeeAsset; // address(0) iff native
@@ -135,8 +145,22 @@ contract HydeV3Pad is ReentrancyGuard {
         MAX_WALLET_BPS = c.maxWalletBps;
         MAX_WALLET_WINDOW_SECS = c.maxWalletWindowSecs;
 
-        int24 spacing = V3_FACTORY.feeAmountTickSpacing(c.feeTier);
+        int24 spacing;
+        uint24 positionKey;
+        if (c.slipstream) {
+            spacing = c.tickSpacing;
+            if (spacing <= 0 || ISlipstreamFactory(c.v3Factory).tickSpacingToFee(spacing) != c.feeTier) {
+                revert InvalidConfig();
+            }
+            positionKey = uint24(spacing);
+        } else {
+            if (c.tickSpacing != 0) revert InvalidConfig();
+            spacing = V3_FACTORY.feeAmountTickSpacing(c.feeTier);
+            positionKey = c.feeTier;
+        }
         if (spacing == 0) revert InvalidConfig(); // fee tier not enabled on this factory
+        SLIPSTREAM = c.slipstream;
+        POSITION_KEY = positionKey;
         TICK_SPACING = spacing;
 
         // Derive the token0-convention range from the FDV targets, aligned to spacing. Only the sign flips
@@ -184,7 +208,7 @@ contract HydeV3Pad is ReentrancyGuard {
             address predicted = Clones.predictDeterministicAddress(IMPL, seed, address(this));
             if (
                 predicted.code.length == 0
-                    && V3_FACTORY.getPool(predicted, NUMERAIRE, FEE_TIER) == address(0)
+                    && _getPool(predicted) == address(0)
             ) break;
             unchecked {
                 ++tries;
@@ -200,8 +224,9 @@ contract HydeV3Pad is ReentrancyGuard {
         //    (surfacing as Uniswap `STF`). createPool needs only the token ADDRESS, not an initialized token.
         bool tokenIs0 = token < NUMERAIRE;
         (int24 tickLower, int24 tickUpper, int24 initTick) = _rangeFor(tokenIs0);
-        address pool = V3_FACTORY.getPool(token, NUMERAIRE, FEE_TIER);
-        if (pool == address(0)) pool = V3_FACTORY.createPool(token, NUMERAIRE, FEE_TIER);
+        uint160 initialSqrtPriceX96 = TickMath.getSqrtRatioAtTick(initTick);
+        address pool = _getPool(token);
+        if (pool == address(0)) pool = _createPool(token, initialSqrtPriceX96);
 
         // 4. Init the clone with the pool in the exempt set; mint 100% supply to THIS pad (exempt seeder).
         address[] memory exemptAddrs = new address[](5);
@@ -223,8 +248,12 @@ contract HydeV3Pad is ReentrancyGuard {
         );
 
         // 5. Initialize the pool at the preset tick boundary (zero-numeraire single-sided mint), then mint.
-        (uint160 existing,,,,,,) = IUniswapV3Pool(pool).slot0();
-        if (existing == 0) IUniswapV3Pool(pool).initialize(TickMath.getSqrtRatioAtTick(initTick));
+        uint160 existing = _sqrtPriceX96(pool);
+        if (SLIPSTREAM) {
+            if (existing != initialSqrtPriceX96) revert LaunchGriefed();
+        } else if (existing == 0) {
+            IUniswapV3Pool(pool).initialize(initialSqrtPriceX96);
+        }
 
         uint128 liquidity;
         (tokenId, liquidity) = _mintSingleSided(token, tokenIs0, tickLower, tickUpper);
@@ -233,7 +262,7 @@ contract HydeV3Pad is ReentrancyGuard {
         if (POSITION_MANAGER.ownerOf(tokenId) != address(LOCKER)) revert NotCustodied();
 
         // 6. Register the locked position (creator immutable) + record.
-        LOCKER.register(token, creator, tokenId, NUMERAIRE, FEE_TIER);
+        LOCKER.register(token, creator, tokenId, NUMERAIRE, POSITION_KEY);
         isHydeToken[token] = true;
         allTokens.push(token);
 
@@ -274,8 +303,7 @@ contract HydeV3Pad is ReentrancyGuard {
 
         uint256 used0;
         uint256 used1;
-        (tokenId, liquidity, used0, used1) = POSITION_MANAGER.mint(
-            IV3PositionManagerMint.MintParams({
+        IV3PositionManagerMint.MintParams memory params = IV3PositionManagerMint.MintParams({
                 token0: tokenIs0 ? token : NUMERAIRE,
                 token1: tokenIs0 ? NUMERAIRE : token,
                 fee: FEE_TIER,
@@ -287,8 +315,27 @@ contract HydeV3Pad is ReentrancyGuard {
                 amount1Min: 0,
                 recipient: address(LOCKER),
                 deadline: block.timestamp
-            })
-        );
+            });
+        if (SLIPSTREAM) {
+            (tokenId, liquidity, used0, used1) = ISlipstreamPositionManagerMint(address(POSITION_MANAGER)).mint(
+                ISlipstreamPositionManagerMint.MintParams({
+                    token0: params.token0,
+                    token1: params.token1,
+                    tickSpacing: TICK_SPACING,
+                    tickLower: params.tickLower,
+                    tickUpper: params.tickUpper,
+                    amount0Desired: params.amount0Desired,
+                    amount1Desired: params.amount1Desired,
+                    amount0Min: params.amount0Min,
+                    amount1Min: params.amount1Min,
+                    recipient: params.recipient,
+                    deadline: params.deadline,
+                    sqrtPriceX96: 0
+                })
+            );
+        } else {
+            (tokenId, liquidity, used0, used1) = POSITION_MANAGER.mint(params);
+        }
 
         IERC20(token).forceApprove(address(POSITION_MANAGER), 0);
 
@@ -296,6 +343,25 @@ contract HydeV3Pad is ReentrancyGuard {
         uint256 tokenUsed = tokenIs0 ? used0 : used1;
         if (numeraireUsed != 0) revert NotSingleSided(); // must be pure token
         if (liquidity == 0 || tokenUsed < supply - supply / 1000) revert SeedFailed(); // ~full supply seeded
+    }
+
+    function _getPool(address token) private view returns (address) {
+        if (SLIPSTREAM) return ISlipstreamFactory(address(V3_FACTORY)).getPool(token, NUMERAIRE, TICK_SPACING);
+        return V3_FACTORY.getPool(token, NUMERAIRE, FEE_TIER);
+    }
+
+    function _createPool(address token, uint160 sqrtPriceX96) private returns (address) {
+        if (SLIPSTREAM) {
+            return ISlipstreamFactory(address(V3_FACTORY)).createPool(token, NUMERAIRE, TICK_SPACING, sqrtPriceX96);
+        }
+        return V3_FACTORY.createPool(token, NUMERAIRE, FEE_TIER);
+    }
+
+    /// @dev Reads the common first slot0 word from Uniswap V3 (7 words) or Slipstream (6 words).
+    function _sqrtPriceX96(address pool) private view returns (uint160 sqrtPriceX96) {
+        (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("slot0()"));
+        if (!ok || data.length < 32) revert LaunchGriefed();
+        sqrtPriceX96 = abi.decode(data, (uint160));
     }
 
     // ------------------------------------------------------------ tick math --

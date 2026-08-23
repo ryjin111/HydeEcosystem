@@ -144,6 +144,7 @@ contract DeployTrenchV5V4 is Script {
         address owner = vm.envAddress("V5_FACTORY_OWNER");
         address hydeTreasury = vm.envAddress("HYDE_TREASURY");
         address launchTreasury = vm.envAddress("LAUNCH_TREASURY");
+        address flywheelVaultFactory = vm.envAddress("FLYWHEEL_VAULT_FACTORY");
         uint256 startFdvWad = vm.envUint("V5_START_FDV_WAD");
         uint256 graduationFdvWad = vm.envUint("V5_GRADUATION_FDV_WAD");
         uint256 minimumProceeds = vm.envUint("V5_MINIMUM_PROCEEDS");
@@ -152,6 +153,7 @@ contract DeployTrenchV5V4 is Script {
         require(owner != address(0), "OWNER_ZERO");
         require(hydeTreasury != address(0), "HYDE_TREASURY_ZERO");
         require(launchTreasury != address(0) && launchTreasury.code.length == 0, "LAUNCH_TREASURY_NOT_EOA");
+        require(flywheelVaultFactory.code.length != 0, "FLYWHEEL_FACTORY_NO_CODE");
         require(startFdvWad > 0 && graduationFdvWad > startFdvWad, "FDV_RANGE");
         require(minimumProceeds > 0, "MIN_PROCEEDS_ZERO");
         uint256 deployGasReserve = tx.gasprice * DEPLOY_GAS_RESERVE_UNITS;
@@ -193,6 +195,7 @@ contract DeployTrenchV5V4 is Script {
             hook: IHydeHook(hookAddress),
             locker: TrenchV4Locker(lockerAddress),
             graduator: TrenchV4Graduator(graduatorAddress),
+            flywheelVaultFactory: flywheelVaultFactory,
             hydeTreasury: hydeTreasury,
             numeraire: chain.weth,
             numeraireDecimals: 18,
@@ -289,6 +292,7 @@ contract DeployTrenchV5V4 is Script {
         require(address(factory.PERMIT2()) == chain.permit2, "F_PERMIT2");
         require(address(factory.STATE_VIEW()) == chain.stateView, "F_STATE_VIEW");
         require(factory.NUMERAIRE() == chain.weth, "F_NUMERAIRE");
+        require(address(factory.FLYWHEEL_VAULT_FACTORY()) == flywheelVaultFactory, "F_FLYWHEEL_FACTORY");
         require(factory.UNIVERSAL_ROUTER() == chain.universalRouter, "F_ROUTER");
         require(factory.owner() == owner, "F_OWNER");
         require(factory.EXPECTED_TERMINAL_PROCEEDS() >= minimumProceeds, "F_PROCEEDS");
@@ -305,6 +309,7 @@ contract DeployTrenchV5V4 is Script {
         console2.log("Factory    ", factoryAddress);
         console2.log("Graduator ", address(graduator));
         console2.log("Locker     ", address(locker));
+        console2.log("Flywheel vault factory", flywheelVaultFactory);
         console2.log("Actual opening/graduation FDV raw:");
         console2.log(factory.ACTUAL_START_FDV_RAW(), factory.ACTUAL_GRADUATION_FDV_RAW());
         console2.log("Expected terminal proceeds", factory.EXPECTED_TERMINAL_PROCEEDS());

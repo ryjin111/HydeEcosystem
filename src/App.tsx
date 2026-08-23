@@ -77,7 +77,7 @@ function App() {
       <Header
         selectedNetwork={selectedNetwork}
         onNetworkChange={changeNetwork}
-        networks={NETWORKS.filter((n) => n.id !== 57073)}
+        networks={NETWORKS}
       />
 
       <div className="mx-auto flex w-full max-w-[1920px]">

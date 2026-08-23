@@ -12,6 +12,7 @@ import {IUniswapV3Factory} from "../../src/v3/interfaces/IUniswapV3Minimal.sol";
 import {TrenchV3Factory} from "../../src/v5v3/TrenchV3Factory.sol";
 import {TrenchV3Graduator} from "../../src/v5v3/TrenchV3Graduator.sol";
 import {TrenchV3Locker} from "../../src/v5v3/TrenchV3Locker.sol";
+import {FlywheelVaultFactory} from "../../src/flywheel/FlywheelVaultFactory.sol";
 
 interface IERC20MetadataV5Fork {
     function decimals() external view returns (uint8);
@@ -121,6 +122,7 @@ contract TrenchV3ForkTest is Test {
                 impl: address(impl),
                 v3Factory: V3_FACTORY,
                 positionManager: POSITION_MANAGER,
+                flywheelVaultFactory: address(new FlywheelVaultFactory(address(this))),
                 hydeTreasury: HYDE_TREASURY,
                 numeraire: USDT0,
                 numeraireDecimals: 6,

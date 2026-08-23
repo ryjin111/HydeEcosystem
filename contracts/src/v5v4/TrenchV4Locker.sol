@@ -24,7 +24,8 @@ import {IAllowanceTransfer} from "permit2/src/interfaces/IAllowanceTransfer.sol"
 import {IHydeHook} from "../interfaces/IHydeHook.sol";
 
 /// @title TrenchV4Locker
-/// @notice Permanent V4 NFT custody and fixed 90/5/5 fee accounting. There is deliberately no
+/// @notice Permanent V4 NFT custody and launch-mode-specific 90/5/5 fee accounting. Normal launches
+///         route creator/protocol/auto-LP; Flywheel launches route receiver/creator/protocol. There is no
 ///         NFT transfer, approval, liquidity-decrease, burn, token withdrawal, or arbitrary-call path.
 contract TrenchV4Locker is IERC721Receiver, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -34,6 +35,8 @@ contract TrenchV4Locker is IERC721Receiver, ReentrancyGuard {
     uint256 public constant CREATOR_BPS = 9_000;
     uint256 public constant HYDE_BPS = 500;
     uint256 public constant AUTO_LP_BPS = 500;
+    uint256 public constant FLYWHEEL_BPS = 9_000;
+    uint256 public constant FLYWHEEL_CREATOR_BPS = 500;
     uint256 private constant BPS = 10_000;
     uint256 public constant MAX_POSITIONS = 3;
 
@@ -53,6 +56,7 @@ contract TrenchV4Locker is IERC721Receiver, ReentrancyGuard {
 
     struct LockedPosition {
         address creator;
+        address flywheelRecipient;
         bool curveOpened;
         bool positionsRegistered;
         uint256[] tokenIds;
@@ -61,6 +65,7 @@ contract TrenchV4Locker is IERC721Receiver, ReentrancyGuard {
     mapping(address token => LockedPosition) private _positionOf;
     mapping(address token => mapping(address asset => uint256)) public creatorClaimable;
     mapping(address token => mapping(address asset => uint256)) public hydeClaimable;
+    mapping(address token => mapping(address asset => uint256)) public flywheelClaimable;
     mapping(address token => mapping(address asset => uint256)) public pendingAutoLp;
     mapping(address token => mapping(address asset => uint256)) public totalFeesAccounted;
     mapping(address token => mapping(address asset => uint256)) public totalAutoLpCompounded;
@@ -73,12 +78,22 @@ contract TrenchV4Locker is IERC721Receiver, ReentrancyGuard {
     event FeeCredited(
         address indexed token, address indexed asset, uint256 creatorCut, uint256 hydeCut, uint256 autoLpCut
     );
+    event FlywheelConfigured(address indexed token, address indexed recipient);
+    event FlywheelFeeCredited(
+        address indexed token,
+        address indexed asset,
+        address indexed recipient,
+        uint256 flywheelCut,
+        uint256 creatorCut,
+        uint256 hydeCut
+    );
     event FeesCollected(address indexed token, address indexed caller, uint256 amountToken, uint256 amountNumeraire);
     event AutoLpCompounded(
         address indexed token, uint256 indexed tokenId, uint128 liquidity, uint256 used0, uint256 used1
     );
     event CreatorClaimed(address indexed token, address indexed asset, address indexed creator, uint256 amount);
     event HydeClaimed(address indexed token, address indexed asset, address indexed treasury, uint256 amount);
+    event FlywheelFunded(address indexed token, address indexed asset, address indexed recipient, uint256 amount);
 
     error OnlyDeployer();
     error OnlyGraduator();
@@ -130,7 +145,7 @@ contract TrenchV4Locker is IERC721Receiver, ReentrancyGuard {
         emit GraduatorInitialized(graduator_);
     }
 
-    function openCurve(address token, address creator, PoolKey calldata key) external {
+    function openCurve(address token, address creator, PoolKey calldata key, address flywheelRecipient_) external {
         if (msg.sender != graduator) revert OnlyGraduator();
         LockedPosition storage pos = _positionOf[token];
         if (pos.curveOpened) revert AlreadyRegistered();
@@ -138,8 +153,10 @@ contract TrenchV4Locker is IERC721Receiver, ReentrancyGuard {
             revert InvalidRegistration();
         }
         pos.creator = creator;
+        pos.flywheelRecipient = flywheelRecipient_;
         pos.curveOpened = true;
         emit CurveOpened(token, creator, key.toId());
+        if (flywheelRecipient_ != address(0)) emit FlywheelConfigured(token, flywheelRecipient_);
     }
 
     function registerPositions(address token, uint256[] calldata tokenIds) external {
@@ -163,7 +180,7 @@ contract TrenchV4Locker is IERC721Receiver, ReentrancyGuard {
         emit PositionsLocked(token, pos.creator, tokenIds[0], tokenIds.length);
     }
 
-    /// @notice Pull-and-measure curve fees from the temporary NFT owner, then account 90/5/5.
+    /// @notice Pull-and-measure curve fees from the temporary NFT owner, then apply the launch-mode split.
     function noteCurveFees(address token, address asset, uint256 amount) external nonReentrant {
         if (msg.sender != graduator) revert OnlyGraduator();
         LockedPosition storage pos = _positionOf[token];
@@ -257,6 +274,20 @@ contract TrenchV4Locker is IERC721Receiver, ReentrancyGuard {
 
     function _credit(address token, address asset, uint256 amount) private {
         if (amount == 0) return;
+        LockedPosition storage pos = _positionOf[token];
+        if (pos.flywheelRecipient != address(0)) {
+            uint256 flywheelCut = (amount * FLYWHEEL_BPS) / BPS;
+            uint256 flywheelCreatorCut = (amount * FLYWHEEL_CREATOR_BPS) / BPS;
+            uint256 flywheelHydeCut = amount - flywheelCut - flywheelCreatorCut;
+            flywheelClaimable[token][asset] += flywheelCut;
+            creatorClaimable[token][asset] += flywheelCreatorCut;
+            hydeClaimable[token][asset] += flywheelHydeCut;
+            totalFeesAccounted[token][asset] += amount;
+            emit FlywheelFeeCredited(
+                token, asset, pos.flywheelRecipient, flywheelCut, flywheelCreatorCut, flywheelHydeCut
+            );
+            return;
+        }
         uint256 creatorCut = (amount * CREATOR_BPS) / BPS;
         uint256 hydeCut = (amount * HYDE_BPS) / BPS;
         uint256 autoLpCut = amount - creatorCut - hydeCut;
@@ -285,6 +316,24 @@ contract TrenchV4Locker is IERC721Receiver, ReentrancyGuard {
         hydeClaimable[token][asset] = 0;
         IERC20(asset).safeTransfer(HYDE_TREASURY, amount);
         emit HydeClaimed(token, asset, HYDE_TREASURY, amount);
+    }
+
+    /// @notice Permissionlessly forwards the immutable 90% Flywheel allocation to its receiver.
+    /// @dev The receiver contract owns all staking and reward-accounting behavior.
+    function fundFlywheel(address token, address asset) external nonReentrant returns (uint256 amount) {
+        LockedPosition storage pos = _positionOf[token];
+        if (!pos.curveOpened || pos.flywheelRecipient == address(0) || (asset != token && asset != NUMERAIRE)) {
+            revert UnknownPosition();
+        }
+        amount = flywheelClaimable[token][asset];
+        if (amount == 0) return 0;
+        flywheelClaimable[token][asset] = 0;
+        IERC20(asset).safeTransfer(pos.flywheelRecipient, amount);
+        emit FlywheelFunded(token, asset, pos.flywheelRecipient, amount);
+    }
+
+    function flywheelRecipient(address token) external view returns (address) {
+        return _positionOf[token].flywheelRecipient;
     }
 
     function _permit2Approve(address asset, uint256 amount) private {

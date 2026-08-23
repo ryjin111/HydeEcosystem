@@ -60,6 +60,8 @@ contract StableEndToEndTest is Test {
                 numeraire: USDT0,
                 numeraireDecimals: 6,
                 feeTier: FEE_TIER,
+                slipstream: false,
+                tickSpacing: 0,
                 startFdvWad: 5_000e18,
                 topFdvWad: 50_000e18,
                 launchFeeAsset: USDT0,

@@ -9,6 +9,7 @@ import {TickMath} from "../../src/v3/libraries/TickMath.sol";
 import {TrenchV3Factory} from "../../src/v5v3/TrenchV3Factory.sol";
 import {TrenchV3Graduator} from "../../src/v5v3/TrenchV3Graduator.sol";
 import {TrenchV3Locker} from "../../src/v5v3/TrenchV3Locker.sol";
+import {FlywheelVaultFactory} from "../../src/flywheel/FlywheelVaultFactory.sol";
 import {MockERC20} from "../v3/mocks/MockERC20.sol";
 import {MockTrenchV3Factory, MockTrenchV3Pool, MockTrenchV3PositionManager} from "./mocks/MockTrenchV3.sol";
 
@@ -84,6 +85,7 @@ contract TrenchV3InvariantTest is StdInvariant, Test {
                 impl: address(new HydeERC20()),
                 v3Factory: address(uniFactory),
                 positionManager: address(positionManager),
+                flywheelVaultFactory: address(new FlywheelVaultFactory(address(this))),
                 hydeTreasury: HYDE,
                 numeraire: address(quote),
                 numeraireDecimals: 6,

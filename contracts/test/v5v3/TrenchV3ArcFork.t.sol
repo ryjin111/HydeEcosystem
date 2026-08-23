@@ -12,6 +12,7 @@ import {TickMath} from "../../src/v3/libraries/TickMath.sol";
 import {TrenchV3Factory} from "../../src/v5v3/TrenchV3Factory.sol";
 import {TrenchV3Graduator} from "../../src/v5v3/TrenchV3Graduator.sol";
 import {TrenchV3Locker} from "../../src/v5v3/TrenchV3Locker.sol";
+import {FlywheelVaultFactory} from "../../src/flywheel/FlywheelVaultFactory.sol";
 
 interface IERC20MetadataArcFork {
     function decimals() external view returns (uint8);
@@ -160,6 +161,7 @@ contract TrenchV3ArcForkTest is Test {
                 impl: address(impl),
                 v3Factory: V3_FACTORY,
                 positionManager: POSITION_MANAGER,
+                flywheelVaultFactory: address(new FlywheelVaultFactory(address(this))),
                 hydeTreasury: HYDE_TREASURY,
                 numeraire: USDC,
                 numeraireDecimals: 6,

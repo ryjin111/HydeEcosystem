@@ -21,6 +21,7 @@ import {TickMath} from "../v3/libraries/TickMath.sol";
 import {TrenchV3Graduator} from "./TrenchV3Graduator.sol";
 import {TrenchV3Locker} from "./TrenchV3Locker.sol";
 import {TrenchV3Math} from "./libraries/TrenchV3Math.sol";
+import {IFlywheelVault, IFlywheelVaultFactory} from "../flywheel/interfaces/IFlywheelVault.sol";
 
 /// @title TrenchV3Factory
 /// @notice Stable V5 launch rail: 80% single-sided V3 curve + 20% graduation reserve.
@@ -41,6 +42,7 @@ contract TrenchV3Factory is ReentrancyGuard {
     TrenchV3Graduator public immutable GRADUATOR;
     ITrenchV3Factory public immutable V3_FACTORY;
     ITrenchV3MintOnly public immutable POSITION_MANAGER;
+    IFlywheelVaultFactory public immutable FLYWHEEL_VAULT_FACTORY;
 
     address public immutable NUMERAIRE;
     uint8 public immutable NUMERAIRE_DECIMALS;
@@ -81,6 +83,7 @@ contract TrenchV3Factory is ReentrancyGuard {
         uint256 curveTokenUsed,
         uint256 graduationReserve
     );
+    event FlywheelLaunchCreated(address indexed token, address indexed creator, address indexed recipient);
     event Paused();
     event Unpaused();
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
@@ -98,11 +101,13 @@ contract TrenchV3Factory is ReentrancyGuard {
     error InvalidMetadata();
     error PausedError();
     error OnlyOwner();
+    error InvalidFlywheel();
 
     struct Config {
         address impl;
         address v3Factory;
         address positionManager;
+        address flywheelVaultFactory;
         address hydeTreasury;
         address numeraire;
         uint8 numeraireDecimals;
@@ -128,6 +133,7 @@ contract TrenchV3Factory is ReentrancyGuard {
     constructor(Config memory c) {
         if (
             c.impl == address(0) || c.v3Factory == address(0) || c.positionManager == address(0)
+                || c.flywheelVaultFactory == address(0) || c.flywheelVaultFactory.code.length == 0
                 || c.hydeTreasury == address(0) || c.numeraire == address(0) || c.numeraireDecimals > 18
                 || c.launchFeeTreasury == address(0) || c.startFdvWad == 0 || c.graduationFdvWad <= c.startFdvWad
                 || c.launchFeeAmount == 0 || c.maxWalletBps == 0 || c.maxWalletBps > 300 || c.maxWalletWindowSecs == 0
@@ -145,6 +151,7 @@ contract TrenchV3Factory is ReentrancyGuard {
         IMPL = c.impl;
         V3_FACTORY = ITrenchV3Factory(c.v3Factory);
         POSITION_MANAGER = ITrenchV3MintOnly(c.positionManager);
+        FLYWHEEL_VAULT_FACTORY = IFlywheelVaultFactory(c.flywheelVaultFactory);
         NUMERAIRE = c.numeraire;
         NUMERAIRE_DECIMALS = c.numeraireDecimals;
         FEE_TIER = c.feeTier;
@@ -211,6 +218,25 @@ contract TrenchV3Factory is ReentrancyGuard {
         nonReentrant
         returns (address token, uint256 curveTokenId)
     {
+        return _launch(name, symbol, salt, address(0));
+    }
+
+    /// @notice Launches a Trench token whose fees use immutable 90/5/5 Flywheel accounting.
+    /// @param flywheelRecipient Deployed receiver contract funded with 90% of both fee assets.
+    function launchFlywheel(string calldata name, string calldata symbol, bytes32 salt, address flywheelRecipient)
+        external
+        payable
+        nonReentrant
+        returns (address token, uint256 curveTokenId)
+    {
+        _validateFlywheel(flywheelRecipient, msg.sender);
+        return _launch(name, symbol, salt, flywheelRecipient);
+    }
+
+    function _launch(string calldata name, string calldata symbol, bytes32 salt, address flywheelRecipient)
+        private
+        returns (address token, uint256 curveTokenId)
+    {
         if (paused) revert PausedError();
         if (
             bytes(name).length == 0 || bytes(name).length > MAX_NAME_BYTES || bytes(symbol).length == 0
@@ -237,7 +263,7 @@ contract TrenchV3Factory is ReentrancyGuard {
         address pool = V3_FACTORY.getPool(token, NUMERAIRE, FEE_TIER);
         if (pool == address(0)) pool = V3_FACTORY.createPool(token, NUMERAIRE, FEE_TIER);
 
-        address[] memory exemptAddrs = new address[](7);
+        address[] memory exemptAddrs = new address[](flywheelRecipient == address(0) ? 7 : 8);
         exemptAddrs[0] = address(this);
         exemptAddrs[1] = pool;
         exemptAddrs[2] = address(POSITION_MANAGER);
@@ -245,6 +271,7 @@ contract TrenchV3Factory is ReentrancyGuard {
         exemptAddrs[4] = address(GRADUATOR);
         exemptAddrs[5] = address(V3_FACTORY);
         exemptAddrs[6] = NUMERAIRE;
+        if (flywheelRecipient != address(0)) exemptAddrs[7] = flywheelRecipient;
         HydeERC20(token)
             .initialize(
                 HydeERC20.InitParams({
@@ -278,12 +305,36 @@ contract TrenchV3Factory is ReentrancyGuard {
         if (IERC20(token).balanceOf(address(this)) != 0) revert SeedFailed();
 
         GRADUATOR.registerCurve(
-            token, creator, pool, curveTokenId, CURVE_TARGET, reserve, tickLower, tickUpper, tokenIs0
+            token, creator, pool, curveTokenId, CURVE_TARGET, reserve, tickLower, tickUpper, tokenIs0, flywheelRecipient
         );
+
+        if (flywheelRecipient != address(0)) {
+            IFlywheelVault(flywheelRecipient).initialize(token);
+            if (
+                FLYWHEEL_VAULT_FACTORY.vaultToken(flywheelRecipient) != token
+                    || FLYWHEEL_VAULT_FACTORY.tokenVault(token) != flywheelRecipient
+            ) revert InvalidFlywheel();
+        }
 
         isTrenchToken[token] = true;
         allTokens.push(token);
         emit LaunchCreated(token, creator, pool, curveTokenId, curveLiquidity, curveTokenUsed, reserve);
+        if (flywheelRecipient != address(0)) {
+            emit FlywheelLaunchCreated(token, creator, flywheelRecipient);
+        }
+    }
+
+    function _validateFlywheel(address recipient, address creator) private view {
+        if (
+            recipient == address(0) || !FLYWHEEL_VAULT_FACTORY.isVault(recipient)
+                || !FLYWHEEL_VAULT_FACTORY.isVaultConfigActive(recipient)
+                || IFlywheelVault(recipient).DEPLOYER_FACTORY() != address(FLYWHEEL_VAULT_FACTORY)
+                || IFlywheelVault(recipient).FEE_SOURCE() != address(LOCKER)
+                || IFlywheelVault(recipient).NUMERAIRE() != NUMERAIRE
+                || IFlywheelVault(recipient).CONTROLLER() != creator
+                || IFlywheelVault(recipient).stakingToken() != address(0)
+                || FLYWHEEL_VAULT_FACTORY.vaultToken(recipient) != address(0)
+        ) revert InvalidFlywheel();
     }
 
     function _mintCurve(address token, bool tokenIs0, int24 tickLower, int24 tickUpper)

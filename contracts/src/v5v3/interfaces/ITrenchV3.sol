@@ -110,7 +110,8 @@ interface ITrenchV3PositionManager is ITrenchV3CollectOnly {
 }
 
 interface ITrenchV3LockerRegister {
-    function openCurve(address token, address creator, address numeraire, uint24 feeTier) external;
+    function openCurve(address token, address creator, address numeraire, uint24 feeTier, address flywheelRecipient)
+        external;
     function noteCurveFees(address token, address asset, uint256 amount) external;
     function registerPositions(address token, uint256[] calldata tokenIds) external;
 }

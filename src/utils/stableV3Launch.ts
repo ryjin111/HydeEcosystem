@@ -13,6 +13,9 @@ import { isClaimConfirmed, type ReplacedReason } from "./txStatus";
 
 export const STABLE_V3_CHAIN_ID = 988;
 export const STABLE_V3_LAUNCH_FEE = 1_000_000n;
+export const INK_V3_CHAIN_ID = 57073;
+export const INK_V3_LAUNCH_FEE = 400_000_000_000_000n;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export const stableV3PadAbi = [
   {
@@ -111,15 +114,23 @@ export type StableV3LaunchResult = {
 function stableConfig(chainId: number) {
   const row = v3ChainRow(chainId);
   const capability = chainV3Capability(chainId);
-  if (!row || chainId !== STABLE_V3_CHAIN_ID || capability?.status !== "live") {
-    throw new Error(`Stable V3 launch is not verified for chain ${chainId}.`);
+  if (!row || capability?.status !== "live") {
+    throw new Error(`V3 launch is not verified for chain ${chainId}.`);
   }
+  const launchFee = chainId === STABLE_V3_CHAIN_ID
+    ? STABLE_V3_LAUNCH_FEE
+    : chainId === INK_V3_CHAIN_ID
+      ? INK_V3_LAUNCH_FEE
+      : null;
+  if (launchFee === null) throw new Error(`V3 launch fee is not pinned for chain ${chainId}.`);
   return {
     row,
     pad: row.launchpad.pad as Address,
     locker: row.launchpad.locker as Address,
     implementation: row.launchpad.implementation as Address,
     numeraire: row.numeraire.address as Address,
+    launchFee,
+    launchFeeNative: chainId === INK_V3_CHAIN_ID,
   };
 }
 
@@ -153,7 +164,7 @@ export async function previewStableV3Launch(
   rawInput: StableV3LaunchInput,
 ): Promise<StableV3LaunchPreview> {
   const input = normalizedInput(rawInput);
-  const { row, pad, locker, implementation, numeraire } = stableConfig(chainId);
+  const { row, pad, locker, implementation, numeraire, launchFee, launchFeeNative } = stableConfig(chainId);
   const liveChainId = await publicClient.getChainId();
   if (liveChainId !== chainId) throw new Error(`RPC is on chain ${liveChainId}, expected ${chainId}.`);
 
@@ -177,8 +188,8 @@ export async function previewStableV3Launch(
     feeNative,
     maxWalletBps,
     maxWalletWindow,
-    balance,
-    allowance,
+    tokenBalance,
+    tokenAllowance,
   ] = await Promise.all([
     publicClient.readContract({ address: pad, abi: stableV3PadAbi, functionName: "IMPL" }),
     publicClient.readContract({ address: pad, abi: stableV3PadAbi, functionName: "LOCKER" }),
@@ -206,14 +217,21 @@ export async function previewStableV3Launch(
     || padNumeraire.toLowerCase() !== numeraire.toLowerCase()
     || Number(padDecimals) !== row.numeraire.decimals
     || Number(padFeeTier) !== row.feeTier
-    || feeAsset.toLowerCase() !== numeraire.toLowerCase()
-    || feeAmount !== STABLE_V3_LAUNCH_FEE
-    || feeNative
+    || feeAsset.toLowerCase() !== (launchFeeNative ? ZERO_ADDRESS : numeraire).toLowerCase()
+    || feeAmount !== launchFee
+    || feeNative !== launchFeeNative
     || maxWalletBps !== 200n
     || maxWalletWindow !== 600n;
-  if (bindingMismatch) throw new Error("Stable V3 deployment configuration no longer matches the verified manifest.");
+  if (bindingMismatch) throw new Error("V3 deployment configuration no longer matches the verified manifest.");
+  const balance = launchFeeNative
+    ? await publicClient.getBalance({ address: input.creator })
+    : tokenBalance;
+  const allowance = launchFeeNative ? feeAmount : tokenAllowance;
   if (balance < feeAmount) {
-    throw new Error(`You need 1 USDT0 to launch; wallet balance is ${formatUnits(balance, row.numeraire.decimals)} USDT0.`);
+    const feeSymbol = launchFeeNative ? row.nativeSymbol : row.numeraire.symbol;
+    throw new Error(
+      `You need ${formatUnits(feeAmount, launchFeeNative ? 18 : row.numeraire.decimals)} ${feeSymbol} to launch; wallet balance is ${formatUnits(balance, launchFeeNative ? 18 : row.numeraire.decimals)} ${feeSymbol}.`,
+    );
   }
 
   const needsApproval = allowance < feeAmount;
@@ -227,6 +245,7 @@ export async function previewStableV3Launch(
     functionName: "launch",
     args: [input.name, input.symbol, input.salt],
     account: input.creator,
+    value: launchFeeNative ? feeAmount : undefined,
   });
   const [tokenAddress, tokenId] = simulation.result;
   return { feeAmount, balance, allowance, needsApproval, tokenAddress, tokenId };
@@ -256,11 +275,11 @@ export async function executeStableV3Launch(
   onStep?: (step: StableV3LaunchStep) => void,
 ): Promise<StableV3LaunchResult> {
   const input = normalizedInput(rawInput);
-  const { pad, numeraire } = stableConfig(chainId);
+  const { pad, numeraire, launchFeeNative } = stableConfig(chainId);
   const account = input.creator;
 
   const firstPreview = await previewStableV3Launch(publicClient, chainId, input);
-  if (firstPreview.needsApproval) {
+  if (!launchFeeNative && firstPreview.needsApproval) {
     onStep?.("approve");
     const approvalHash = await walletClient.writeContract({
       address: numeraire,
@@ -282,6 +301,7 @@ export async function executeStableV3Launch(
     functionName: "launch",
     args: [input.name, input.symbol, input.salt],
     account,
+    value: launchFeeNative ? firstPreview.feeAmount : undefined,
   });
   const launchHash = await walletClient.writeContract(simulation.request);
   onStep?.("launch-confirm");

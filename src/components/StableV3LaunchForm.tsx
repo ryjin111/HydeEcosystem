@@ -44,7 +44,7 @@ async function toAvatarBlob(file: File): Promise<Blob> {
   }
 }
 
-const STEP_COPY: Record<StableV3LaunchStep, string> = {
+const STABLE_STEP_COPY: Record<StableV3LaunchStep, string> = {
   approve: "Approve 1 USDT0 in your wallet…",
   "approve-confirm": "Waiting for the USDT0 approval…",
   launch: "Confirm the token launch…",
@@ -104,6 +104,14 @@ export function StableV3LaunchForm({
   }, [name, symbol, imageUrl, description, address, chainId]);
 
   if (!row) return null;
+
+  const isInk = chainId === 57073;
+  const feeLabel = isInk ? "0.0004 ETH" : "1 USDT0";
+  const balanceSymbol = isInk ? "ETH" : "USDT0";
+  const balanceDecimals = isInk ? 18 : 6;
+  const stepCopy: Record<StableV3LaunchStep, string> = isInk
+    ? { ...STABLE_STEP_COPY, approve: "Preparing launch…", "approve-confirm": "Preparing launch…" }
+    : STABLE_STEP_COPY;
 
   const pad = row.launchpad.pad;
   const explorer = row.explorer.replace(/\/$/, "");
@@ -176,7 +184,7 @@ export function StableV3LaunchForm({
     setPreviewing(true);
     setPreviewError(null);
     try {
-      toast.loading("Checking the live Stable deployment…", { id: "stable-v3-preview" });
+      toast.loading(`Checking the live ${chainName} deployment…`, { id: "stable-v3-preview" });
       const result = await previewStableV3Launch(publicClient as PublicClient, chainId, {
         name,
         symbol,
@@ -207,7 +215,7 @@ export function StableV3LaunchForm({
         { name, symbol, creator: address, salt },
         (step) => {
           setActiveStep(step);
-          toast.loading(STEP_COPY[step], { id: "stable-v3-launch" });
+          toast.loading(stepCopy[step], { id: "stable-v3-launch" });
         },
       );
       const savedImage = imageUrl;
@@ -220,7 +228,7 @@ export function StableV3LaunchForm({
         image: savedImage,
         description: savedDescription,
       });
-      toast.success("Token launched on Stable.", { id: "stable-v3-launch", duration: 8000 });
+      toast.success(`Token launched on ${chainName}.`, { id: "stable-v3-launch", duration: 8000 });
       setName("");
       setSymbol("");
       setImageUrl("");
@@ -261,12 +269,12 @@ export function StableV3LaunchForm({
               <Badge tone="success">● LIVE</Badge>
               <Badge tone="accent">V3 · SINGLE-SIDED</Badge>
               <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-pcs-textDim">
-                Stable · 988
+                {chainName} · {chainId}
               </span>
             </div>
             <h2 className="font-display text-xl font-semibold text-pcs-text">Launch into the trench.</h2>
             <p className="mt-1 max-w-xl text-xs leading-relaxed text-pcs-textSub">
-              One billion tokens seed a concentrated USDT0 pool. The LP position goes directly into
+              One billion tokens seed a concentrated {row.numeraire.symbol} pool. The LP position goes directly into
               permanent custody—no migration, no liquidity withdrawal.
             </p>
           </div>
@@ -391,9 +399,9 @@ export function StableV3LaunchForm({
               </div>
               <div className="grid grid-cols-2 divide-x divide-pcs-border border-b border-pcs-border">
                 <div className="px-3.5 py-3">
-                  <p className="text-[10px] uppercase tracking-widest text-pcs-textDim">USDT0 balance</p>
+                  <p className="text-[10px] uppercase tracking-widest text-pcs-textDim">{balanceSymbol} balance</p>
                   <p className="mt-1 font-mono text-sm font-semibold text-pcs-text">
-                    {Number(formatUnits(preview.balance, 6)).toLocaleString("en-US", { maximumFractionDigits: 4 })}
+                    {Number(formatUnits(preview.balance, balanceDecimals)).toLocaleString("en-US", { maximumFractionDigits: isInk ? 6 : 4 })}
                   </p>
                 </div>
                 <div className="px-3.5 py-3">
@@ -413,7 +421,7 @@ export function StableV3LaunchForm({
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-pcs-textDim">Fee authorization</span>
                   <span className={preview.needsApproval ? "text-pcs-warning" : "text-pcs-success"}>
-                    {preview.needsApproval ? "1 USDT0 approval required" : "Ready"}
+                    {preview.needsApproval ? `${feeLabel} approval required` : "Ready"}
                   </span>
                 </div>
                 <div className="border-t border-pcs-border pt-2">
@@ -459,16 +467,18 @@ export function StableV3LaunchForm({
             >
               {submitting
                 ? activeStep
-                  ? STEP_COPY[activeStep]
+                  ? stepCopy[activeStep]
                   : "Preparing launch…"
                 : preview.needsApproval
-                  ? "Approve 1 USDT0 & launch"
+                  ? `Approve ${feeLabel} & launch`
                   : "Launch token"}
             </Button>
           )}
 
           <p className="text-center font-mono text-[10px] text-pcs-textDim">
-            Gas uses Stable’s native 18-decimal USDT0. The 1-USDT0 launch fee is the separate 6-decimal ERC-20.
+            {isInk
+              ? "Gas and the 0.0004 ETH launch fee are paid in native ETH. Trading liquidity is paired with WETH."
+              : "Gas uses Stable’s native 18-decimal USDT0. The 1-USDT0 launch fee is the separate 6-decimal ERC-20."}
           </p>
         </div>
 
@@ -499,10 +509,10 @@ export function StableV3LaunchForm({
           <SectionLabel>Launch profile</SectionLabel>
           <div className="mt-3 space-y-3">
             {[
-              ["Starting FDV", "$4,995.43"],
-              ["Range ceiling", "$49,819.60"],
-              ["Launch fee", "1 USDT0"],
-              ["Pool fee tier", "1%"],
+              ["Starting FDV", isInk ? "1.0043 WETH" : "$4,995.43"],
+              ["Range ceiling", isInk ? "15.8658 WETH" : "$49,819.60"],
+              ["Launch fee", feeLabel],
+              ["Pool fee tier", isInk ? "0.3%" : "1%"],
               ["Creator fees", "95%"],
               ["Hyde fees", "5%"],
             ].map(([label, value]) => (
@@ -534,7 +544,11 @@ export function StableV3LaunchForm({
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-pcs-primary" />
               <div>
                 <p className="text-xs font-medium text-pcs-text">Canonical V3 pool</p>
-                <p className="mt-0.5 text-[10px] leading-relaxed text-pcs-textDim">Trading is available inside Hydeout through the verified Stable SwapRouter02 route.</p>
+                <p className="mt-0.5 text-[10px] leading-relaxed text-pcs-textDim">
+                  {isInk
+                    ? "Liquidity uses Ink’s live Velodrome Slipstream concentrated pool. Hydeout trading stays disabled until its router path is separately verified."
+                    : "Trading is available inside Hydeout through the verified Stable SwapRouter02 route."}
+                </p>
               </div>
             </div>
           </div>
