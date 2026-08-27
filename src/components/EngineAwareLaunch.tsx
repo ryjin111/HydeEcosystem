@@ -6,11 +6,12 @@
 // Engine + copy are DERIVED from the registry (chainEngineCapabilities + ENGINE_META), never cross-mixed.
 import { useState } from "react";
 import { TrenchV5LaunchForm } from "./TrenchV5LaunchForm";
+import { StableV3LaunchForm } from "./StableV3LaunchForm";
 import { chainEngineCapabilities, ENGINE_META, type LaunchEngine } from "../utils/chainRegistry";
 import { NETWORKS } from "../utils/constants";
 import { Button, SectionLabel } from "./ui/kit";
 import type { TrenchV5Readiness } from "../hooks/useTrenchV5Ready";
-import { isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
+import { isTrenchV5Configured, isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(" ");
 
@@ -118,24 +119,29 @@ function EngineBody({
   if (!readiness.ready) {
     return <ComingLaunchBody chainId={chainId} chainName={chainName} engine={engine} error={readiness.error} onRetry={readiness.retry} />;
   }
+  if (engine === "v3-single-sided" && !isTrenchV5Configured(chainId)) {
+    return <StableV3LaunchForm chainId={chainId} chainName={chainName} onLaunched={onLaunched} />;
+  }
   return <TrenchV5LaunchForm chainId={chainId} chainName={chainName} engine={engine} onLaunched={onLaunched} />;
 }
 
-function EngineRouteBanner({ engine, readiness }: { engine: LaunchEngine; readiness: TrenchV5Readiness }) {
+function EngineRouteBanner({ engine, chainId, readiness }: { engine: LaunchEngine; chainId: number; readiness: TrenchV5Readiness }) {
   const meta = ENGINE_META[engine];
+  const standaloneV3 = engine === "v3-single-sided" && !isTrenchV5Configured(chainId);
+  const versionLabel = standaloneV3 ? "V3 launch" : "V5";
   return (
     <div className="engine-identity-bar">
       <div>
         <p className="commandbar-label">
           {readiness.checking
-            ? "Verifying V5 deployment"
+            ? `Verifying ${versionLabel} deployment`
             : readiness.ready
-              ? "V5 deployment verified"
+              ? `${versionLabel} deployment verified`
               : readiness.error
-                ? "V5 verification unavailable"
-                : "V5 deployment pending"}
+                ? `${versionLabel} verification unavailable`
+                : `${versionLabel} deployment pending`}
         </p>
-        <p className="mt-1 font-display text-sm font-semibold text-pcs-text">V5 · Trench Curve <span className="text-pcs-textDim">/ {engine === "v4-hook" ? "V4" : "V3"}</span></p>
+        <p className="mt-1 font-display text-sm font-semibold text-pcs-text">{standaloneV3 ? "V3 · Single-sided launch" : "V5 · Trench Curve"} <span className="text-pcs-textDim">/ {engine === "v4-hook" ? "V4" : "V3"}</span></p>
       </div>
       <div className="min-w-0 sm:text-right">
         <p className="font-code text-[11px] text-pcs-primaryBright">{meta.feeSplitLabel}</p>
@@ -178,7 +184,7 @@ function MultiEngineLaunch({
           </button>
         ))}
       </div>
-      <EngineRouteBanner engine={picked} readiness={readiness} />
+      <EngineRouteBanner engine={picked} chainId={chainId} readiness={readiness} />
       <EngineBody engine={picked} chainId={chainId} chainName={chainName} readiness={readiness} onLaunched={onLaunched} />
     </div>
   );
@@ -201,9 +207,11 @@ export function EngineAwareLaunch({
     ?? `Chain ${chainId}`;
 
   // Render rule (kami 24310 / gojo 24308): DERIVED from the registry, never hardcoded. A chain shows the
-  // engines that pass their verified row (status != unsupported): 0 → one Coming-Soon state; 1 → that engine
+  // launch-capable engines from the registry: 0 → one Coming-Soon state; 1 → that engine
   // directly, no selector/ghost; 2+ → a selector over just those engines (none have 2+ today).
-  const engines = chainEngineCapabilities(chainId).filter((c) => c.status !== "unsupported");
+  const engines = chainEngineCapabilities(chainId).filter(
+    (capability) => capability.role === "launch" || capability.role === "launch+trade",
+  );
 
   if (engines.length === 0) {
     return (
@@ -217,7 +225,7 @@ export function EngineAwareLaunch({
   if (engines.length === 1) {
     return (
       <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3">
-        <EngineRouteBanner engine={engines[0].engine} readiness={v5Readiness} />
+        <EngineRouteBanner engine={engines[0].engine} chainId={chainId} readiness={v5Readiness} />
         <EngineBody engine={engines[0].engine} chainId={chainId} chainName={chainName} readiness={v5Readiness} onLaunched={onLaunched} />
       </div>
     );

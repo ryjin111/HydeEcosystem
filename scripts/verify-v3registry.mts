@@ -77,6 +77,8 @@ ok("numeraire = USDT0 6-dec USD-pegged", stableCap.numeraire.symbol === "USDT0" 
 ok("canonical infra + Hyde deployment evidence → live", stableCap.status === "live");
 ok("verified V3 trade config is exposed", stableCap.trade?.engine === "v3-single-sided" && stableCap.smoke.trade);
 ok("V3 evidence EXPOSED (not discarded), infra present (kami #4)", !!stableCap.evidence && "infra" in stableCap.evidence && (stableCap.evidence as V3ChainEvidence).infra?.factory.tickSpacing === 200);
+const inkCap = chainCapabilities().find((c) => c.id === 57073 && c.engine === "v3-single-sided")!;
+ok("Ink standalone V3 launch evidence is live", inkCap?.engine === "v3-single-sided" && inkCap.status === "live" && inkCap.role === "launch");
 
 console.log("\nLaunch proof and trade proof fail independently:");
 const rowWithMeta = { ...stableRow, explorer: "https://explorer.stable.example", nativeSymbol: "USDT0" };

@@ -24,7 +24,7 @@ import {
 import { isClaimConfirmed, type ReplacedReason } from "../utils/txStatus";
 import { readFeeState, runHarvest, feeDisplayState, nextHarvestStep, type FeeState, type HarvestStep, type StepStatus } from "../utils/hoodieFees";
 import { useTrenchV5Ready } from "../hooks/useTrenchV5Ready";
-import { isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
+import { isTrenchV5Configured, isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 const RH_TESTNET_CHAIN_ID = 46630;
@@ -510,11 +510,16 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
     if (tabParam === "explore") navigate(`/discover?network=${chainId}`, { replace: true });
   }, [chainId, navigate, tabParam]);
   const { address } = useAccount();
-  const engineCapabilities = chainEngineCapabilities(chainId);
+  const engineCapabilities = chainEngineCapabilities(chainId).filter(
+    (capability) => capability.role === "launch" || capability.role === "launch+trade",
+  );
   const launchLive = isHydeLaunchLive(chainId);
   const v5Readiness = useTrenchV5Ready(chainId);
   const { ready: v5Ready, checking: v5Checking, error: v5Error, retry: retryV5 } = v5Readiness;
   const publicMainnetPending = !isTrenchV5PubliclyAvailable(chainId);
+  const standaloneV3 = engineCapabilities.length === 1
+    && engineCapabilities[0].engine === "v3-single-sided"
+    && !isTrenchV5Configured(chainId);
   const engineLabels = engineCapabilities.map((capability) => ENGINE_META[capability.engine]);
   const creatorShares = [...new Set(engineLabels.map((meta) => meta.creatorShare))].sort((a, b) => a - b);
   const creatorShareLabel = creatorShares.length === 0
@@ -585,7 +590,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             <span
               className={v5Ready ? "live-ping" : "h-2 w-2 rounded-full bg-pcs-textDim"}
             />
-            Hydeout V5 · depth {chainId.toLocaleString()} · {publicMainnetPending ? "coming soon" : v5Checking ? "verifying deployment" : v5Ready ? "deployment verified" : "verification unavailable"}
+            Hydeout {standaloneV3 ? "V3" : "V5"} · depth {chainId.toLocaleString()} · {publicMainnetPending ? "coming soon" : v5Checking ? "verifying deployment" : v5Ready ? "deployment verified" : "verification unavailable"}
           </div>
           <h1 className="mt-3 font-display text-4xl font-semibold leading-[0.98] tracking-[-0.04em] text-[var(--term-text)] sm:text-5xl lg:text-6xl">
             Launch from
@@ -616,7 +621,7 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
                 ? "V4 sandbox"
                 : engineCapabilities.length === 0
                   ? "Network connected · engine pending"
-                  : `V5 → ${routeLabel}${v5Ready ? "" : v5Checking ? " · verifying" : " · unavailable"}`}
+                  : `${standaloneV3 ? "V3" : "V5"} → ${routeLabel}${v5Ready ? "" : v5Checking ? " · verifying" : " · unavailable"}`}
             </strong>
           </div>
         </div>
@@ -647,7 +652,9 @@ export function LaunchpadPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: numb
             : v5Checking
             ? `Verifying the V5 deployment on ${engineCapabilities[0]?.name ?? "this chain"} before enabling transactions.`
             : v5Ready
-            ? `V5 Trench Curve is verified on ${engineCapabilities[0]?.name ?? "this chain"} · 80% live curve, 20% graduation reserve.`
+            ? standaloneV3
+              ? `The V3 launchpad is verified on ${engineCapabilities[0]?.name ?? "this chain"} · single-sided liquidity, permanent LP custody, and 95% creator fees.`
+              : `V5 Trench Curve is verified on ${engineCapabilities[0]?.name ?? "this chain"} · 80% live curve, 20% graduation reserve.`
             : `V5 verification is unavailable on ${engineCapabilities[0]?.name ?? "this chain"}. ${v5Error ?? "The deployment manifest could not be verified."}`}
         </p>
         {!publicMainnetPending && !v5Checking && !v5Ready && (

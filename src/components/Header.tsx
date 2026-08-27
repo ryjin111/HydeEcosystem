@@ -5,7 +5,7 @@ import { useAccount, useBalance, useConnect, useDisconnect, useSwitchChain } fro
 import { ConnectorAlreadyConnectedError } from "wagmi";
 import type { NetworkConfig } from "../utils/constants";
 import { shortenAddress } from "../utils/format";
-import { chainEngineCapabilities } from "../utils/chainRegistry";
+import { chainEngineCapabilities, isHydeLaunchLive } from "../utils/chainRegistry";
 import { isTrenchV5Configured, isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
 
 type HeaderProps = {
@@ -35,10 +35,14 @@ function withNetwork(to: string, chainId: number): string {
 
 function launchRouteComing(chainId: number): boolean {
   const capabilities = chainEngineCapabilities(chainId);
-  const hasLaunchRoute = capabilities.some(
-    (capability) => capability.role === "launch" || capability.role === "launch+trade",
-  );
-  return !hasLaunchRoute || !isTrenchV5PubliclyAvailable(chainId) || !isTrenchV5Configured(chainId);
+  const hasLiveLaunchRoute = capabilities.some((capability) => {
+    if (capability.role !== "launch" && capability.role !== "launch+trade") return false;
+    const standaloneV3 = capability.engine === "v3-single-sided" && !isTrenchV5Configured(chainId);
+    return standaloneV3
+      ? isHydeLaunchLive(chainId, capability.engine)
+      : isTrenchV5PubliclyAvailable(chainId) && isTrenchV5Configured(chainId);
+  });
+  return !hasLiveLaunchRoute;
 }
 
 export function Header({ selectedNetwork, onNetworkChange, networks }: HeaderProps) {

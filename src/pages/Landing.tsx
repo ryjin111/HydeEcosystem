@@ -8,7 +8,7 @@ import { chainEngineCapabilities, isHydeLaunchLive } from "../utils/chainRegistr
 import { NETWORKS } from "../utils/constants";
 import { CoinCard } from "./Discover";
 import { useTrenchV5Ready } from "../hooks/useTrenchV5Ready";
-import { isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
+import { isTrenchV5Configured, isTrenchV5PubliclyAvailable } from "../utils/trenchV5";
 
 const ROBINHOOD_CHAIN_ID = 4663;
 const MARKET_ROW_COUNT = 6;
@@ -82,16 +82,23 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
   const [marketEngine, setMarketEngine] = useState<MarketEngine>("all");
 
   const capabilities = chainEngineCapabilities(chainId);
-  const capability = capabilities[0];
+  const launchCapabilities = capabilities.filter(
+    (item) => item.role === "launch" || item.role === "launch+trade",
+  );
+  const capability = launchCapabilities[0] ?? capabilities[0];
   const chainName = capability?.name
     ?? NETWORKS.find((network) => network.id === chainId)?.name
     ?? `Chain ${chainId}`;
-  const hasEngine = capabilities.length > 0;
+  const hasEngine = launchCapabilities.length > 0;
   const launchLive = isHydeLaunchLive(chainId);
   const v5Readiness = useTrenchV5Ready(chainId);
   const { ready: v5Ready, checking: v5Checking, error: v5Error, retry: retryV5 } = v5Readiness;
   const publicMainnetPending = !isTrenchV5PubliclyAvailable(chainId);
-  const isStableV3 = capabilities.length > 0 && capabilities.every((item) => item.engine === "v3-single-sided");
+  const standaloneV3 = launchCapabilities.length === 1
+    && launchCapabilities[0].engine === "v3-single-sided"
+    && !isTrenchV5Configured(chainId);
+  const isStableV3 = launchCapabilities.length > 0
+    && launchCapabilities.every((item) => item.engine === "v3-single-sided");
   const pools = useMemo(
     () => chainScope === "all"
       ? allPools
@@ -185,7 +192,7 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               : v5Checking
                 ? "V5 Trench Curve · verifying"
                 : v5Ready
-                ? "V5 Trench Curve · live"
+                ? standaloneV3 ? "V3 launch rail · live" : "V5 Trench Curve · live"
                 : v5Error
                   ? "V5 verification unavailable"
                 : launchLive
@@ -209,6 +216,11 @@ export function LandingPage({ chainId = ROBINHOOD_CHAIN_ID }: { chainId?: number
               <>
                 <strong className="font-semibold text-[var(--term-text)]">Verifying the V5 deployment on {chainName}.</strong>{" "}
                 Runtime hashes and protocol bindings are being checked before transaction controls are enabled.
+              </>
+            ) : v5Ready && standaloneV3 ? (
+              <>
+                <strong className="font-semibold text-[var(--term-text)]">The V3 launchpad is verified on {chainName}.</strong>{" "}
+                Launches seed single-sided {capability?.numeraire.symbol ?? "V3"} liquidity with permanent LP custody and 95% creator fees.
               </>
             ) : v5Ready ? (
               <>
