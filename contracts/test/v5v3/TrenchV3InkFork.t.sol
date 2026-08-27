@@ -8,28 +8,26 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {HydeERC20} from "../../src/v3/HydeERC20.sol";
 import {TickMath} from "../../src/v3/libraries/TickMath.sol";
-import {IUniswapV3Factory} from "../../src/v3/interfaces/IUniswapV3Minimal.sol";
 import {TrenchV3Factory} from "../../src/v5v3/TrenchV3Factory.sol";
 import {TrenchV3Graduator} from "../../src/v5v3/TrenchV3Graduator.sol";
 import {TrenchV3Locker} from "../../src/v5v3/TrenchV3Locker.sol";
 import {
+    ITrenchSlipstreamFactory,
     ITrenchV3CollectOnly,
     ITrenchV3LockerRegister,
     ITrenchV3PositionManager
 } from "../../src/v5v3/interfaces/ITrenchV3.sol";
-import {FlywheelVaultFactory} from "../../src/flywheel/FlywheelVaultFactory.sol";
 
-interface IERC20MetadataV5Fork {
-    function decimals() external view returns (uint8);
-    function symbol() external view returns (string memory);
+interface IInkWeth {
+    function deposit() external payable;
 }
 
-interface IStablePositionManagerV5Fork {
+interface IInkPositionManager {
     function factory() external view returns (address);
     function ownerOf(uint256 tokenId) external view returns (address);
 }
 
-interface IStableV3PoolV5Fork {
+interface IInkSlipstreamPool {
     function swap(
         address recipient,
         bool zeroForOne,
@@ -39,8 +37,7 @@ interface IStableV3PoolV5Fork {
     ) external returns (int256 amount0, int256 amount1);
 }
 
-/// @dev Minimal exact-input router used only inside the ephemeral Stable fork.
-contract StableV3ForkSwapper {
+contract InkSlipstreamForkSwapper {
     using SafeERC20 for IERC20;
 
     struct CallbackData {
@@ -58,7 +55,7 @@ contract StableV3ForkSwapper {
         uint256 amountIn,
         uint160 sqrtPriceLimitX96
     ) external returns (int256 amount0, int256 amount1) {
-        return IStableV3PoolV5Fork(pool)
+        return IInkSlipstreamPool(pool)
             .swap(
                 recipient,
                 zeroForOne,
@@ -76,53 +73,40 @@ contract StableV3ForkSwapper {
     }
 }
 
-/// @notice Live-state release gate for the exact Stable dependencies used by the V5 deployment script.
-contract TrenchV3ForkTest is Test {
-    uint24 internal constant FEE_TIER = 10_000;
+contract TrenchV3InkForkTest is Test {
+    uint256 internal constant CHAIN_ID = 57_073;
+    uint24 internal constant FEE_TIER = 3_000;
     int24 internal constant TICK_SPACING = 200;
     uint32 internal constant GRADUATION_DELAY = 300;
 
-    address internal constant USDT0 = 0x779Ded0c9e1022225f8E0630b35a9b54bE713736;
-    address internal constant V3_FACTORY = 0x88F0a512eF09175D456bc9547f914f48C013E4aA;
-    address internal constant POSITION_MANAGER = 0x3BdC3437405f7D801b6036532713fc1F179136a6;
+    address internal constant WETH = 0x4200000000000000000000000000000000000006;
+    address internal constant CL_FACTORY = 0x718E46d0962A66942E233760a8bd6038Ce54EdCD;
+    address internal constant POSITION_MANAGER = 0xefD0f78F93f578036AE34D52A813a4BE7D8D2D52;
     address internal constant CREATOR = address(0xC0FFEE);
     address internal constant BUYER = address(0xB0B);
     address internal constant HYDE_TREASURY = address(0x11DE);
     address internal constant LAUNCH_TREASURY = address(0xFEE5);
 
-    bytes32 internal constant USDT0_CODEHASH = 0x4d9be648c5bf39973670d9f8b481d5d0b971e6a2db2deccc6b98cde21c5dd83e;
-    bytes32 internal constant V3_FACTORY_CODEHASH = 0x2616b5c05e19fc8931cdf2f08bf47e05a7db6859c23add2c32d226092409e939;
+    bytes32 internal constant WETH_CODEHASH = 0xd0f1614c5dacfbd34f1c6f500f397009e4c9a8bfd4e02db353edb2253d9a8012;
+    bytes32 internal constant FACTORY_CODEHASH = 0x47300e75187cc255355659bf86873d6adfbfe60ad2000e0f6e1274e02917b701;
     bytes32 internal constant POSITION_MANAGER_CODEHASH =
-        0x553e7df57c6a17f6d65f05f5c3a3fa41ddaebeca6cf90a0b2b59da3152c41371;
+        0x068cdd1c2f2c7c4f78730b56ffe01cace7ef93ca815698cd85c3855ea6b10380;
 
-    function testFork_stableDependenciesMatchDeploymentManifest() public {
-        string memory rpc = vm.envOr("V5_STABLE_FORK_RPC", string(""));
-        if (bytes(rpc).length == 0) {
-            vm.skip(true, "V5_STABLE_FORK_RPC not configured");
-        }
-        vm.createSelectFork(rpc);
+    function testFork_inkDependenciesMatchPinnedManifest() public {
+        if (!_selectInkFork()) return;
 
-        assertEq(block.chainid, 988, "wrong Stable chain");
-        assertEq(USDT0.codehash, USDT0_CODEHASH, "USDT0 codehash drift");
-        assertEq(V3_FACTORY.codehash, V3_FACTORY_CODEHASH, "V3 factory codehash drift");
+        assertEq(block.chainid, CHAIN_ID, "wrong Ink chain");
+        assertEq(WETH.codehash, WETH_CODEHASH, "WETH codehash drift");
+        assertEq(CL_FACTORY.codehash, FACTORY_CODEHASH, "CL factory codehash drift");
         assertEq(POSITION_MANAGER.codehash, POSITION_MANAGER_CODEHASH, "position manager codehash drift");
-        assertEq(IERC20MetadataV5Fork(USDT0).decimals(), 6, "USDT0 decimals drift");
-        assertEq(
-            keccak256(bytes(IERC20MetadataV5Fork(USDT0).symbol())), keccak256(bytes("USDT0")), "USDT0 symbol drift"
-        );
-        assertEq(IUniswapV3Factory(V3_FACTORY).feeAmountTickSpacing(10_000), 200, "V3 fee tier disabled");
-        assertEq(IStablePositionManagerV5Fork(POSITION_MANAGER).factory(), V3_FACTORY, "position manager factory drift");
+        assertEq(ITrenchSlipstreamFactory(CL_FACTORY).tickSpacingToFee(TICK_SPACING), FEE_TIER, "spacing disabled");
+        assertEq(IInkPositionManager(POSITION_MANAGER).factory(), CL_FACTORY, "position manager factory drift");
     }
 
-    function testFork_stableFullLifecycleAgainstLiveDependencies() public {
-        string memory rpc = vm.envOr("V5_STABLE_FORK_RPC", string(""));
-        if (bytes(rpc).length == 0) {
-            vm.skip(true, "V5_STABLE_FORK_RPC not configured");
-        }
-        vm.createSelectFork(rpc);
+    function testFork_inkFullLifecycleAgainstLiveSlipstream() public {
+        if (!_selectInkFork()) return;
 
         HydeERC20 impl = new HydeERC20();
-        FlywheelVaultFactory vaultFactory = new FlywheelVaultFactory(address(this));
         uint256 nonce = vm.getNonce(address(this));
         address predictedLocker = vm.computeCreateAddress(address(this), nonce);
         address predictedGraduator = vm.computeCreateAddress(address(this), nonce + 1);
@@ -135,70 +119,80 @@ contract TrenchV3ForkTest is Test {
                 factory: predictedFactory,
                 positionManager: ITrenchV3PositionManager(POSITION_MANAGER),
                 locker: ITrenchV3LockerRegister(address(locker)),
-                numeraire: USDT0,
-                feeTier: FEE_TIER,
+                numeraire: WETH,
+                feeTier: uint24(uint256(int256(TICK_SPACING))),
                 tickSpacing: TICK_SPACING,
-                slipstream: false,
+                slipstream: true,
                 graduationDelay: GRADUATION_DELAY,
                 twapTickTolerance: TICK_SPACING,
-                minimumProceeds: 12_000e6,
+                minimumProceeds: 1 ether,
                 maxCurveDust: 10e18,
                 maxPermanentTokenDust: 10e18,
-                maxPermanentQuoteDust: 10
+                maxPermanentQuoteDust: 1e10
             })
         );
         TrenchV3Factory factory = new TrenchV3Factory(
             TrenchV3Factory.Config({
                 impl: address(impl),
-                v3Factory: V3_FACTORY,
+                v3Factory: CL_FACTORY,
                 positionManager: POSITION_MANAGER,
                 locker: address(locker),
                 graduator: address(graduator),
-                flywheelVaultFactory: address(vaultFactory),
+                flywheelVaultFactory: address(0),
                 hydeTreasury: HYDE_TREASURY,
-                numeraire: USDT0,
-                numeraireDecimals: 6,
+                numeraire: WETH,
+                numeraireDecimals: 18,
                 feeTier: FEE_TIER,
-                slipstream: false,
-                tickSpacing: 0,
-                startFdvWad: 5_000e18,
-                graduationFdvWad: 50_000e18,
-                launchFeeAsset: USDT0,
-                launchFeeAmount: 1e6,
-                launchFeeNative: false,
+                slipstream: true,
+                tickSpacing: TICK_SPACING,
+                startFdvWad: 1e18,
+                graduationFdvWad: 16e18,
+                launchFeeAsset: address(0),
+                launchFeeAmount: 0.0004 ether,
+                launchFeeNative: true,
                 launchFeeTreasury: LAUNCH_TREASURY,
                 maxWalletBps: 200,
                 maxWalletWindowSecs: 300,
                 observationCardinality: 512,
                 graduationDelay: GRADUATION_DELAY,
                 twapTickTolerance: TICK_SPACING,
-                minimumProceeds: 12_000e6,
+                minimumProceeds: 1 ether,
                 maxCurveDust: 10e18,
                 maxPermanentTokenDust: 10e18,
-                maxPermanentQuoteDust: 10,
+                maxPermanentQuoteDust: 1e10,
                 owner: address(this)
             })
         );
         assertEq(address(factory), predictedFactory);
 
-        deal(USDT0, CREATOR, 1e6);
-        vm.startPrank(CREATOR);
-        IERC20(USDT0).approve(address(factory), 1e6);
-        (address token, uint256 curveTokenId) = factory.launch("Trench V5 Fork", "TV5F", bytes32("STABLE_FULL"));
-        vm.stopPrank();
+        assertTrue(factory.SLIPSTREAM());
+        assertEq(factory.POSITION_KEY(), uint24(uint256(int256(TICK_SPACING))));
+        assertEq(address(factory.FLYWHEEL_VAULT_FACTORY()), address(0));
+        vm.expectRevert(TrenchV3Factory.InvalidFlywheel.selector);
+        factory.launchFlywheel{value: 0.0004 ether}("Disabled Flywheel", "NOFLY", bytes32("NO_FLY"), address(1));
+
+        vm.deal(CREATOR, 1 ether);
+        vm.prank(CREATOR);
+        (address token, uint256 curveTokenId) =
+            factory.launch{value: 0.0004 ether}("Trench V5 Ink Fork", "TV5I", bytes32("INK_FULL"));
 
         TrenchV3Graduator.Curve memory curve = graduator.curveInfo(token);
-        assertEq(IStablePositionManagerV5Fork(POSITION_MANAGER).ownerOf(curveTokenId), address(graduator));
+        assertEq(
+            ITrenchSlipstreamFactory(CL_FACTORY).getPool(token, WETH, TICK_SPACING), curve.pool, "wrong Slipstream pool"
+        );
+        assertEq(IInkPositionManager(POSITION_MANAGER).ownerOf(curveTokenId), address(graduator));
         assertEq(uint8(curve.state), uint8(TrenchV3Graduator.CurveState.CURVE_ACTIVE));
         assertEq(HydeERC20(token).totalSupply(), 1_000_000_000e18);
+        assertGt(factory.EXPECTED_TERMINAL_PROCEEDS(), 1 ether);
 
-        // Let the launch-window wallet cap expire, then consume the whole live curve with a real V3 swap.
         vm.warp(block.timestamp + 301);
-        StableV3ForkSwapper swapper = new StableV3ForkSwapper();
+        InkSlipstreamForkSwapper swapper = new InkSlipstreamForkSwapper();
         uint256 quoteBudget = factory.EXPECTED_TERMINAL_PROCEEDS() * 2;
-        deal(USDT0, address(swapper), quoteBudget);
-        address token0 = curve.tokenIs0 ? token : USDT0;
-        address token1 = curve.tokenIs0 ? USDT0 : token;
+        vm.deal(address(swapper), quoteBudget);
+        vm.prank(address(swapper));
+        IInkWeth(WETH).deposit{value: quoteBudget}();
+        address token0 = curve.tokenIs0 ? token : WETH;
+        address token1 = curve.tokenIs0 ? WETH : token;
         swapper.swapExactInput(
             curve.pool,
             token0,
@@ -210,8 +204,8 @@ contract TrenchV3ForkTest is Test {
         );
 
         TrenchV3Graduator.CurveProgress memory terminal = graduator.curveProgress(token);
-        assertEq(terminal.progressWad, 1e18, "live V3 curve did not reach terminal");
-        assertGe(terminal.quotePrincipal, 12_000e6);
+        assertEq(terminal.progressWad, 1e18, "live Ink curve did not reach terminal");
+        assertGe(terminal.quotePrincipal, 1 ether);
 
         graduator.signalGraduation(token);
         vm.warp(block.timestamp + GRADUATION_DELAY + 1);
@@ -220,19 +214,23 @@ contract TrenchV3ForkTest is Test {
         assertGe(permanentIds.length, 1);
         assertLe(permanentIds.length, 3);
         for (uint256 i; i < permanentIds.length; ++i) {
-            assertEq(
-                IStablePositionManagerV5Fork(POSITION_MANAGER).ownerOf(permanentIds[i]),
-                address(locker),
-                "permanent NFT not locked"
-            );
+            assertEq(IInkPositionManager(POSITION_MANAGER).ownerOf(permanentIds[i]), address(locker));
         }
         vm.expectRevert();
-        IStablePositionManagerV5Fork(POSITION_MANAGER).ownerOf(curveTokenId);
-
-        TrenchV3Graduator.Curve memory graduated = graduator.curveInfo(token);
-        assertEq(uint8(graduated.state), uint8(TrenchV3Graduator.CurveState.GRADUATED));
+        IInkPositionManager(POSITION_MANAGER).ownerOf(curveTokenId);
+        assertEq(uint8(graduator.curveInfo(token).state), uint8(TrenchV3Graduator.CurveState.GRADUATED));
         assertEq(HydeERC20(token).balanceOf(address(graduator)), 0);
-        assertEq(IERC20(USDT0).balanceOf(address(graduator)), 0);
+        assertEq(IERC20(WETH).balanceOf(address(graduator)), 0);
         assertEq(locker.positionCount(token), permanentIds.length);
+    }
+
+    function _selectInkFork() private returns (bool selected) {
+        string memory rpc = vm.envOr("V5_INK_FORK_RPC", string(""));
+        if (bytes(rpc).length == 0) {
+            vm.skip(true, "V5_INK_FORK_RPC not configured");
+            return false;
+        }
+        vm.createSelectFork(rpc);
+        return true;
     }
 }

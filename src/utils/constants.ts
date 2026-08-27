@@ -292,7 +292,7 @@ export const NETWORKS: NetworkConfig[] = [
   STABLE_MAINNET,       // LIVE V3 reach line (988); readiness is generated-evidence gated
   ARBITRUM_MAINNET,     // LIVE Hyde V4 WETH launch rail; in-app execution gateway remains fail-closed
   ARC_MAINNET,           // V5 V3 rail is runtime-manifest gated and fails closed on RPC/hash drift
-  INK_MAINNET,           // LIVE standalone V3 launch rail on Velodrome Slipstream
+  INK_MAINNET,           // LIVE V5 Trench Curve rail on Velodrome Slipstream
   // HYPEREVM_MAINNET,   // preparation only: native Flywheel rewards; no deployed Hydeout rail yet
   // OPTIMISM_MAINNET,  // legacy lane retired 2026-07-03 — Hydeout is Robinhood-only
   // INK_MAINNET,       // hidden — multichain later

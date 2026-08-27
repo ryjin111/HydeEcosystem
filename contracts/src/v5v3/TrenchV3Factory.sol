@@ -9,12 +9,12 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {HydeERC20} from "../v3/HydeERC20.sol";
 import {
-    ITrenchV3CollectOnly,
+    ITrenchSlipstreamFactory,
+    ITrenchSlipstreamMintOnly,
     ITrenchV3Factory,
-    ITrenchV3LockerRegister,
     ITrenchV3MintOnly,
     ITrenchV3Pool,
-    ITrenchV3PositionManager,
+    TrenchSlipstreamMintParams,
     TrenchV3MintParams
 } from "./interfaces/ITrenchV3.sol";
 import {TickMath} from "../v3/libraries/TickMath.sol";
@@ -47,7 +47,9 @@ contract TrenchV3Factory is ReentrancyGuard {
     address public immutable NUMERAIRE;
     uint8 public immutable NUMERAIRE_DECIMALS;
     uint24 public immutable FEE_TIER;
+    uint24 public immutable POSITION_KEY;
     int24 public immutable TICK_SPACING;
+    bool public immutable SLIPSTREAM;
     uint16 public immutable OBSERVATION_CARDINALITY;
 
     address public immutable LAUNCH_FEE_ASSET;
@@ -107,11 +109,15 @@ contract TrenchV3Factory is ReentrancyGuard {
         address impl;
         address v3Factory;
         address positionManager;
+        address locker;
+        address graduator;
         address flywheelVaultFactory;
         address hydeTreasury;
         address numeraire;
         uint8 numeraireDecimals;
         uint24 feeTier;
+        bool slipstream;
+        int24 tickSpacing;
         uint256 startFdvWad;
         uint256 graduationFdvWad;
         address launchFeeAsset;
@@ -133,7 +139,8 @@ contract TrenchV3Factory is ReentrancyGuard {
     constructor(Config memory c) {
         if (
             c.impl == address(0) || c.v3Factory == address(0) || c.positionManager == address(0)
-                || c.flywheelVaultFactory == address(0) || c.flywheelVaultFactory.code.length == 0
+                || c.locker.code.length == 0 || c.graduator.code.length == 0
+                || (c.flywheelVaultFactory != address(0) && c.flywheelVaultFactory.code.length == 0)
                 || c.hydeTreasury == address(0) || c.numeraire == address(0) || c.numeraireDecimals > 18
                 || c.launchFeeTreasury == address(0) || c.startFdvWad == 0 || c.graduationFdvWad <= c.startFdvWad
                 || c.launchFeeAmount == 0 || c.maxWalletBps == 0 || c.maxWalletBps > 300 || c.maxWalletWindowSecs == 0
@@ -165,10 +172,24 @@ contract TrenchV3Factory is ReentrancyGuard {
         MAX_CURVE_DUST = c.maxCurveDust;
         owner = c.owner;
 
-        int24 spacing = V3_FACTORY.feeAmountTickSpacing(c.feeTier);
+        int24 spacing;
+        uint24 positionKey;
+        if (c.slipstream) {
+            spacing = c.tickSpacing;
+            if (spacing <= 0 || ITrenchSlipstreamFactory(c.v3Factory).tickSpacingToFee(spacing) != c.feeTier) {
+                revert InvalidConfig();
+            }
+            positionKey = uint24(uint256(int256(spacing)));
+        } else {
+            if (c.tickSpacing != 0) revert InvalidConfig();
+            spacing = V3_FACTORY.feeAmountTickSpacing(c.feeTier);
+            positionKey = c.feeTier;
+        }
         if (spacing <= 0 || c.twapTickTolerance < 0 || c.twapTickTolerance > spacing) {
             revert InvalidConfig();
         }
+        SLIPSTREAM = c.slipstream;
+        POSITION_KEY = positionKey;
         TICK_SPACING = spacing;
 
         uint256 numScale = 10 ** c.numeraireDecimals;
@@ -190,24 +211,20 @@ contract TrenchV3Factory is ReentrancyGuard {
         if (expectedTerminal < c.minimumProceeds) revert InvalidConfig();
         EXPECTED_TERMINAL_PROCEEDS = expectedTerminal;
 
-        TrenchV3Locker locker = new TrenchV3Locker(ITrenchV3CollectOnly(c.positionManager), c.hydeTreasury);
-        TrenchV3Graduator graduator = new TrenchV3Graduator(
-            TrenchV3Graduator.Config({
-                factory: address(this),
-                positionManager: ITrenchV3PositionManager(c.positionManager),
-                locker: ITrenchV3LockerRegister(address(locker)),
-                numeraire: c.numeraire,
-                feeTier: c.feeTier,
-                tickSpacing: spacing,
-                graduationDelay: c.graduationDelay,
-                twapTickTolerance: c.twapTickTolerance,
-                minimumProceeds: c.minimumProceeds,
-                maxCurveDust: c.maxCurveDust,
-                maxPermanentTokenDust: c.maxPermanentTokenDust,
-                maxPermanentQuoteDust: c.maxPermanentQuoteDust
-            })
-        );
-        locker.initGraduator(address(graduator));
+        TrenchV3Locker locker = TrenchV3Locker(c.locker);
+        TrenchV3Graduator graduator = TrenchV3Graduator(c.graduator);
+        if (
+            address(locker.POSITION_MANAGER()) != c.positionManager || locker.HYDE_TREASURY() != c.hydeTreasury
+                || locker.graduator() != c.graduator || graduator.FACTORY() != address(this)
+                || address(graduator.POSITION_MANAGER()) != c.positionManager || address(graduator.LOCKER()) != c.locker
+                || graduator.NUMERAIRE() != c.numeraire || graduator.FEE_TIER() != positionKey
+                || graduator.TICK_SPACING() != spacing || graduator.SLIPSTREAM() != c.slipstream
+                || graduator.GRADUATION_DELAY() != c.graduationDelay
+                || graduator.TWAP_TICK_TOLERANCE() != c.twapTickTolerance
+                || graduator.MINIMUM_PROCEEDS() != c.minimumProceeds || graduator.MAX_CURVE_DUST() != c.maxCurveDust
+                || graduator.MAX_PERMANENT_TOKEN_DUST() != c.maxPermanentTokenDust
+                || graduator.MAX_PERMANENT_QUOTE_DUST() != c.maxPermanentQuoteDust
+        ) revert InvalidConfig();
         LOCKER = locker;
         GRADUATOR = graduator;
     }
@@ -249,7 +266,7 @@ contract TrenchV3Factory is ReentrancyGuard {
         uint256 tries;
         for (; tries < MAX_SALT_TRIES;) {
             address predicted = Clones.predictDeterministicAddress(IMPL, seed, address(this));
-            if (predicted.code.length == 0 && V3_FACTORY.getPool(predicted, NUMERAIRE, FEE_TIER) == address(0)) break;
+            if (predicted.code.length == 0 && _getPool(predicted) == address(0)) break;
             unchecked {
                 ++tries;
                 seed = keccak256(abi.encode(seed));
@@ -260,8 +277,9 @@ contract TrenchV3Factory is ReentrancyGuard {
         token = Clones.cloneDeterministic(IMPL, seed);
         bool tokenIs0 = token < NUMERAIRE;
         (int24 tickLower, int24 tickUpper, int24 initTick) = _rangeFor(tokenIs0);
-        address pool = V3_FACTORY.getPool(token, NUMERAIRE, FEE_TIER);
-        if (pool == address(0)) pool = V3_FACTORY.createPool(token, NUMERAIRE, FEE_TIER);
+        uint160 initialSqrtPriceX96 = TickMath.getSqrtRatioAtTick(initTick);
+        address pool = _getPool(token);
+        if (pool == address(0)) pool = _createPool(token, initialSqrtPriceX96);
 
         address[] memory exemptAddrs = new address[](flywheelRecipient == address(0) ? 7 : 8);
         exemptAddrs[0] = address(this);
@@ -285,9 +303,13 @@ contract TrenchV3Factory is ReentrancyGuard {
                 })
             );
 
-        (uint160 existing,,,,,,) = ITrenchV3Pool(pool).slot0();
-        if (existing != 0) revert LaunchGriefed();
-        ITrenchV3Pool(pool).initialize(TickMath.getSqrtRatioAtTick(initTick));
+        uint160 existing = _sqrtPriceX96(pool);
+        if (SLIPSTREAM) {
+            if (existing != initialSqrtPriceX96) revert LaunchGriefed();
+        } else {
+            if (existing != 0) revert LaunchGriefed();
+            ITrenchV3Pool(pool).initialize(initialSqrtPriceX96);
+        }
         ITrenchV3Pool(pool).increaseObservationCardinalityNext(OBSERVATION_CARDINALITY);
 
         uint128 curveLiquidity;
@@ -326,8 +348,8 @@ contract TrenchV3Factory is ReentrancyGuard {
 
     function _validateFlywheel(address recipient, address creator) private view {
         if (
-            recipient == address(0) || !FLYWHEEL_VAULT_FACTORY.isVault(recipient)
-                || !FLYWHEEL_VAULT_FACTORY.isVaultConfigActive(recipient)
+            address(FLYWHEEL_VAULT_FACTORY) == address(0) || recipient == address(0)
+                || !FLYWHEEL_VAULT_FACTORY.isVault(recipient) || !FLYWHEEL_VAULT_FACTORY.isVaultConfigActive(recipient)
                 || IFlywheelVault(recipient).DEPLOYER_FACTORY() != address(FLYWHEEL_VAULT_FACTORY)
                 || IFlywheelVault(recipient).FEE_SOURCE() != address(LOCKER)
                 || IFlywheelVault(recipient).NUMERAIRE() != NUMERAIRE
@@ -344,7 +366,7 @@ contract TrenchV3Factory is ReentrancyGuard {
         IERC20(token).forceApprove(address(POSITION_MANAGER), CURVE_TARGET);
         uint256 used0;
         uint256 used1;
-        (tokenId, liquidity, used0, used1) = POSITION_MANAGER.mint(
+        (tokenId, liquidity, used0, used1) = _mintPosition(
             TrenchV3MintParams({
                 token0: tokenIs0 ? token : NUMERAIRE,
                 token1: tokenIs0 ? NUMERAIRE : token,
@@ -367,6 +389,53 @@ contract TrenchV3Factory is ReentrancyGuard {
         if (liquidity == 0 || tokenUsed == 0 || tokenUsed > CURVE_TARGET || CURVE_TARGET - tokenUsed > MAX_CURVE_DUST) {
             revert SeedFailed();
         }
+    }
+
+    function _getPool(address token) private view returns (address) {
+        if (SLIPSTREAM) {
+            return ITrenchSlipstreamFactory(address(V3_FACTORY)).getPool(token, NUMERAIRE, TICK_SPACING);
+        }
+        return V3_FACTORY.getPool(token, NUMERAIRE, FEE_TIER);
+    }
+
+    /// @dev Uniswap V3 returns seven slot0 words while Slipstream returns six.
+    ///      The sqrt price is their ABI-compatible first word.
+    function _sqrtPriceX96(address pool) private view returns (uint160 sqrtPriceX96) {
+        (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("slot0()"));
+        if (!ok || data.length < 32) revert LaunchGriefed();
+        sqrtPriceX96 = abi.decode(data, (uint160));
+    }
+
+    function _createPool(address token, uint160 sqrtPriceX96) private returns (address) {
+        if (SLIPSTREAM) {
+            return
+                ITrenchSlipstreamFactory(address(V3_FACTORY)).createPool(token, NUMERAIRE, TICK_SPACING, sqrtPriceX96);
+        }
+        return V3_FACTORY.createPool(token, NUMERAIRE, FEE_TIER);
+    }
+
+    function _mintPosition(TrenchV3MintParams memory p)
+        private
+        returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)
+    {
+        if (!SLIPSTREAM) return POSITION_MANAGER.mint(p);
+        return ITrenchSlipstreamMintOnly(address(POSITION_MANAGER))
+            .mint(
+                TrenchSlipstreamMintParams({
+                    token0: p.token0,
+                    token1: p.token1,
+                    tickSpacing: TICK_SPACING,
+                    tickLower: p.tickLower,
+                    tickUpper: p.tickUpper,
+                    amount0Desired: p.amount0Desired,
+                    amount1Desired: p.amount1Desired,
+                    amount0Min: p.amount0Min,
+                    amount1Min: p.amount1Min,
+                    recipient: p.recipient,
+                    deadline: p.deadline,
+                    sqrtPriceX96: 0
+                })
+            );
     }
 
     function _takeLaunchFee(address creator) private {

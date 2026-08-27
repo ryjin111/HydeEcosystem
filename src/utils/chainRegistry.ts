@@ -477,8 +477,8 @@ export interface EngineMeta {
 }
 export const ENGINE_META: Record<LaunchEngine, EngineMeta> = {
   "v3-single-sided": {
-    title: "Uniswap V3 rail",
-    subtitle: "Stablecoin settlement and permanent V3 custody.",
+    title: "V3 liquidity rail",
+    subtitle: "Single-sided curve and permanent V3 custody.",
     feeSplitLabel: "95% creator • 5% Hyde", // kami 24242 — matches _split BPS exactly
     trustLine: "V3 positions are permanently locked; creator fees remain claimable.",
     creatorShare: 95,

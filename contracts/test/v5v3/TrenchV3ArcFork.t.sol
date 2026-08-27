@@ -12,6 +12,11 @@ import {TickMath} from "../../src/v3/libraries/TickMath.sol";
 import {TrenchV3Factory} from "../../src/v5v3/TrenchV3Factory.sol";
 import {TrenchV3Graduator} from "../../src/v5v3/TrenchV3Graduator.sol";
 import {TrenchV3Locker} from "../../src/v5v3/TrenchV3Locker.sol";
+import {
+    ITrenchV3CollectOnly,
+    ITrenchV3LockerRegister,
+    ITrenchV3PositionManager
+} from "../../src/v5v3/interfaces/ITrenchV3.sol";
 import {FlywheelVaultFactory} from "../../src/flywheel/FlywheelVaultFactory.sol";
 
 interface IERC20MetadataArcFork {
@@ -156,16 +161,45 @@ contract TrenchV3ArcForkTest is Test {
         vm.etch(USDC, address(usdcTemplate).code);
 
         HydeERC20 impl = new HydeERC20();
+        FlywheelVaultFactory vaultFactory = new FlywheelVaultFactory(address(this));
+        uint256 nonce = vm.getNonce(address(this));
+        address predictedLocker = vm.computeCreateAddress(address(this), nonce);
+        address predictedGraduator = vm.computeCreateAddress(address(this), nonce + 1);
+        address predictedFactory = vm.computeCreateAddress(address(this), nonce + 2);
+        TrenchV3Locker locker =
+            new TrenchV3Locker(ITrenchV3CollectOnly(POSITION_MANAGER), HYDE_TREASURY, predictedGraduator);
+        assertEq(address(locker), predictedLocker);
+        TrenchV3Graduator graduator = new TrenchV3Graduator(
+            TrenchV3Graduator.Config({
+                factory: predictedFactory,
+                positionManager: ITrenchV3PositionManager(POSITION_MANAGER),
+                locker: ITrenchV3LockerRegister(address(locker)),
+                numeraire: USDC,
+                feeTier: FEE_TIER,
+                tickSpacing: TICK_SPACING,
+                slipstream: false,
+                graduationDelay: GRADUATION_DELAY,
+                twapTickTolerance: TICK_SPACING,
+                minimumProceeds: 12_000e6,
+                maxCurveDust: 10e18,
+                maxPermanentTokenDust: 10e18,
+                maxPermanentQuoteDust: 10
+            })
+        );
         TrenchV3Factory factory = new TrenchV3Factory(
             TrenchV3Factory.Config({
                 impl: address(impl),
                 v3Factory: V3_FACTORY,
                 positionManager: POSITION_MANAGER,
-                flywheelVaultFactory: address(new FlywheelVaultFactory(address(this))),
+                locker: address(locker),
+                graduator: address(graduator),
+                flywheelVaultFactory: address(vaultFactory),
                 hydeTreasury: HYDE_TREASURY,
                 numeraire: USDC,
                 numeraireDecimals: 6,
                 feeTier: FEE_TIER,
+                slipstream: false,
+                tickSpacing: 0,
                 startFdvWad: 5_000e18,
                 graduationFdvWad: 50_000e18,
                 launchFeeAsset: USDC,
@@ -184,8 +218,7 @@ contract TrenchV3ArcForkTest is Test {
                 owner: address(this)
             })
         );
-        TrenchV3Graduator graduator = factory.GRADUATOR();
-        TrenchV3Locker locker = factory.LOCKER();
+        assertEq(address(factory), predictedFactory);
 
         ArcForkUsdc(USDC).mint(CREATOR, 1e6);
         vm.startPrank(CREATOR);

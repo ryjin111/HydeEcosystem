@@ -1,0 +1,85 @@
+{
+  "version": "Hydeout V5 Trench Curve",
+  "network": "Ink Mainnet",
+  "chainId": 57073,
+  "rpcUrl": "https://rpc-gel.inkonchain.com",
+  "explorerUrl": "https://explorer.inkonchain.com",
+  "deployer": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "owner": "0x800557e7882b42ee49594fa2790300A9697a0e4D",
+  "hydeTreasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "launchFeeTreasury": "0x3132c30135BC13BFbFa75523Ec96A746E5B7Ddb3",
+  "contracts": {
+    "implementation": {
+      "address": "0x144Ee4A0B605B038F085518231A414b0BD00ef23",
+      "deploymentTransaction": "0x0f03b12dcc2443764d39a9ecebe6f545a6de4e5e13d64e5fe80992a8520b7eaa",
+      "deploymentBlock": 54317520,
+      "runtimeCodeBytes": 4650,
+      "runtimeCodeHash": "0xce745b5eba4a683f85e250477ced81eb3f04e5ba9a7ed705ef117e2acad6f012"
+    },
+    "factory": {
+      "address": "0xCf9023b509bf2c1FD53b3FF7Cd9dD5D1E88A5458",
+      "deploymentTransaction": "0x3d34cedfd949b2bb57151fbab1d2fb14cc4ebc966c8b0949554a1c4973f28a01",
+      "deploymentBlock": 54318168,
+      "runtimeCodeBytes": 19895,
+      "runtimeCodeHash": "0x7a8d6346b96a179863b7ea107871ed9867e18a7b5590314ae4083a87260b80a4"
+    },
+    "graduator": {
+      "address": "0x384951F77BD07bb3eCa992fcffb0AaDF972C2b1f",
+      "deploymentTransaction": "0x4c9e66f4781e82c41dad1aa3e7821e5d8cc0dc1a31092b98444f4e6cd1a4710a",
+      "deploymentBlock": 54318166,
+      "runtimeCodeBytes": 16122,
+      "runtimeCodeHash": "0x727a1b49a82010b97a2640327fa957f901ac471aeeb0823ec3f718dd87ddd1d3"
+    },
+    "locker": {
+      "address": "0xE9385e126A70cff82eceFd1791a509A6fB36AF71",
+      "deploymentTransaction": "0x9e0c010861b4dd311706769de673c31be35df0f8c875a6fd40a78527d9c97e99",
+      "deploymentBlock": 54318161,
+      "runtimeCodeBytes": 5824,
+      "runtimeCodeHash": "0xfde4c5de2c85926d70e3c63a6b151b743dc9dd93585a395c82b425f4bb24b43a"
+    }
+  },
+  "dependencies": {
+    "numeraire": {
+      "symbol": "WETH",
+      "address": "0x4200000000000000000000000000000000000006",
+      "decimals": 18
+    },
+    "venue": "Velodrome Slipstream",
+    "slipstreamFactory": "0x718E46d0962A66942E233760a8bd6038Ce54EdCD",
+    "positionManager": "0xefD0f78F93f578036AE34D52A813a4BE7D8D2D52"
+  },
+  "configuration": {
+    "v3FeeTier": 3000,
+    "tickSpacing": 200,
+    "positionKey": 200,
+    "observationCardinality": 512,
+    "targetStartFdvWeth": "1",
+    "targetGraduationFdvWeth": "16",
+    "realizedStartFdvRaw": "1004311033770190170",
+    "realizedGraduationFdvRaw": "15865767123804433153",
+    "expectedTerminalProceedsRaw": "3193409711932636009",
+    "minimumProceedsRaw": "1000000000000000000",
+    "launchFeeWei": "400000000000000",
+    "creatorFeeBps": 9500,
+    "hydeFeeBps": 500,
+    "maxWalletBps": 200,
+    "maxWalletWindowSeconds": 300,
+    "graduationDelaySeconds": 300,
+    "twapTickTolerance": 200,
+    "flywheelEnabled": false
+  },
+  "verification": {
+    "verifiedAtBlock": 54318251,
+    "receiptStatuses": [1, 1, 1, 1],
+    "deployerNonceAfter": 6,
+    "runtimeCodeHashesMatched": 4,
+    "bindingsPassed": true,
+    "liveSlipstreamForkLifecyclePassed": true,
+    "paused": false,
+    "tokenLaunchPerformed": false
+  },
+  "notes": {
+    "supersedesStandaloneV3Pad": "0x71666A06bb454696073211733c755eA0194f3094",
+    "flywheelReason": "V3-only Ink release; the older Ink Flywheel factory did not match the final audited bytecode."
+  }
+}

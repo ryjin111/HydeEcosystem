@@ -24,8 +24,7 @@ contract TrenchV3Locker is IERC721Receiver, ReentrancyGuard {
     ITrenchV3CollectOnly public immutable POSITION_MANAGER;
     address public immutable HYDE_TREASURY;
 
-    address private immutable _deployer;
-    address public graduator;
+    address public immutable graduator;
 
     struct LockedPosition {
         address creator;
@@ -67,26 +66,19 @@ contract TrenchV3Locker is IERC721Receiver, ReentrancyGuard {
     event HydeClaimed(address indexed token, address indexed asset, address indexed treasury, uint256 amount);
     event FlywheelFunded(address indexed token, address indexed asset, address indexed recipient, uint256 amount);
 
-    error OnlyDeployer();
     error OnlyGraduator();
-    error AlreadyInitialized();
     error AlreadyRegistered();
     error InvalidRegistration();
     error NotCustodied();
     error UnknownPosition();
 
-    constructor(ITrenchV3CollectOnly positionManager, address hydeTreasury) {
-        require(address(positionManager) != address(0) && hydeTreasury != address(0), "ZERO_CONFIG");
+    constructor(ITrenchV3CollectOnly positionManager, address hydeTreasury, address graduator_) {
+        require(
+            address(positionManager) != address(0) && hydeTreasury != address(0) && graduator_ != address(0),
+            "ZERO_CONFIG"
+        );
         POSITION_MANAGER = positionManager;
         HYDE_TREASURY = hydeTreasury;
-        _deployer = msg.sender;
-    }
-
-    /// @notice One-shot deployment-cycle binding. No setter exists after initialization.
-    function initGraduator(address graduator_) external {
-        if (msg.sender != _deployer) revert OnlyDeployer();
-        if (graduator != address(0)) revert AlreadyInitialized();
-        if (graduator_ == address(0)) revert InvalidRegistration();
         graduator = graduator_;
         emit GraduatorInitialized(graduator_);
     }
