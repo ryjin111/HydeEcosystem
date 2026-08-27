@@ -16,6 +16,7 @@ import { INDEXER_CHAINS, LEGACY_SOURCES } from "./src/chains";
 const stable = INDEXER_CHAINS[0];
 const arbitrum = INDEXER_CHAINS[1];
 const robinhood = INDEXER_CHAINS[2];
+const ink = INDEXER_CHAINS[3];
 
 export default createConfig({
   chains: {
@@ -34,13 +35,19 @@ export default createConfig({
       rpc: process.env.PONDER_RPC_URL_4663 ?? robinhood.rpcUrl,
       ethGetLogsBlockRange: robinhood.ethGetLogsBlockRange,
     },
+    ink: {
+      id: ink.id,
+      rpc: process.env.PONDER_RPC_URL_57073 ?? ink.rpcUrl,
+      ethGetLogsBlockRange: ink.ethGetLogsBlockRange,
+    },
   },
   contracts: {
     TrenchV3Factory: {
       abi: trenchV3FactoryAbi,
-      chain: "stable",
-      address: stable.factory,
-      startBlock: stable.startBlock,
+      chain: {
+        stable: { address: stable.factory, startBlock: stable.startBlock },
+        ink: { address: ink.factory, startBlock: ink.startBlock },
+      },
     },
     TrenchV4Factory: {
       abi: trenchV4FactoryAbi,
@@ -51,9 +58,10 @@ export default createConfig({
     },
     TrenchV3Graduator: {
       abi: trenchGraduatorAbi,
-      chain: "stable",
-      address: stable.graduator,
-      startBlock: stable.startBlock,
+      chain: {
+        stable: { address: stable.graduator, startBlock: stable.startBlock },
+        ink: { address: ink.graduator, startBlock: ink.startBlock },
+      },
     },
     TrenchV4Graduator: {
       abi: trenchGraduatorAbi,
@@ -64,9 +72,10 @@ export default createConfig({
     },
     TrenchV3Locker: {
       abi: trenchV3LockerAbi,
-      chain: "stable",
-      address: stable.locker,
-      startBlock: stable.startBlock,
+      chain: {
+        stable: { address: stable.locker, startBlock: stable.startBlock },
+        ink: { address: ink.locker, startBlock: ink.startBlock },
+      },
     },
     TrenchV4Locker: {
       abi: trenchV4LockerAbi,
@@ -101,14 +110,26 @@ export default createConfig({
     },
     TrenchV3Token: {
       abi: erc20TransferAbi,
-      chain: "stable",
-      startBlock: stable.startBlock,
-      address: factory({
-        address: stable.factory,
-        event: trenchV3FactoryAbi[0],
-        parameter: "token",
-        startBlock: stable.startBlock,
-      }),
+      chain: {
+        stable: {
+          startBlock: stable.startBlock,
+          address: factory({
+            address: stable.factory,
+            event: trenchV3FactoryAbi[0],
+            parameter: "token",
+            startBlock: stable.startBlock,
+          }),
+        },
+        ink: {
+          startBlock: ink.startBlock,
+          address: factory({
+            address: ink.factory,
+            event: trenchV3FactoryAbi[0],
+            parameter: "token",
+            startBlock: ink.startBlock,
+          }),
+        },
+      },
     },
     TrenchV4Token: {
       abi: erc20TransferAbi,
@@ -179,14 +200,26 @@ export default createConfig({
     },
     TrenchV3Pool: {
       abi: uniswapV3PoolAbi,
-      chain: "stable",
-      startBlock: stable.startBlock,
-      address: factory({
-        address: stable.factory,
-        event: trenchV3FactoryAbi[0],
-        parameter: "pool",
-        startBlock: stable.startBlock,
-      }),
+      chain: {
+        stable: {
+          startBlock: stable.startBlock,
+          address: factory({
+            address: stable.factory,
+            event: trenchV3FactoryAbi[0],
+            parameter: "pool",
+            startBlock: stable.startBlock,
+          }),
+        },
+        ink: {
+          startBlock: ink.startBlock,
+          address: factory({
+            address: ink.factory,
+            event: trenchV3FactoryAbi[0],
+            parameter: "pool",
+            startBlock: ink.startBlock,
+          }),
+        },
+      },
     },
     LegacyStableV3Pool: {
       abi: uniswapV3PoolAbi,

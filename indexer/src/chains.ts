@@ -1,7 +1,7 @@
 import type { Address } from "viem";
 
 export type HydeoutIndexerChain = {
-  key: "stable" | "arbitrum" | "robinhood";
+  key: "stable" | "arbitrum" | "robinhood" | "ink";
   id: number;
   name: string;
   engine: "v3-single-sided" | "v4-hook";
@@ -61,6 +61,21 @@ export const INDEXER_CHAINS = [
     quoteDecimals: 18,
     startBlock: 23_198_932,
     ethGetLogsBlockRange: 9_000,
+  },
+  {
+    key: "ink",
+    id: 57_073,
+    name: "Ink",
+    engine: "v3-single-sided",
+    rpcUrl: "https://rpc-gel.inkonchain.com",
+    factory: "0xCf9023b509bf2c1FD53b3FF7Cd9dD5D1E88A5458",
+    graduator: "0x384951F77BD07bb3eCa992fcffb0AaDF972C2b1f",
+    locker: "0xE9385e126A70cff82eceFd1791a509A6fB36AF71",
+    numeraire: "0x4200000000000000000000000000000000000006",
+    quoteSymbol: "WETH",
+    quoteDecimals: 18,
+    startBlock: 54_318_168,
+    ethGetLogsBlockRange: 500,
   },
 ] as const satisfies readonly HydeoutIndexerChain[];
 

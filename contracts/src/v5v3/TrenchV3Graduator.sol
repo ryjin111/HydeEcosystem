@@ -7,11 +7,13 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import {
+    ITrenchSlipstreamMintOnly,
     ITrenchV3LockerRegister,
     ITrenchV3Pool,
     ITrenchV3PositionManager,
     TrenchV3CollectParams,
     TrenchV3DecreaseParams,
+    TrenchSlipstreamMintParams,
     TrenchV3MintParams
 } from "./interfaces/ITrenchV3.sol";
 import {TrenchV3Math} from "./libraries/TrenchV3Math.sol";
@@ -41,6 +43,7 @@ contract TrenchV3Graduator is IERC721Receiver, ReentrancyGuard {
         address numeraire;
         uint24 feeTier;
         int24 tickSpacing;
+        bool slipstream;
         uint32 graduationDelay;
         int24 twapTickTolerance;
         uint256 minimumProceeds;
@@ -82,6 +85,7 @@ contract TrenchV3Graduator is IERC721Receiver, ReentrancyGuard {
     address public immutable NUMERAIRE;
     uint24 public immutable FEE_TIER;
     int24 public immutable TICK_SPACING;
+    bool public immutable SLIPSTREAM;
     uint32 public immutable GRADUATION_DELAY;
     int24 public immutable TWAP_TICK_TOLERANCE;
     uint256 public immutable MINIMUM_PROCEEDS;
@@ -136,6 +140,7 @@ contract TrenchV3Graduator is IERC721Receiver, ReentrancyGuard {
         NUMERAIRE = c.numeraire;
         FEE_TIER = c.feeTier;
         TICK_SPACING = c.tickSpacing;
+        SLIPSTREAM = c.slipstream;
         GRADUATION_DELAY = c.graduationDelay;
         TWAP_TICK_TOLERANCE = c.twapTickTolerance;
         MINIMUM_PROCEEDS = c.minimumProceeds;
@@ -175,7 +180,7 @@ contract TrenchV3Graduator is IERC721Receiver, ReentrancyGuard {
                 || liquidity == 0
         ) revert InvalidCurve();
 
-        (uint160 sqrtPriceX96,,,,,,) = ITrenchV3Pool(pool).slot0();
+        (uint160 sqrtPriceX96,) = _slot0(pool);
         (uint256 amount0, uint256 amount1) =
             TrenchV3Math.amountsForLiquidity(sqrtPriceX96, tickLower, tickUpper, liquidity);
         uint256 initialTokenPrincipal = tokenIs0 ? amount0 : amount1;
@@ -371,7 +376,7 @@ contract TrenchV3Graduator is IERC721Receiver, ReentrancyGuard {
         uint256[3] memory ids;
         uint256 count;
 
-        (uint256 primaryId, uint128 primaryLiquidity,,) = POSITION_MANAGER.mint(
+        (uint256 primaryId, uint128 primaryLiquidity,,) = _mintPosition(
             TrenchV3MintParams({
                 token0: token0,
                 token1: token1,
@@ -389,7 +394,7 @@ contract TrenchV3Graduator is IERC721Receiver, ReentrancyGuard {
         if (primaryLiquidity == 0) revert SeedFailed();
         ids[count++] = primaryId;
 
-        (, int24 spotTick,,,,,) = ITrenchV3Pool(curve.pool).slot0();
+        (, int24 spotTick) = _slot0(curve.pool);
         uint256 tokenRemainder = IERC20(token).balanceOf(address(this));
         uint256 quoteRemainder = IERC20(NUMERAIRE).balanceOf(address(this));
 
@@ -451,7 +456,7 @@ contract TrenchV3Graduator is IERC721Receiver, ReentrancyGuard {
         uint128 liquidity;
         uint256 used0;
         uint256 used1;
-        (tokenId, liquidity, used0, used1) = POSITION_MANAGER.mint(
+        (tokenId, liquidity, used0, used1) = _mintPosition(
             TrenchV3MintParams({
                 token0: token0,
                 token1: token1,
@@ -472,12 +477,36 @@ contract TrenchV3Graduator is IERC721Receiver, ReentrancyGuard {
         ) revert SeedFailed();
     }
 
+    function _mintPosition(TrenchV3MintParams memory p)
+        private
+        returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)
+    {
+        if (!SLIPSTREAM) return POSITION_MANAGER.mint(p);
+        return ITrenchSlipstreamMintOnly(address(POSITION_MANAGER))
+            .mint(
+                TrenchSlipstreamMintParams({
+                    token0: p.token0,
+                    token1: p.token1,
+                    tickSpacing: TICK_SPACING,
+                    tickLower: p.tickLower,
+                    tickUpper: p.tickUpper,
+                    amount0Desired: p.amount0Desired,
+                    amount1Desired: p.amount1Desired,
+                    amount0Min: p.amount0Min,
+                    amount1Min: p.amount1Min,
+                    recipient: p.recipient,
+                    deadline: p.deadline,
+                    sqrtPriceX96: 0
+                })
+            );
+    }
+
     function _principalAtSpot(Curve storage curve)
         private
         view
         returns (uint256 tokenRemaining, uint256 quotePrincipal, int24 spotTick)
     {
-        (uint160 sqrtPriceX96, int24 tick,,,,,) = ITrenchV3Pool(curve.pool).slot0();
+        (uint160 sqrtPriceX96, int24 tick) = _slot0(curve.pool);
         (uint256 amount0, uint256 amount1) =
             TrenchV3Math.amountsForLiquidity(sqrtPriceX96, curve.tickLower, curve.tickUpper, curve.curveLiquidity);
         tokenRemaining = curve.tokenIs0 ? amount0 : amount1;
@@ -508,6 +537,14 @@ contract TrenchV3Graduator is IERC721Receiver, ReentrancyGuard {
         return curve.tokenIs0
             ? meanTick >= curve.tickUpper - TWAP_TICK_TOLERANCE
             : meanTick <= curve.tickLower + TWAP_TICK_TOLERANCE;
+    }
+
+    /// @dev Decodes only the common first two slot0 words. Uniswap V3 appends
+    ///      feeProtocol; Slipstream does not.
+    function _slot0(address pool) private view returns (uint160 sqrtPriceX96, int24 tick) {
+        (bool ok, bytes memory data) = pool.staticcall(abi.encodeWithSignature("slot0()"));
+        if (!ok || data.length < 64) revert InvalidCurve();
+        (sqrtPriceX96, tick) = abi.decode(data, (uint160, int24));
     }
 
     function curveInfo(address token) external view returns (Curve memory) {

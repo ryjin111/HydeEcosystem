@@ -38,6 +38,11 @@ interface ImportMetaEnv {
   readonly VITE_TRENCH_V5_ARBITRUM_HOOK?: string;
   readonly VITE_TRENCH_V5_ARBITRUM_HOOK_CODE_HASH?: string;
   readonly VITE_TRENCH_V5_ARBITRUM_DEPLOYMENT_BLOCK?: string;
+  readonly VITE_TRENCH_V5_INK_FACTORY?: string;
+  readonly VITE_TRENCH_V5_INK_FACTORY_CODE_HASH?: string;
+  readonly VITE_TRENCH_V5_INK_GRADUATOR_CODE_HASH?: string;
+  readonly VITE_TRENCH_V5_INK_LOCKER_CODE_HASH?: string;
+  readonly VITE_TRENCH_V5_INK_DEPLOYMENT_BLOCK?: string;
 }
 
 interface ImportMeta {

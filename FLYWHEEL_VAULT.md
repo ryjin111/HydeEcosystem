@@ -59,6 +59,7 @@ path, fee tier, and oracle inputs belong inside an audited adapter; creators can
 | Arbitrum | Native launch token + WETH | No converted catalog initially. |
 | Stable | Native launch token + USDT0 | No converted catalog initially. |
 | Arc | Native launch token + USDC | Release-gated; no converted catalog. |
+| Ink | Native launch token + WETH | xStocks are live on Ink and are future selected-reward candidates, but no route is enabled until canonical addresses, liquidity, an independent oracle, jurisdictional restrictions, and rebasing-token accounting are separately audited. |
 
 The application policy is fail-closed in `src/utils/flywheelRewardPolicy.ts`. It is only presentation metadata:
 an option still must have a live `rewardConverterFor(numeraire, rewardAsset)` route in the chain's official

@@ -100,7 +100,9 @@ export function TrenchV5LaunchForm({
   const chainMismatch = isConnected && walletChainId !== chainId;
   const formValid = name.trim().length > 0 && /^[A-Z0-9]{1,10}$/.test(symbol);
   const hasImage = image.startsWith("ipfs://");
-  const destination = engine === "v3-single-sided" ? "Uniswap V3 locked positions" : "Uniswap V4 locked positions";
+  const destination = engine === "v3-single-sided"
+    ? (chainId === 57073 ? "Velodrome Slipstream locked positions" : "Uniswap V3 locked positions")
+    : "Uniswap V4 locked positions";
   const v3Numeraire = engine === "v3-single-sided" ? v3ChainRow(chainId)?.numeraire : undefined;
   const quoteDecimals = v3Numeraire?.decimals ?? 18;
   const quoteSymbol = v3Numeraire?.symbol ?? "WETH";

@@ -8,6 +8,7 @@ import {TickMath} from "../../src/v3/libraries/TickMath.sol";
 import {TrenchV3Factory} from "../../src/v5v3/TrenchV3Factory.sol";
 import {TrenchV3Graduator} from "../../src/v5v3/TrenchV3Graduator.sol";
 import {TrenchV3Locker} from "../../src/v5v3/TrenchV3Locker.sol";
+import {ITrenchV3LockerRegister} from "../../src/v5v3/interfaces/ITrenchV3.sol";
 import {FlywheelVault} from "../../src/flywheel/FlywheelVault.sol";
 import {FlywheelVaultFactory} from "../../src/flywheel/FlywheelVaultFactory.sol";
 import {IFlywheelFeeSource} from "../../src/flywheel/interfaces/IFlywheelFeeSource.sol";
@@ -41,16 +42,44 @@ contract TrenchV3LifecycleTest is Test {
         HydeERC20 impl = new HydeERC20();
         vaultFactory = new FlywheelVaultFactory(address(this));
 
+        uint256 nonce = vm.getNonce(address(this));
+        address predictedLocker = vm.computeCreateAddress(address(this), nonce);
+        address predictedGraduator = vm.computeCreateAddress(address(this), nonce + 1);
+        address predictedFactory = vm.computeCreateAddress(address(this), nonce + 2);
+        locker = new TrenchV3Locker(positionManager, HYDE, predictedGraduator);
+        assertEq(address(locker), predictedLocker);
+        graduator = new TrenchV3Graduator(
+            TrenchV3Graduator.Config({
+                factory: predictedFactory,
+                positionManager: positionManager,
+                locker: ITrenchV3LockerRegister(address(locker)),
+                numeraire: address(quote),
+                feeTier: FEE,
+                tickSpacing: SPACING,
+                slipstream: false,
+                graduationDelay: GRADUATION_DELAY,
+                twapTickTolerance: SPACING,
+                minimumProceeds: 1,
+                maxCurveDust: 10e18,
+                maxPermanentTokenDust: 100e18,
+                maxPermanentQuoteDust: 1_000
+            })
+        );
+
         factory = new TrenchV3Factory(
             TrenchV3Factory.Config({
                 impl: address(impl),
                 v3Factory: address(uniFactory),
                 positionManager: address(positionManager),
+                locker: address(locker),
+                graduator: address(graduator),
                 flywheelVaultFactory: address(vaultFactory),
                 hydeTreasury: HYDE,
                 numeraire: address(quote),
                 numeraireDecimals: 6,
                 feeTier: FEE,
+                slipstream: false,
+                tickSpacing: 0,
                 startFdvWad: 5_000e18,
                 graduationFdvWad: 50_000e18,
                 launchFeeAsset: address(quote),
@@ -69,8 +98,7 @@ contract TrenchV3LifecycleTest is Test {
                 owner: address(this)
             })
         );
-        graduator = factory.GRADUATOR();
-        locker = factory.LOCKER();
+        assertEq(address(factory), predictedFactory);
 
         quote.mint(CREATOR, 10e6);
         vm.prank(CREATOR);

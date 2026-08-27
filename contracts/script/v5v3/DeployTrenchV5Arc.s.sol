@@ -8,6 +8,11 @@ import {IUniswapV3Factory} from "../../src/v3/interfaces/IUniswapV3Minimal.sol";
 import {TrenchV3Factory} from "../../src/v5v3/TrenchV3Factory.sol";
 import {TrenchV3Graduator} from "../../src/v5v3/TrenchV3Graduator.sol";
 import {TrenchV3Locker} from "../../src/v5v3/TrenchV3Locker.sol";
+import {
+    ITrenchV3CollectOnly,
+    ITrenchV3LockerRegister,
+    ITrenchV3PositionManager
+} from "../../src/v5v3/interfaces/ITrenchV3.sol";
 
 interface IArcV5PositionManager {
     function factory() external view returns (address);
@@ -74,9 +79,9 @@ contract DeployTrenchV5Arc is Script {
 
         uint256 nonce = vm.getNonce(deployer);
         address expectedImpl = vm.computeCreateAddress(deployer, nonce);
-        address expectedFactory = vm.computeCreateAddress(deployer, nonce + 1);
-        address expectedLocker = _child(expectedFactory, 1);
-        address expectedGraduator = _child(expectedFactory, 2);
+        address expectedLocker = vm.computeCreateAddress(deployer, nonce + 1);
+        address expectedGraduator = vm.computeCreateAddress(deployer, nonce + 2);
+        address expectedFactory = vm.computeCreateAddress(deployer, nonce + 3);
         require(
             expectedImpl.code.length == 0 && expectedFactory.code.length == 0 && expectedLocker.code.length == 0
                 && expectedGraduator.code.length == 0,
@@ -85,16 +90,39 @@ contract DeployTrenchV5Arc is Script {
 
         vm.startBroadcast(deployer);
         HydeERC20 impl = new HydeERC20();
+        TrenchV3Locker locker =
+            new TrenchV3Locker(ITrenchV3CollectOnly(POSITION_MANAGER), hydeTreasury, expectedGraduator);
+        TrenchV3Graduator graduator = new TrenchV3Graduator(
+            TrenchV3Graduator.Config({
+                factory: expectedFactory,
+                positionManager: ITrenchV3PositionManager(POSITION_MANAGER),
+                locker: ITrenchV3LockerRegister(address(locker)),
+                numeraire: USDC,
+                feeTier: FEE_TIER,
+                tickSpacing: TICK_SPACING,
+                slipstream: false,
+                graduationDelay: GRADUATION_DELAY,
+                twapTickTolerance: TICK_SPACING,
+                minimumProceeds: minimumProceeds,
+                maxCurveDust: MAX_CURVE_DUST,
+                maxPermanentTokenDust: MAX_PERMANENT_TOKEN_DUST,
+                maxPermanentQuoteDust: MAX_PERMANENT_QUOTE_DUST
+            })
+        );
         TrenchV3Factory factory = new TrenchV3Factory(
             TrenchV3Factory.Config({
                 impl: address(impl),
                 v3Factory: V3_FACTORY,
                 positionManager: POSITION_MANAGER,
+                locker: address(locker),
+                graduator: address(graduator),
                 flywheelVaultFactory: flywheelVaultFactory,
                 hydeTreasury: hydeTreasury,
                 numeraire: USDC,
                 numeraireDecimals: 6,
                 feeTier: FEE_TIER,
+                slipstream: false,
+                tickSpacing: 0,
                 startFdvWad: startFdvWad,
                 graduationFdvWad: graduationFdvWad,
                 launchFeeAsset: USDC,
@@ -115,8 +143,6 @@ contract DeployTrenchV5Arc is Script {
         );
         vm.stopBroadcast();
 
-        TrenchV3Locker locker = factory.LOCKER();
-        TrenchV3Graduator graduator = factory.GRADUATOR();
         require(address(impl) == expectedImpl, "IMPL_DRIFT");
         require(address(factory) == expectedFactory, "FACTORY_DRIFT");
         require(address(locker) == expectedLocker, "LOCKER_DRIFT");
@@ -150,10 +176,5 @@ contract DeployTrenchV5Arc is Script {
         console2.logBytes32(address(graduator).codehash);
         console2.logBytes32(address(locker).codehash);
         console2.logBytes32(address(impl).codehash);
-    }
-
-    function _child(address deployer, uint8 nonce) private pure returns (address) {
-        return
-            address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xd6), bytes1(0x94), deployer, bytes1(nonce))))));
     }
 }

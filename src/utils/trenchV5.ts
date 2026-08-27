@@ -13,6 +13,7 @@ import {
 import {
   ARBITRUM_MAINNET,
   ARC_MAINNET,
+  INK_MAINNET,
   NETWORKS,
   ROBINHOOD_MAINNET,
   STABLE_MAINNET,
@@ -100,6 +101,19 @@ function envManifest(chainId: number): V5EnvManifest {
       hook: import.meta.env.VITE_TRENCH_V5_ARBITRUM_HOOK,
       hookCodeHash: import.meta.env.VITE_TRENCH_V5_ARBITRUM_HOOK_CODE_HASH,
       deploymentBlock: import.meta.env.VITE_TRENCH_V5_ARBITRUM_DEPLOYMENT_BLOCK,
+    };
+  }
+  if (chainId === INK_MAINNET.id) {
+    return {
+      factory: import.meta.env.VITE_TRENCH_V5_INK_FACTORY
+        ?? "0xCf9023b509bf2c1FD53b3FF7Cd9dD5D1E88A5458",
+      factoryCodeHash: import.meta.env.VITE_TRENCH_V5_INK_FACTORY_CODE_HASH
+        ?? "0x7a8d6346b96a179863b7ea107871ed9867e18a7b5590314ae4083a87260b80a4",
+      graduatorCodeHash: import.meta.env.VITE_TRENCH_V5_INK_GRADUATOR_CODE_HASH
+        ?? "0x727a1b49a82010b97a2640327fa957f901ac471aeeb0823ec3f718dd87ddd1d3",
+      lockerCodeHash: import.meta.env.VITE_TRENCH_V5_INK_LOCKER_CODE_HASH
+        ?? "0xfde4c5de2c85926d70e3c63a6b151b743dc9dd93585a395c82b425f4bb24b43a",
+      deploymentBlock: import.meta.env.VITE_TRENCH_V5_INK_DEPLOYMENT_BLOCK ?? "54318168",
     };
   }
   return {};
@@ -197,6 +211,8 @@ export const trenchV5FactoryAbi = [
   { type: "function", name: "UNIVERSAL_ROUTER", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "TICK_SPACING", stateMutability: "view", inputs: [], outputs: [{ type: "int24" }] },
   { type: "function", name: "FEE_TIER", stateMutability: "view", inputs: [], outputs: [{ type: "uint24" }] },
+  { type: "function", name: "POSITION_KEY", stateMutability: "view", inputs: [], outputs: [{ type: "uint24" }] },
+  { type: "function", name: "SLIPSTREAM", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
   { type: "function", name: "LAUNCH_FEE_AMOUNT", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "LAUNCH_FEE_ASSET", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "LAUNCH_FEE_NATIVE", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
@@ -406,12 +422,22 @@ export async function verifyTrenchV5Runtime(chainId: number): Promise<VerifiedTr
     client.readContract({ address: manifest.factory, abi: trenchV5FactoryAbi, functionName: "POSITION_MANAGER" }),
     client.readContract({ address: manifest.factory, abi: trenchV5FactoryAbi, functionName: "FEE_TIER" }),
   ]);
+  const expectedSlipstream = chainId === INK_MAINNET.id;
   if (
     v3Factory.toLowerCase() !== expectedV3.v3Factory.toLowerCase()
     || positionManager.toLowerCase() !== expectedV3.positionManager.toLowerCase()
     || numeraire.toLowerCase() !== expectedV3.numeraire.address.toLowerCase()
     || Number(feeTier) !== expectedV3.feeTier
   ) throw new Error("V5 V3 factory dependencies do not match the canonical chain manifest.");
+  if (expectedSlipstream) {
+    const [positionKey, slipstream] = await Promise.all([
+      client.readContract({ address: manifest.factory, abi: trenchV5FactoryAbi, functionName: "POSITION_KEY" }),
+      client.readContract({ address: manifest.factory, abi: trenchV5FactoryAbi, functionName: "SLIPSTREAM" }),
+    ]);
+    if (Number(positionKey) !== 200 || !slipstream) {
+      throw new Error("V5 Slipstream position key does not match the canonical Ink manifest.");
+    }
+  }
 
   return { manifest, client, graduator, locker, numeraire };
 }

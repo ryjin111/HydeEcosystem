@@ -9,6 +9,7 @@ import {TickMath} from "../../src/v3/libraries/TickMath.sol";
 import {TrenchV3Factory} from "../../src/v5v3/TrenchV3Factory.sol";
 import {TrenchV3Graduator} from "../../src/v5v3/TrenchV3Graduator.sol";
 import {TrenchV3Locker} from "../../src/v5v3/TrenchV3Locker.sol";
+import {ITrenchV3LockerRegister} from "../../src/v5v3/interfaces/ITrenchV3.sol";
 import {FlywheelVaultFactory} from "../../src/flywheel/FlywheelVaultFactory.sol";
 import {MockERC20} from "../v3/mocks/MockERC20.sol";
 import {MockTrenchV3Factory, MockTrenchV3Pool, MockTrenchV3PositionManager} from "./mocks/MockTrenchV3.sol";
@@ -80,16 +81,45 @@ contract TrenchV3InvariantTest is StdInvariant, Test {
         MockTrenchV3Factory uniFactory = new MockTrenchV3Factory();
         uniFactory.setSpacing(FEE, SPACING);
         positionManager = new MockTrenchV3PositionManager(uniFactory);
+        HydeERC20 impl = new HydeERC20();
+        FlywheelVaultFactory vaultFactory = new FlywheelVaultFactory(address(this));
+        uint256 nonce = vm.getNonce(address(this));
+        address predictedLocker = vm.computeCreateAddress(address(this), nonce);
+        address predictedGraduator = vm.computeCreateAddress(address(this), nonce + 1);
+        address predictedFactory = vm.computeCreateAddress(address(this), nonce + 2);
+        locker = new TrenchV3Locker(positionManager, HYDE, predictedGraduator);
+        assertEq(address(locker), predictedLocker);
+        graduator = new TrenchV3Graduator(
+            TrenchV3Graduator.Config({
+                factory: predictedFactory,
+                positionManager: positionManager,
+                locker: ITrenchV3LockerRegister(address(locker)),
+                numeraire: address(quote),
+                feeTier: FEE,
+                tickSpacing: SPACING,
+                slipstream: false,
+                graduationDelay: 300,
+                twapTickTolerance: SPACING,
+                minimumProceeds: 1,
+                maxCurveDust: 10e18,
+                maxPermanentTokenDust: 100e18,
+                maxPermanentQuoteDust: 1_000
+            })
+        );
         factory = new TrenchV3Factory(
             TrenchV3Factory.Config({
-                impl: address(new HydeERC20()),
+                impl: address(impl),
                 v3Factory: address(uniFactory),
                 positionManager: address(positionManager),
-                flywheelVaultFactory: address(new FlywheelVaultFactory(address(this))),
+                locker: address(locker),
+                graduator: address(graduator),
+                flywheelVaultFactory: address(vaultFactory),
                 hydeTreasury: HYDE,
                 numeraire: address(quote),
                 numeraireDecimals: 6,
                 feeTier: FEE,
+                slipstream: false,
+                tickSpacing: 0,
                 startFdvWad: 5_000e18,
                 graduationFdvWad: 50_000e18,
                 launchFeeAsset: address(quote),
@@ -108,8 +138,7 @@ contract TrenchV3InvariantTest is StdInvariant, Test {
                 owner: address(this)
             })
         );
-        graduator = factory.GRADUATOR();
-        locker = factory.LOCKER();
+        assertEq(address(factory), predictedFactory);
         quote.mint(CREATOR, 10e6);
         vm.startPrank(CREATOR);
         quote.approve(address(factory), type(uint256).max);
